@@ -186,14 +186,18 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
-    fun supportsOtherWritingSystemsForOriginalSubtitleLines() {
+    fun supportsWhitespaceSeparatedWritingSystemsAndSkipsCjkLines() {
         assertEquals(
             listOf(true, false),
             learningSubtitleHighlightableLines(listOf("Привет, мир!", "你好，世界！")),
         )
         assertEquals(
-            listOf(true, false),
+            listOf(false, true),
             learningSubtitleHighlightableLines(listOf("こんにちは、世界！", "Hello, world!")),
+        )
+        assertEquals(
+            listOf(true, false),
+            learningSubtitleHighlightableLines(listOf("مرحبا بالعالم", "你好，世界！")),
         )
     }
 
