@@ -147,6 +147,9 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded(): Bool
                     selectedAddonSubtitleId = subtitle.selectionKey
                     selectedSubtitleIndex = -1
                     useCustomSubtitles = true
+                    if (playerSettingsUiState.englishLearningEnabled) {
+                        PlayerLearningSubtitleState.beginLoading(subtitle.display)
+                    }
                     if (!maybeAutoSyncRestoredSubtitleAtStart(subtitle.url)) { // AutoSync hook
                         playerController?.setSubtitleUri(subtitle.url)
                     }
@@ -277,6 +280,9 @@ private fun PlayerScreenRuntime.tryAutoSelectPreferredSubtitleFromAvailableTrack
                 selectedAddonSubtitleId = primaryAddonMatch.selectionKey
                 selectedSubtitleIndex = -1
                 useCustomSubtitles = true
+                if (playerSettingsUiState.englishLearningEnabled) {
+                    PlayerLearningSubtitleState.beginLoading(primaryAddonMatch.display)
+                }
                 if (!maybeAutoSyncPreferredSubtitleAtStart(primaryAddonMatch)) { // AutoSync hook
                     playerController?.setSubtitleUri(primaryAddonMatch.url)
                 }
@@ -321,6 +327,9 @@ private fun PlayerScreenRuntime.tryAutoSelectPreferredSubtitleFromAvailableTrack
             selectedAddonSubtitleId = forcedAddonMatch.selectionKey
             selectedSubtitleIndex = -1
             useCustomSubtitles = true
+            if (playerSettingsUiState.englishLearningEnabled) {
+                PlayerLearningSubtitleState.beginLoading(forcedAddonMatch.display)
+            }
             playerController?.setSubtitleUri(forcedAddonMatch.url)
         } else {
             disableAutomaticSubtitleSelection()
@@ -360,6 +369,9 @@ private fun PlayerScreenRuntime.tryAutoSelectPreferredSubtitleFromAvailableTrack
         selectedAddonSubtitleId = addonMatch.selectionKey
         selectedSubtitleIndex = -1
         useCustomSubtitles = true
+        if (playerSettingsUiState.englishLearningEnabled) {
+            PlayerLearningSubtitleState.beginLoading(addonMatch.display)
+        }
         if (!maybeAutoSyncPreferredSubtitleAtStart(addonMatch)) { // AutoSync hook
             playerController?.setSubtitleUri(addonMatch.url)
         }
