@@ -25,6 +25,15 @@ internal object PlayerEmbeddedSubtitleCapture {
     private const val TAG = "NuvioEmbeddedSubs"
     private const val MAX_CUES_PER_TRACK = 20_000
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val snapshotIntervalMs = 200L
+    @Volatile private var snapshotPending = false
+    private val publishSelectedSnapshot = Runnable {
+        snapshotPending = false
+        val key = selectedTrackKey ?: return@Runnable
+        val entry = tracks[key] ?: return@Runnable
+        val snapshot = synchronized(entry.lock) { entry.cues.values.toList() }
+        if (snapshot.isNotEmpty()) PlayerLearningSubtitleState.updatePartial(snapshot)
+    }
     private val tracks = ConcurrentHashMap<String, TrackCues>()
     @Volatile private var selectedTrackKey: String? = null
 
@@ -35,6 +44,8 @@ internal object PlayerEmbeddedSubtitleCapture {
 
     fun reset() {
         selectedTrackKey = null
+        mainHandler.removeCallbacks(publishSelectedSnapshot)
+        snapshotPending = false
         tracks.clear()
     }
 
@@ -108,17 +119,21 @@ internal object PlayerEmbeddedSubtitleCapture {
         if (startMs < 0L || endMs <= startMs) return
 
         val entry = tracks.getOrPut(key) { TrackCues() }
-        val snapshot = synchronized(entry.lock) {
+        val cueAdded = synchronized(entry.lock) {
             val cue = LearningSubtitleCue(startMs, endMs, text)
-            entry.cues["$startMs|$endMs|$text"] = cue
+            val cueKey = "$startMs|$endMs|$text"
+            val isNewCue = !entry.cues.containsKey(cueKey)
+            entry.cues[cueKey] = cue
             while (entry.cues.size > MAX_CUES_PER_TRACK) {
                 val firstKey = entry.cues.keys.firstOrNull() ?: break
                 entry.cues.remove(firstKey)
             }
-            entry.cues.values.sortedBy { it.startTimeMs }
+            isNewCue
         }
-        if (selectedTrackKey == key) {
-            mainHandler.post { PlayerLearningSubtitleState.updatePartial(snapshot) }
+        // Parsing can emit many samples quickly. Coalesce UI snapshots while retaining cues.
+        if (cueAdded && selectedTrackKey == key && !snapshotPending) {
+            snapshotPending = true
+            mainHandler.postDelayed(publishSelectedSnapshot, snapshotIntervalMs)
         }
     }
 
