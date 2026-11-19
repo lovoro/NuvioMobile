@@ -1041,9 +1041,16 @@ private fun LearningSubtitlePanel(
                     key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
                 ) { index, cue ->
                     val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
-                    val activeWordRange = if (index == activeIndex) {
+                    val highlightableLines = remember(subtitleLines) {
+                        learningSubtitleHighlightableLines(subtitleLines)
+                    }
+                    val sourceText = remember(subtitleLines, highlightableLines) {
+                        subtitleLines.filterIndexed { lineIndex, _ -> highlightableLines[lineIndex] }
+                            .joinToString("\n")
+                    }
+                    val activeWordRange = if (index == activeIndex && sourceText.isNotBlank()) {
                         findLearningSubtitleWordRange(
-                            text = cue.text,
+                            text = sourceText,
                             startTimeMs = cue.startTimeMs,
                             endTimeMs = cue.endTimeMs,
                             positionMs = positionMs,
@@ -1081,10 +1088,11 @@ private fun LearningSubtitlePanel(
                                 color = Color(0xFF9299A3),
                             )
                         }
-                        var lineOffset = 0
+                        var sourceTextOffset = 0
                         subtitleLines.forEachIndexed { lineIndex, subtitleLine ->
-                            val currentLineStart = lineOffset
-                            lineOffset += subtitleLine.length + 1
+                            val lineIsHighlightable = highlightableLines.getOrElse(lineIndex) { false }
+                            val currentLineStart = sourceTextOffset
+                            if (lineIsHighlightable) sourceTextOffset += subtitleLine.length + 1
                             val wordMatches = remember(subtitleLine) {
                                 Regex("\\S+").findAll(subtitleLine).toList()
                             }
@@ -1096,7 +1104,8 @@ private fun LearningSubtitlePanel(
                                 wordMatches.forEach { match ->
                                     val globalWordStart = currentLineStart + match.range.first
                                     val globalWordEnd = currentLineStart + match.range.last
-                                    val wordIsActive = activeWordRange != null &&
+                                    val wordIsActive = lineIsHighlightable &&
+                                        activeWordRange != null &&
                                         globalWordStart <= activeWordRange.last &&
                                         globalWordEnd >= activeWordRange.first
                                     Box(
