@@ -34,6 +34,7 @@ fun snapToAllowedTimeout(value: Int): Int {
 
 data class PlayerSettingsUiState(
     val useLegacyPlayerLayout: Boolean = false,
+    val englishLearningEnabled: Boolean = false,
     val showLoadingOverlay: Boolean = true,
     val showPlayerLoadingStatus: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
@@ -149,6 +150,7 @@ object PlayerSettingsRepository {
 
     private var hasLoaded = false
     private var useLegacyPlayerLayout = false
+    private var englishLearningEnabled = false
     private var showLoadingOverlay = true
     private var showPlayerLoadingStatus = true
     private var pauseOverlayEnabled = true
@@ -251,6 +253,7 @@ object PlayerSettingsRepository {
     fun clearLocalState() {
         hasLoaded = false
         useLegacyPlayerLayout = false
+        englishLearningEnabled = false
         showLoadingOverlay = true
         showPlayerLoadingStatus = true
         pauseOverlayEnabled = true
@@ -347,6 +350,7 @@ object PlayerSettingsRepository {
     private fun loadFromDisk() {
         hasLoaded = true
         useLegacyPlayerLayout = PlayerSettingsStorage.loadUseLegacyPlayerLayout() ?: false
+        englishLearningEnabled = PlayerSettingsStorage.loadEnglishLearningEnabled() ?: false
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
         showPlayerLoadingStatus = PlayerSettingsStorage.loadShowPlayerLoadingStatus() ?: true
         pauseOverlayEnabled = PlayerSettingsStorage.loadPauseOverlayEnabled() ?: true
@@ -536,6 +540,14 @@ object PlayerSettingsRepository {
         useLegacyPlayerLayout = enabled
         publish()
         PlayerSettingsStorage.saveUseLegacyPlayerLayout(enabled)
+    }
+
+    fun setEnglishLearningEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (englishLearningEnabled == enabled) return
+        englishLearningEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveEnglishLearningEnabled(enabled)
     }
 
     fun setShowLoadingOverlay(enabled: Boolean) {
@@ -1371,6 +1383,7 @@ object PlayerSettingsRepository {
     private fun publish() {
         _uiState.value = PlayerSettingsUiState(
             useLegacyPlayerLayout = useLegacyPlayerLayout,
+            englishLearningEnabled = englishLearningEnabled,
             showLoadingOverlay = showLoadingOverlay,
             showPlayerLoadingStatus = showPlayerLoadingStatus,
             pauseOverlayEnabled = pauseOverlayEnabled,
