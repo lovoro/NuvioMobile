@@ -153,6 +153,13 @@ class PlayerLearningSubtitlesTest {
         assertEquals(null, findLearningSubtitleWordRange(text, 1_000L, 3_000L, 3_000L))
     }
 
+    @Test
+    fun wordHighlightCanTargetWordsOnTheSecondSubtitleLine() {
+        val text = "First line\nSecond line"
+
+        assertEquals(11..16, findLearningSubtitleWordRange(text, 0L, 10_000L, 7_500L))
+    }
+
     private fun cue(start: Long, end: Long, text: String) =
         LearningSubtitleCue(startTimeMs = start, endTimeMs = end, text = text)
 }
