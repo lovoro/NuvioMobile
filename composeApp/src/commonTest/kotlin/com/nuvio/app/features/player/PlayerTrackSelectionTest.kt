@@ -361,6 +361,29 @@ class PlayerTrackSelectionTest {
     )
 
     @Test
+    fun effectiveAddonSubtitleFetchKeyMatchesForP2pRestoreAndFetch() {
+        assertEquals("series|video-1|addon:p2p", buildEffectiveAddonSubtitleFetchKey("series|video-1|addon", true))
+        assertEquals("series|video-1|addon", buildEffectiveAddonSubtitleFetchKey("series|video-1|addon", false))
+        assertEquals(null, buildEffectiveAddonSubtitleFetchKey(null, true))
+    }
+
+    @Test
+    fun persistedAddonSubtitleDoesNotChooseArbitraryLanguageCandidate() {
+        val subtitles = listOf(
+            addonSubtitle(id = "english-a", language = "en"),
+            addonSubtitle(id = "english-b", language = "en", url = "https://example.com/english-b.srt"),
+        )
+        val preference = PersistedPlayerTrackPreference(
+            subtitleType = PersistedSubtitleSelectionType.ADDON,
+            subtitleLanguage = "en",
+            subtitleName = "English",
+            addonSubtitleAddonName = "Missing addon",
+        )
+
+        assertEquals(null, findPersistedAddonSubtitle(subtitles, preference))
+    }
+
+    @Test
     fun persistedAddonSubtitleMatchesStableIdWhenUrlChanges() {
         val subtitles = listOf(
             addonSubtitle(id = "pl-first", language = "pol", url = "https://example.com/e2/a.srt"),
