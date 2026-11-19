@@ -4,13 +4,25 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -18,8 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -51,6 +65,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     partyPanelWidth: Dp,
     partyPanelInset: Dp,
     dockPartyPanel: Boolean,
+    learningMode: Boolean,
+    containerHeight: Dp,
 ) {
     val runtime = this
     val isInPip = rememberIsInPictureInPicture()
@@ -139,7 +155,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     }
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
     val fold = LocalFold.current?.takeIf { !isInPip }
-    val videoModifier = if (fold != null) Modifier.fillMaxWidth().height(fold.top) else Modifier.fillMaxSize()
+    val videoModifier = when {
+        fold != null -> Modifier.fillMaxWidth().height(fold.top)
+        learningMode -> Modifier.fillMaxWidth().height(containerHeight * 0.46f)
+        else -> Modifier.fillMaxSize()
+    }
     val panelModifier = if (fold != null) Modifier.fillMaxSize().padding(top = fold.bottom) else Modifier.fillMaxSize()
     val playbackGesturesEnabled = initialLoadCompleted && errorMessage == null
     val keyFocusRequester = remember { FocusRequester() }
@@ -281,6 +301,21 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     },
                 )
             }
+        }
+
+        if (learningMode && fold == null && !isInPip) {
+            LearningSubtitlePanel(
+                cues = PlayerLearningSubtitleState.cues,
+                positionMs = displayedPositionMs,
+                onCueClick = { cue ->
+                    playerController?.seekTo(cue.startTimeMs)
+                    scrubbingPositionMs = null
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(containerHeight * 0.54f),
+            )
         }
 
         AnimatedVisibility(
@@ -862,4 +897,82 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             onDismiss = { showSwitchEngineConfirm = false },
         )
     }
+}
+
+
+@Composable
+private fun LearningSubtitlePanel(
+    cues: List<LearningSubtitleCue>,
+    positionMs: Long,
+    onCueClick: (LearningSubtitleCue) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val activeIndex = remember(cues, positionMs) {
+        findLearningSubtitleIndex(cues, positionMs)
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(activeIndex, cues.size) {
+        if (activeIndex >= 0) {
+            listState.animateScrollToItem(activeIndex)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .background(Color(0xFF101216))
+            .padding(top = 8.dp),
+    ) {
+        Text(
+            text = if (cues.isEmpty()) "English Learning · Subtitles" else "English Learning · ${cues.size} lines",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+        if (cues.isEmpty()) {
+            Text(
+                text = "Select a supported external text subtitle to load its full list. Built-in subtitle extraction is being added next.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFB8BEC8),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                itemsIndexed(
+                    items = cues,
+                    key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
+                ) { index, cue ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(if (index == activeIndex) Color(0xFF26394A) else Color.Transparent)
+                            .clickable { onCueClick(cue) }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                    ) {
+                        Text(
+                            text = formatLearningSubtitleTime(cue.startTimeMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF9BA8B8),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = cue.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (index == activeIndex) Color.White else Color(0xFFD8DCE3),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatLearningSubtitleTime(positionMs: Long): String {
+    val totalSeconds = (positionMs / 1_000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "${minutes}:${seconds.toString().padStart(2, '0')}"
 }
