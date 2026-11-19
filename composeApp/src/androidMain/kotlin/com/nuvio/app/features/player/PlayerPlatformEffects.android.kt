@@ -30,12 +30,14 @@ import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.roundToInt
 
 @Composable
-actual fun LockPlayerToPortrait(enabled: Boolean) {
-    val activity = LocalContext.current.findActivity() ?: return
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInMultiWindowMode) return
+actual fun LockPlayerToPortrait(enabled: Boolean): Boolean {
+    val activity = LocalContext.current.findActivity() ?: return true
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val inMultiWindow = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInMultiWindowMode
     // Remember whether learning mode was enabled at any point during this player session.
     // Turning the mode off must not make the app return to landscape when the player closes.
     val learningModeWasActive = remember(activity) { mutableStateOf(enabled) }
+    val shouldLockPortrait = enabled || learningModeWasActive.value
 
     DisposableEffect(activity) {
         val previousOrientation = activity.requestedOrientation
@@ -47,12 +49,18 @@ actual fun LockPlayerToPortrait(enabled: Boolean) {
             }
         }
     }
+
+    // Request orientation during the destination's composition, before PlayerScreen is composed.
+    // The destination stays blank until LocalConfiguration confirms that Android has applied it.
+    if (shouldLockPortrait && !inMultiWindow) {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+    }
     SideEffect {
-        if (enabled || learningModeWasActive.value) {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
         learningModeWasActive.value = learningModeWasActive.value || enabled
     }
+
+    return !shouldLockPortrait || inMultiWindow ||
+        configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
 }
 
 @Composable
