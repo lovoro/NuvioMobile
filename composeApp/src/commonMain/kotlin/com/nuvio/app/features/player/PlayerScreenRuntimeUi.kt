@@ -1098,8 +1098,8 @@ private fun LearningSubtitlePanel(
                             }
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
                                 wordMatches.forEach { match ->
                                     val globalWordStart = currentLineStart + match.range.first
@@ -1116,7 +1116,7 @@ private fun LearningSubtitlePanel(
                                                 color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
                                                 shape = RoundedCornerShape(7.dp),
                                             )
-                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                            .padding(horizontal = 2.dp, vertical = 2.dp),
                                     ) {
                                         Text(
                                             text = match.value,
