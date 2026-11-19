@@ -906,15 +906,32 @@ private fun ExoPlayerSurface(
                         exoPlayer.selectTrackByIndex(C.TRACK_TYPE_TEXT, idx)
                     }
                 }
-                if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
-                    learningInternalSubtitleSelected.get()
+                if (
+                    PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                    learningSubtitleSelectionUrl == null &&
+                    selectedExternalSubtitleMimeType == null &&
+                    sidecarControllerRef?.isSidecarActive() != true
                 ) {
                     val selectedEmbeddedFormat = tracks.groups
                         .asSequence()
                         .filter { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
                         .flatMap { group -> (0 until group.length).asSequence().filter(group::isTrackSelected).map(group::getTrackFormat) }
                         .firstOrNull()
-                    PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat)
+                    if (selectedEmbeddedFormat != null) {
+                        // The player's default track selection does not pass through the manual
+                        // selectSubtitleTrack callback. Start learning capture as soon as the
+                        // initially selected embedded track becomes available.
+                        learningInternalSubtitleSelected.set(true)
+                        val subtitleName = selectedEmbeddedFormat.label?.toString()?.takeIf { it.isNotBlank() }
+                            ?: selectedEmbeddedFormat.language?.takeIf { it.isNotBlank() }
+                        if (PlayerLearningSubtitleState.status == LearningSubtitleStatus.NONE) {
+                            PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
+                        }
+                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat)
+                    } else {
+                        learningInternalSubtitleSelected.set(false)
+                        PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                    }
                 }
                 // Trigger player rebuild with video effects when ASS track becomes selected
                 // and render mode is VIDEO_EFFECT.
