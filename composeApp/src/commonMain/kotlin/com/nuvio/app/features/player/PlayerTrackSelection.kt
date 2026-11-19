@@ -33,6 +33,9 @@ internal fun buildAddonSubtitleFetchKey(
     }
 }
 
+internal fun buildEffectiveAddonSubtitleFetchKey(fetchKey: String?, isP2p: Boolean): String? =
+    fetchKey?.let { key -> if (isP2p) "$key|p2p" else key }
+
 internal fun AddonResource.isCompatibleSubtitleResource(type: String, videoId: String): Boolean {
     val isSubtitleResource = name.equals("subtitles", ignoreCase = true) ||
         name.equals("subtitle", ignoreCase = true)
@@ -521,13 +524,26 @@ internal fun findPersistedAddonSubtitle(
     }
     val language = preference.subtitleLanguage?.takeIf { it.isNotBlank() } ?: return null
     val candidates = subtitles.filter { addonSubtitleMatchesLanguage(it, language) }
-    val providerCandidates = preference.addonSubtitleAddonName?.takeIf { it.isNotBlank() }?.let { name ->
+    val savedAddonName = preference.addonSubtitleAddonName?.takeIf { it.isNotBlank() }
+    val providerCandidates = savedAddonName?.let { name ->
         candidates.filter { it.addonName.equals(name, ignoreCase = true) }
     }.orEmpty()
-    val preferredCandidates = providerCandidates.ifEmpty { candidates }
-    return preferredCandidates.firstOrNull {
-        it.display.equals(preference.subtitleName, ignoreCase = true)
-    } ?: preferredCandidates.firstOrNull()
+
+    // The display label is the best fallback when addon URLs or generated IDs change.
+    preference.subtitleName?.takeIf { it.isNotBlank() }?.let { savedName ->
+        providerCandidates.singleOrNull {
+            it.display.equals(savedName, ignoreCase = true)
+        }?.let { return it }
+    }
+
+    // If the provider still exists, never silently switch to a different provider.
+    if (savedAddonName != null && providerCandidates.isNotEmpty()) {
+        return providerCandidates.singleOrNull()
+    }
+
+    // A provider may have been renamed or removed. Only use a language fallback when
+    // it identifies exactly one candidate; never choose an arbitrary first subtitle.
+    return candidates.singleOrNull()
 }
 
 internal fun findPersistedSubtitleTrackIndex(
