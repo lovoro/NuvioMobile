@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxScope
@@ -47,6 +48,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -161,9 +163,21 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     }
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
     val fold = LocalFold.current?.takeIf { !isInPip }
+    val density = LocalDensity.current
+    val learningVideoAspectRatio = remember(playbackSnapshot.videoWidth, playbackSnapshot.videoHeight) {
+        if (playbackSnapshot.videoWidth > 0 && playbackSnapshot.videoHeight > 0) {
+            (playbackSnapshot.videoWidth.toFloat() / playbackSnapshot.videoHeight.toFloat()).coerceIn(1f, 2.4f)
+        } else {
+            16f / 9f
+        }
+    }
+    val learningVideoHeight = with(density) {
+        if (layoutSize.width > 0) (layoutSize.width.toDp() / learningVideoAspectRatio).coerceAtMost(containerHeight)
+        else containerHeight * 0.34f
+    }
     val videoModifier = when {
         fold != null -> Modifier.fillMaxWidth().height(fold.top)
-        learningMode -> Modifier.fillMaxWidth().height(containerHeight * 0.34f)
+        learningMode -> Modifier.fillMaxWidth().aspectRatio(learningVideoAspectRatio)
         else -> Modifier.fillMaxSize()
     }
     val panelModifier = if (fold != null) Modifier.fillMaxSize().padding(top = fold.bottom) else Modifier.fillMaxSize()
@@ -376,7 +390,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             isEpisode = isEpisode,
             folded = fold != null,
             learningMode = learningMode && fold == null && !isInPip,
-            learningVideoHeight = containerHeight * 0.34f,
+            learningVideoHeight = learningVideoHeight,
             modifier = panelModifier,
         )
         Box(modifier = videoModifier) {
