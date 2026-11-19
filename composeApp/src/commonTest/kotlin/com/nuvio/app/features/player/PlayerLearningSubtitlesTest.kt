@@ -98,6 +98,22 @@ class PlayerLearningSubtitlesTest {
 
 
     @Test
+    fun displaysSelectedSubtitleNameWhileLoadingAndClearsItWhenReady() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading("English.srt")
+
+        assertEquals(LearningSubtitleStatus.LOADING, PlayerLearningSubtitleState.status)
+        assertEquals("English.srt", PlayerLearningSubtitleState.loadingSubtitleName)
+
+        PlayerLearningSubtitleState.update(listOf(cue(0L, 2_000L, "Hello")))
+
+        assertEquals(LearningSubtitleStatus.READY, PlayerLearningSubtitleState.status)
+        assertEquals(null, PlayerLearningSubtitleState.loadingSubtitleName)
+        assertEquals("Hello", PlayerLearningSubtitleState.cues.single().text)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun capturesEmbeddedCueGroupsAsExplicitlyPartialPlaybackSamples() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()
