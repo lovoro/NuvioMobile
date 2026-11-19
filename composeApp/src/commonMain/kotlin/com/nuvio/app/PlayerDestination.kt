@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.party.PartyMedia
@@ -13,6 +14,8 @@ import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerScreen
+import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.LockPlayerToPortrait
 import com.nuvio.app.features.watchprogress.ResumePromptRepository
 import com.nuvio.app.navigation.NuvioNavigator
 import com.nuvio.app.navigation.PlayerRoute
@@ -41,6 +44,11 @@ internal fun PlayerDestination(
     LaunchedEffect(launch.videoId) {
         launch.videoId?.let { ResumePromptRepository.markPlayerEntered(it) }
     }
+    // Resolve the persisted learning-mode preference before composing the player surface so
+    // Android can request portrait orientation before the first player frame is displayed.
+    PlayerSettingsRepository.ensureLoaded()
+    val playerSettings by remember { PlayerSettingsRepository.uiState }.collectAsStateWithLifecycle()
+    LockPlayerToPortrait(playerSettings.englishLearningEnabled)
     PlayerScreen(
         profileId = launch.profileId,
         title = launch.title,
