@@ -63,6 +63,38 @@ class PlayerLearningSubtitlesTest {
         assertEquals(-1, findLearningSubtitleIndex(emptyList(), emptyList(), 0L))
     }
 
+
+    @Test
+    fun capturesEmbeddedCueGroupsAsExplicitlyPartialPlaybackSamples() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLiveCapture()
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("Hello there"), 1_000L)
+        assertEquals(LearningSubtitleStatus.PARTIAL, PlayerLearningSubtitleState.status)
+        assertEquals("Hello there", PlayerLearningSubtitleState.cues.single().text)
+        assertEquals(1_000L, PlayerLearningSubtitleState.cues.single().startTimeMs)
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(emptyList(), 2_400L)
+        assertEquals(2_400L, PlayerLearningSubtitleState.cues.single().endTimeMs)
+
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
+    fun liveCaptureKeepsEarlierCuesWhenLaterCuesArrive() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLiveCapture()
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("First"), 1_000L)
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("Second"), 2_000L)
+
+        assertEquals(listOf("First", "Second"), PlayerLearningSubtitleState.cues.map { it.text })
+        assertEquals(2_000L, PlayerLearningSubtitleState.cues.first().endTimeMs)
+        assertEquals(LearningSubtitleStatus.PARTIAL, PlayerLearningSubtitleState.status)
+
+        PlayerLearningSubtitleState.clear()
+    }
+
     private fun cue(start: Long, end: Long, text: String) =
         LearningSubtitleCue(startTimeMs = start, endTimeMs = end, text = text)
 }

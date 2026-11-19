@@ -38,7 +38,7 @@ object PlayerLearningSubtitleState {
     /** Captures only cues actually emitted during playback; seeking can leave gaps. */
     fun captureLiveCueGroup(texts: List<String>, positionMs: Long) {
         val timeMs = positionMs.coerceAtLeast(0L)
-        val visibleTexts = texts.map(String::trim).filter(String::isNotEmpty).distinct()
+        val visibleTexts = texts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val visibleSet = visibleTexts.toSet()
         activeLiveCues.toMap().forEach { (text, startMs) ->
             if (text !in visibleSet) {
