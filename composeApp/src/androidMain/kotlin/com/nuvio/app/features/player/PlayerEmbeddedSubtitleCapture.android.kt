@@ -37,6 +37,12 @@ internal object PlayerEmbeddedSubtitleCapture {
         tracks.clear()
     }
 
+    fun hasSelectedTrackCues(): Boolean {
+        val key = selectedTrackKey ?: return false
+        val entry = tracks[key] ?: return false
+        return synchronized(entry.lock) { entry.cues.isNotEmpty() }
+    }
+
     fun selectTrack(format: Format?) {
         val key = format?.let(::trackKey)
         selectedTrackKey = key

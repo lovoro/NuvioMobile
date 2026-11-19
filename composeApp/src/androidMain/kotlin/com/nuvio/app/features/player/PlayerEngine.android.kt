@@ -458,6 +458,7 @@ private fun ExoPlayerSurface(
             captureLearningCues = { cues, presentationTimeUs ->
                 if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
                     learningInternalSubtitleSelected.get() &&
+                    !PlayerEmbeddedSubtitleCapture.hasSelectedTrackCues() &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
                     val cuePositionMs = if (presentationTimeUs == C.TIME_UNSET || presentationTimeUs < 0L) {
