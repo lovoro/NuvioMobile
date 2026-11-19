@@ -18,6 +18,12 @@ jobs:
     name: Build Android Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      # Nuvio's published client configuration. The publishable key is intended
+      # for mobile clients; never put service-role or secret keys here.
+      NUVIO_SUPABASE_URL: https://api.nuvio.tv
+      NUVIO_SUPABASE_ANON_KEY: sb_publishable_1Clq8rlTVACkdcZuqr6_AD__xUUC_EN
+      NUVIO_SUPABASE_FALLBACK_URL: ""
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -33,6 +39,13 @@ jobs:
 
       - name: Prepare local build properties
         run: touch local.properties
+
+      - name: Verify Nuvio account configuration
+        run: |
+          test -n "$NUVIO_SUPABASE_URL"
+          test -n "$NUVIO_SUPABASE_ANON_KEY"
+          echo "Nuvio backend URL is configured."
+          echo "Nuvio publishable key is configured."
 
       - name: Build full debug APK
         run: ./gradlew :androidApp:assembleFullDebug --stacktrace
