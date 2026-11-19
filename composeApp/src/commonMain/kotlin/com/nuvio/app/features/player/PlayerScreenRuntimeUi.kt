@@ -163,7 +163,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     val fold = LocalFold.current?.takeIf { !isInPip }
     val videoModifier = when {
         fold != null -> Modifier.fillMaxWidth().height(fold.top)
-        learningMode -> Modifier.fillMaxWidth().height(containerHeight * 0.46f)
+        learningMode -> Modifier.fillMaxWidth().height(containerHeight * 0.34f)
         else -> Modifier.fillMaxSize()
     }
     val panelModifier = if (fold != null) Modifier.fillMaxSize().padding(top = fold.bottom) else Modifier.fillMaxSize()
@@ -321,7 +321,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(containerHeight * 0.54f),
+                    .height(containerHeight * 0.66f),
             )
         }
 
@@ -364,7 +364,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 Text(
-                    text = if (learningMode) "语言学习 · 开" else "语言学习",
+                    text = if (learningMode) "Language Learning · ON" else "Language Learning · OFF",
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
                 )
