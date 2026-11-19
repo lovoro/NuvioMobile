@@ -34,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import com.nuvio.app.features.streams.redactedForLogs
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -640,6 +641,8 @@ private fun ExoPlayerSurface(
     val pendingSubtitleTrackIndex = remember { mutableListOf<Int>() }
     val pendingAudioTrackSelection = remember { mutableListOf<TrackSelectionSnapshot>() }
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
+    var learningSubtitleLoadJob by remember { mutableStateOf<Job?>(null) }
+    var learningSubtitleSelectionUrl by remember { mutableStateOf<String?>(null) }
     val isInPip = rememberIsInPictureInPicture()
     // Player size outside PiP, so PiP subtitles keep the full-screen size relative to the video.
     var playerSizeOutsidePip by remember { mutableStateOf(IntSize.Zero) }
@@ -917,6 +920,9 @@ private fun ExoPlayerSurface(
             exoPlayer.removeListener(listener)
             playerViewRef?.keepScreenOn = false
             subtitleSelectionJob?.cancel()
+            learningSubtitleLoadJob?.cancel()
+            learningSubtitleSelectionUrl = null
+            PlayerLearningSubtitleState.clear()
             sidecarController.stopSidecarAddonSubtitle(clearView = true)
         }
     }
@@ -1079,6 +1085,9 @@ private fun ExoPlayerSurface(
 
                 override fun selectSubtitleTrack(index: Int) {
                     Log.d(TAG, "selectSubtitleTrack: index=$index")
+                    learningSubtitleLoadJob?.cancel()
+                    learningSubtitleSelectionUrl = null
+                    PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     if (index < 0) {
                         Log.d(TAG, "selectSubtitleTrack: disabling text tracks")
@@ -1100,12 +1109,16 @@ private fun ExoPlayerSurface(
                 override fun setSubtitleUri(url: String) {
                     Log.d(TAG, "setSubtitleUri: url=${url.redactedForLogs()}")
                     subtitleSelectionJob?.cancel()
+                    learningSubtitleLoadJob?.cancel()
+                    learningSubtitleSelectionUrl = url
+                    PlayerLearningSubtitleState.clear()
+                    sidecarController.stopSidecarAddonSubtitle(clearView = true)
+                    val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
                     if (sidecarController.canAttachAddonSubtitleViaSidecar(url, useLibass)) {
                         Log.d(TAG, "setSubtitleUri: using buffer-preserving sidecar for url=${url.redactedForLogs()}")
-                        val headers = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
                         val attached = sidecarController.startSidecarAddonSubtitle(
                             url = url,
-                            headers = headers,
+                            headers = learningSubtitleHeaders,
                             useLibass = useLibass,
                         )
                         if (attached) {
@@ -1115,6 +1128,27 @@ private fun ExoPlayerSurface(
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                                 .build()
                             return
+                        }
+                    }
+                    learningSubtitleLoadJob = coroutineScope.launch {
+                        runCatching {
+                            val rawText = withContext(Dispatchers.IO) {
+                                httpGetTextWithHeaders(url = url, headers = learningSubtitleHeaders)
+                            }
+                            val parsed = withContext(Dispatchers.Default) {
+                                PlayerSubtitleCueParser.parse(rawText, url).map { cue ->
+                                    LearningSubtitleCue(
+                                        startTimeMs = cue.startTimeMs,
+                                        endTimeMs = cue.endTimeMs,
+                                        text = cue.text,
+                                    )
+                                }
+                            }
+                            if (learningSubtitleSelectionUrl == url) {
+                                PlayerLearningSubtitleState.update(parsed)
+                            }
+                        }.onFailure { error ->
+                            Log.w(TAG, "Learning subtitle parse failed: ${error.message}")
                         }
                     }
                     subtitleSelectionJob = coroutineScope.launch {
@@ -1160,6 +1194,9 @@ private fun ExoPlayerSurface(
                 override fun clearExternalSubtitle() {
                     Log.d(TAG, "clearExternalSubtitle called")
                     subtitleSelectionJob?.cancel()
+                    learningSubtitleLoadJob?.cancel()
+                    learningSubtitleSelectionUrl = null
+                    PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     selectedExternalSubtitleMimeType = null
                     attachedAddonSubtitleConfig = null
@@ -1183,6 +1220,9 @@ private fun ExoPlayerSurface(
                 override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
                     Log.d(TAG, "clearExternalSubtitleAndSelect: trackIndex=$trackIndex")
                     subtitleSelectionJob?.cancel()
+                    learningSubtitleLoadJob?.cancel()
+                    learningSubtitleSelectionUrl = null
+                    PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     selectedExternalSubtitleMimeType = null
                     attachedAddonSubtitleConfig = null
