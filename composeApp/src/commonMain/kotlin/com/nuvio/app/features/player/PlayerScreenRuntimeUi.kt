@@ -607,7 +607,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
 }
 
 @Composable
-private fun BoxScope.RenderPlaybackOverlays,
+private fun BoxScope.RenderPlaybackOverlays(
     runtime: PlayerScreenRuntime,
     displayedPositionMs: Long,
     currentGestureFeedback: GestureFeedbackState?,
