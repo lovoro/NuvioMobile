@@ -131,7 +131,7 @@ internal fun PlayerControlsShell(
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
-    centerControlsAreaHeight: Dp? = null,
+    centerControlsAreaHeight: androidx.compose.ui.unit.Dp? = null,
     modifier: Modifier = Modifier,
     foldLayout: Boolean = false,
     gestureController: PlayerGestureController? = null,

@@ -584,6 +584,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
                 }
             },
             horizontalSafePadding = horizontalSafePadding,
+            centerControlsAreaHeight = learningVideoHeight.takeIf { learningMode },
             modifier = modifier,
             foldLayout = folded,
             gestureController = gestureController,
@@ -600,14 +601,13 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
     ) {
         FoldLockedControls(
             onUnlock = { unlockPlayerControls() },
-            centerControlsAreaHeight = learningVideoHeight.takeIf { learningMode },
             modifier = modifier,
         )
     }
 }
 
 @Composable
-private fun BoxScope.RenderPlaybackOverlays(
+private fun BoxScope.RenderPlaybackOverlays,
     runtime: PlayerScreenRuntime,
     displayedPositionMs: Long,
     currentGestureFeedback: GestureFeedbackState?,
