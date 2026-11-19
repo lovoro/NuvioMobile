@@ -4,13 +4,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,11 +32,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -925,8 +925,8 @@ private fun LearningSubtitlePanel(
 
     Column(
         modifier = modifier
-            .background(Color(0xFF101216))
-            .padding(top = 8.dp),
+            .background(Color(0xFFF3F4F6))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         val emptyMessage = when (PlayerLearningSubtitleState.status) {
             LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
@@ -942,9 +942,9 @@ private fun LearningSubtitlePanel(
                 PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "English Learning · ${cues.size} lines · live capture"
                 else -> "English Learning · ${cues.size} lines"
             },
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = Color(0xFF262A30),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
         )
         if (cues.isEmpty()) {
             Text(
@@ -957,56 +957,99 @@ private fun LearningSubtitlePanel(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(
                     items = cues,
                     key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
                 ) { index, cue ->
-                    Row(
+                    val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
+                    val englishLine = subtitleLines.firstOrNull().orEmpty()
+                    val activeWordRange = if (index == activeIndex) {
+                        findLearningSubtitleWordRange(
+                            text = englishLine,
+                            startTimeMs = cue.startTimeMs,
+                            endTimeMs = cue.endTimeMs,
+                            positionMs = positionMs,
+                        )
+                    } else {
+                        null
+                    }
+                    val wordMatches = remember(englishLine) {
+                        Regex("\\S+").findAll(englishLine).toList()
+                    }
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(if (index == activeIndex) Color(0xFF26394A) else Color.Transparent)
-                            .clickable { onCueClick(cue) }
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
-                    ) {
-                        Text(
-                            text = formatLearningSubtitleTime(cue.startTimeMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF9BA8B8),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        val activeWordRange = if (index == activeIndex) {
-                            findLearningSubtitleWordRange(
-                                text = cue.text,
-                                startTimeMs = cue.startTimeMs,
-                                endTimeMs = cue.endTimeMs,
-                                positionMs = positionMs,
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0xFFFFFFFF))
+                            .border(
+                                width = if (index == activeIndex) 1.5.dp else 1.dp,
+                                color = if (index == activeIndex) Color(0xFFB8C9DC) else Color(0xFFE1E3E7),
+                                shape = RoundedCornerShape(20.dp),
                             )
-                        } else {
-                            null
+                            .clickable { onCueClick(cue) }
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = formatLearningSubtitleTime(cue.startTimeMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF386CA8),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "#${index + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF9299A3),
+                            )
                         }
-                        Text(
-                            text = buildAnnotatedString {
-                                val range = activeWordRange
-                                if (range == null) {
-                                    append(cue.text)
-                                } else {
-                                    append(cue.text.substring(0, range.first))
-                                    withStyle(
-                                        SpanStyle(
-                                            background = Color(0xFFFFD66B),
-                                            color = Color(0xFF17191D),
-                                        ),
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            wordMatches.forEach { match ->
+                                val wordIsActive = activeWordRange != null &&
+                                    match.range.first <= activeWordRange.last &&
+                                    match.range.last >= activeWordRange.first
+                                if (wordIsActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(7.dp))
+                                            .border(
+                                                width = 1.5.dp,
+                                                color = Color(0xFF3978C5),
+                                                shape = RoundedCornerShape(7.dp),
+                                            )
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
                                     ) {
-                                        append(cue.text.substring(range.first, range.last + 1))
+                                        Text(
+                                            text = match.value,
+                                            style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                                            color = Color(0xFF17191D),
+                                        )
                                     }
-                                    append(cue.text.substring(range.last + 1))
+                                } else {
+                                    Text(
+                                        text = match.value,
+                                        style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                                        color = Color(0xFF25282D),
+                                    )
                                 }
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (index == activeIndex) Color.White else Color(0xFFD8DCE3),
-                        )
+                            }
+                        }
+                        subtitleLines.drop(1).forEach { translationLine ->
+                            Text(
+                                text = translationLine,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFF50545B),
+                            )
+                        }
                     }
                 }
             }
