@@ -322,7 +322,10 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         // For P2P streams, wait until the local engine URL is available before
         // triggering the fetch so that hash computation can use the real HTTP URL.
         if (activeTorrentInfoHash != null && p2pResolvedSourceUrl == null) return@LaunchedEffect
-        val effectiveFetchKey = if (p2pResolvedSourceUrl != null) "$fetchKey|p2p" else fetchKey
+        val effectiveFetchKey = buildEffectiveAddonSubtitleFetchKey(
+            fetchKey = fetchKey,
+            isP2p = p2pResolvedSourceUrl != null,
+        ) ?: return@LaunchedEffect
         if (autoFetchedAddonSubtitlesForKey == effectiveFetchKey) return@LaunchedEffect
         // Offline: leave the key unset so the fetch can run once connectivity returns.
         if (isNetworkOffline()) return@LaunchedEffect
