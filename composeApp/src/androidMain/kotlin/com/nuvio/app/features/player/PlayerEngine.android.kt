@@ -278,6 +278,7 @@ private fun ExoPlayerSurface(
     // Read by the playback thread's audio sink; every rebuilt player picks up the current gain.
     val audioAmplificationDb = remember { AtomicInteger(AUDIO_AMPLIFICATION_MIN_DB) }
     val centerMixLevelDb = remember { AtomicInteger(0) }
+    val learningInternalSubtitleSelected = remember(playerSourceKey) { AtomicBoolean(false) }
     // The current player's FFmpeg audio renderer, for center mix changes during playback.
     val ffmpegAudioRenderer = remember { AtomicReference<FfmpegAudioRenderer?>(null) }
     val latestExternalSubtitleMimeType = rememberUpdatedState(selectedExternalSubtitleMimeType)
@@ -456,11 +457,11 @@ private fun ExoPlayerSurface(
             shouldStripSdhProvider = { currentSubtitleStyle.stripSdh },
             captureLearningCues = { cues, presentationTimeUs ->
                 if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
-                    learningSubtitleSelectionUrl == null &&
+                    learningInternalSubtitleSelected.get() &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
                     val cuePositionMs = if (presentationTimeUs == C.TIME_UNSET || presentationTimeUs < 0L) {
-                        exoPlayer.currentPosition
+                        playerViewRef?.player?.currentPosition ?: 0L
                     } else {
                         presentationTimeUs / 1_000L
                     }
@@ -1119,6 +1120,7 @@ private fun ExoPlayerSurface(
                     Log.d(TAG, "selectSubtitleTrack: index=$index")
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleSelectionUrl = null
+                    learningInternalSubtitleSelected.set(index >= 0 && PlayerSettingsRepository.uiState.value.englishLearningEnabled)
                     PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     if (index < 0) {
@@ -1146,6 +1148,7 @@ private fun ExoPlayerSurface(
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleSelectionUrl = url
+                    learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.beginLoading()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
@@ -1239,6 +1242,7 @@ private fun ExoPlayerSurface(
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleSelectionUrl = null
+                    learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     selectedExternalSubtitleMimeType = null
@@ -1265,6 +1269,7 @@ private fun ExoPlayerSurface(
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleSelectionUrl = null
+                    learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     selectedExternalSubtitleMimeType = null
