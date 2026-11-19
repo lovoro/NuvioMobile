@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -363,25 +366,32 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             playerSettingsUiState.androidPlaybackEngine != AndroidPlaybackEngine.Libmpv &&
             !isInPip
         ) {
-            Row(
+            AnimatedVisibility(
+                visible = (controlsVisible || fold != null || showParentalGuide) && !playerControlsLocked,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 14.dp, end = 14.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xDD17191D))
-                    .border(1.dp, Color(0x557F8997), RoundedCornerShape(20.dp))
-                    .clickable {
-                        PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode)
-                    }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    .padding(top = 14.dp, end = 14.dp),
+                enter = fadeIn(),
+                exit = fadeOut(),
             ) {
-                Text(
-                    text = if (learningMode) "Language Learning · ON" else "Language Learning · OFF",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xDD17191D))
+                        .border(1.dp, Color(0x557F8997), CircleShape)
+                        .clickable {
+                            PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Translate,
+                        contentDescription = if (learningMode) "Disable Language Learning" else "Enable Language Learning",
+                        tint = if (learningMode) MaterialTheme.colorScheme.primary else Color.White,
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
             }
         }
 
