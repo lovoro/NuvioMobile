@@ -53,10 +53,37 @@ object PlayerLearningSubtitleState {
     }
 }
 
+/**
+ * Builds a prefix maximum of cue end times. Subtitle cues are ordered by start time, but their
+ * end times are not necessarily ordered: overlapping cues can outlive cues that start later.
+ * The prefix maximum lets the active-cue lookup stop as soon as no earlier cue can still be active.
+ */
+internal fun buildLearningSubtitlePrefixMaxEndMs(
+    cues: List<LearningSubtitleCue>,
+): List<Long> {
+    if (cues.isEmpty()) return emptyList()
+    val prefixMaxEndMs = ArrayList<Long>(cues.size)
+    var maxEndMs = Long.MIN_VALUE
+    cues.forEach { cue ->
+        maxEndMs = maxOf(maxEndMs, cue.endTimeMs)
+        prefixMaxEndMs.add(maxEndMs)
+    }
+    return prefixMaxEndMs
+}
+
+/**
+ * Returns the most recently started cue active at [positionMs].
+ *
+ * [cues] must be sorted by startTimeMs and [prefixMaxEndMs] must be built for that same list.
+ * Lookup is O(log n + k), where k is the number of overlapping candidates inspected.
+ */
 internal fun findLearningSubtitleIndex(
     cues: List<LearningSubtitleCue>,
+    prefixMaxEndMs: List<Long>,
     positionMs: Long,
 ): Int {
+    if (cues.isEmpty() || prefixMaxEndMs.size != cues.size) return -1
+
     var low = 0
     var high = cues.lastIndex
     var candidate = -1
@@ -70,11 +97,21 @@ internal fun findLearningSubtitleIndex(
         }
     }
     if (candidate < 0) return -1
+
     for (index in candidate downTo 0) {
-        if (cues[index].startTimeMs <= positionMs && cues[index].endTimeMs > positionMs) {
-            return index
-        }
-        if (index < candidate && cues[index].endTimeMs <= positionMs) break
+        if (prefixMaxEndMs[index] <= positionMs) break
+        val cue = cues[index]
+        if (cue.endTimeMs > positionMs) return index
     }
     return -1
 }
+
+/** Convenience overload for callers that do not repeatedly query the same cue list. */
+internal fun findLearningSubtitleIndex(
+    cues: List<LearningSubtitleCue>,
+    positionMs: Long,
+): Int = findLearningSubtitleIndex(
+    cues = cues,
+    prefixMaxEndMs = buildLearningSubtitlePrefixMaxEndMs(cues),
+    positionMs = positionMs,
+)

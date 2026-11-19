@@ -907,8 +907,11 @@ private fun LearningSubtitlePanel(
     onCueClick: (LearningSubtitleCue) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val activeIndex = remember(cues, positionMs) {
-        findLearningSubtitleIndex(cues, positionMs)
+    val prefixMaxEndMs = remember(cues) {
+        buildLearningSubtitlePrefixMaxEndMs(cues)
+    }
+    val activeIndex = remember(cues, prefixMaxEndMs, positionMs) {
+        findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
     }
     val listState = rememberLazyListState()
     LaunchedEffect(activeIndex, cues.size) {
