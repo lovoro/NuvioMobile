@@ -21,17 +21,17 @@ enum class LearningSubtitleStatus {
 object PlayerLearningSubtitleState {
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
-    var status by mutableStateOf(LearningSubtitleStatus.NONE)
-        private set
+    private var mutableStatus by mutableStateOf(LearningSubtitleStatus.NONE)
+    val status: LearningSubtitleStatus get() = mutableStatus
 
     fun setStatus(newStatus: LearningSubtitleStatus) {
-        status = newStatus
+        mutableStatus = newStatus
         if (newStatus != LearningSubtitleStatus.READY) cues = emptyList()
     }
 
     fun beginLoading() {
         cues = emptyList()
-        status = LearningSubtitleStatus.LOADING
+        mutableStatus = LearningSubtitleStatus.LOADING
     }
 
     fun markUnsupported() = setStatus(LearningSubtitleStatus.UNSUPPORTED)
@@ -44,12 +44,12 @@ object PlayerLearningSubtitleState {
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
             .sortedBy { it.startTimeMs }
             .toList()
-        status = if (cues.isEmpty()) LearningSubtitleStatus.UNSUPPORTED else LearningSubtitleStatus.READY
+        mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.UNSUPPORTED else LearningSubtitleStatus.READY
     }
 
     fun clear() {
         cues = emptyList()
-        status = LearningSubtitleStatus.NONE
+        mutableStatus = LearningSubtitleStatus.NONE
     }
 }
 
