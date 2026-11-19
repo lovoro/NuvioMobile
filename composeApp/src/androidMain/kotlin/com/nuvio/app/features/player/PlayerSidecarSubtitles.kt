@@ -39,6 +39,7 @@ internal class SidecarSubtitleController(
     private val getSubtitleDelayMs: () -> Int = { 0 },
     private val getAudioDelayUs: () -> Long = { 0L },
     private val presentCues: (List<Cue>) -> List<Cue> = { it },
+    private val onLearningCues: (List<LearningSubtitleCue>) -> Unit = {},
 ) {
     private var sidecarSubtitleJob: Job? = null
     private var sidecarGenerationCounter = 0L
@@ -94,6 +95,7 @@ internal class SidecarSubtitleController(
         activeSidecarGeneration = 0L
         AutoSyncSyncedSubtitle.clear() // AutoSync hook
         sidecarTimedCues = emptyList()
+        onLearningCues(emptyList())
         resetSidecarCursor()
         if (clearView) {
             postToSubtitleView { view ->
@@ -121,6 +123,7 @@ internal class SidecarSubtitleController(
         AutoSyncSyncedSubtitle.clear() // AutoSync hook
         activeSidecarSubtitleKey = subtitleKey
         sidecarTimedCues = emptyList()
+        onLearningCues(emptyList())
         resetSidecarCursor()
         postToSubtitleView { view ->
             view.setTag(R.id.player_view_sidecar_generation_tag, generation)
@@ -158,6 +161,7 @@ internal class SidecarSubtitleController(
                 }
 
                 sidecarTimedCues = parseResult.cues
+                onLearningCues(parseResult.cues.toLearningSubtitleCues())
                 subtitleMimeType = parseResult.effectiveMime
                 Log.d(
                     SIDECAR_TAG,
@@ -311,6 +315,7 @@ internal class SidecarSubtitleController(
 
         val committedGeneration = activeSidecarGeneration
         sidecarTimedCues = cues
+        onLearningCues(cues.toLearningSubtitleCues())
         resetSidecarCursor()
         postToSubtitleView { view ->
             view.setTag(R.id.player_view_sidecar_generation_tag, committedGeneration)
@@ -514,3 +519,25 @@ private fun normalizeSidecarCuePosition(cue: Cue): Cue {
         .setLineAnchor(Cue.TYPE_UNSET)
         .build()
 }
+
+
+private fun List<CuesWithTiming>.toLearningSubtitleCues(): List<LearningSubtitleCue> =
+    mapNotNull { entry ->
+        val text = entry.cues
+            .mapNotNull { cue -> cue.text?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .joinToString("\n")
+        val durationUs = when {
+            entry.durationUs != C.TIME_UNSET -> entry.durationUs
+            entry.endTimeUs != C.TIME_UNSET -> (entry.endTimeUs - entry.startTimeUs).coerceAtLeast(1L)
+            else -> return@mapNotNull null
+        }
+        if (text.isBlank() || entry.startTimeUs == C.TIME_UNSET || durationUs <= 0L) {
+            null
+        } else {
+            LearningSubtitleCue(
+                startTimeMs = entry.startTimeUs / 1_000L,
+                endTimeMs = (entry.startTimeUs + durationUs) / 1_000L,
+                text = text,
+            )
+        }
+    }.sortedBy { it.startTimeMs }
