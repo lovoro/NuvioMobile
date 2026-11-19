@@ -1081,28 +1081,16 @@ private fun LearningSubtitlePanel(
                                 val wordIsActive = activeWordRange != null &&
                                     match.range.first <= activeWordRange.last &&
                                     match.range.last >= activeWordRange.first
-                                if (wordIsActive) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(7.dp))
-                                            .border(
-                                                width = 1.5.dp,
-                                                color = Color(0xFF3978C5),
-                                                shape = RoundedCornerShape(7.dp),
-                                            )
-                                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                                    ) {
-                                        Text(
-                                            text = match.value,
-                                            style = MaterialTheme.typography.headlineSmall.copy(
-                                                fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
-                                                fontSize = subtitleStyle.fontSizeSp.sp,
-                                                fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
-                                            ),
-                                            color = Color(0xFF17191D),
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(7.dp))
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
+                                            shape = RoundedCornerShape(7.dp),
                                         )
-                                    }
-                                } else {
+                                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                                ) {
                                     Text(
                                         text = match.value,
                                         style = MaterialTheme.typography.headlineSmall.copy(
