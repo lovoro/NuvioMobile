@@ -5,7 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -47,6 +50,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -309,6 +313,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         if (learningMode && fold == null && !isInPip) {
             LearningSubtitlePanel(
                 cues = PlayerLearningSubtitleState.cues,
+                subtitleStyle = playerSettingsUiState.subtitleStyle,
                 positionMs = displayedPositionMs,
                 onCueClick = { cue ->
                     playerController?.seekTo(cue.startTimeMs)
@@ -339,6 +344,32 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 horizontalSafePadding = horizontalSafePadding,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+
+        if (!isIos && !playerSettingsUiState.externalPlayerEnabled &&
+            playerSettingsUiState.androidPlaybackEngine != AndroidPlaybackEngine.Libmpv &&
+            !isInPip
+        ) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 14.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xDD17191D))
+                    .border(1.dp, Color(0x557F8997), RoundedCornerShape(20.dp))
+                    .clickable {
+                        PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode)
+                    }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Text(
+                    text = if (learningMode) "语言学习 · 开" else "语言学习",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
         }
 
         RenderPlayerControls(
@@ -906,6 +937,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
 @Composable
 private fun LearningSubtitlePanel(
     cues: List<LearningSubtitleCue>,
+    subtitleStyle: SubtitleStyleState,
     positionMs: Long,
     onCueClick: (LearningSubtitleCue) -> Unit,
     modifier: Modifier = Modifier,
@@ -938,9 +970,9 @@ private fun LearningSubtitlePanel(
         }
         Text(
             text = when {
-                cues.isEmpty() -> "English Learning · Subtitles"
-                PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "English Learning · ${cues.size} lines · live capture"
-                else -> "English Learning · ${cues.size} lines"
+                cues.isEmpty() -> "Language Learning · Subtitles"
+                PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "Language Learning · ${cues.size} lines · live capture"
+                else -> "Language Learning · ${cues.size} lines"
             },
             style = MaterialTheme.typography.titleSmall,
             color = Color(0xFF262A30),
@@ -1030,14 +1062,22 @@ private fun LearningSubtitlePanel(
                                     ) {
                                         Text(
                                             text = match.value,
-                                            style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                                            style = MaterialTheme.typography.headlineSmall.copy(
+                                                fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
+                                                fontSize = subtitleStyle.fontSizeSp.sp,
+                                                fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
+                                            ),
                                             color = Color(0xFF17191D),
                                         )
                                     }
                                 } else {
                                     Text(
                                         text = match.value,
-                                        style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                                        style = MaterialTheme.typography.headlineSmall.copy(
+                                            fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
+                                            fontSize = subtitleStyle.fontSizeSp.sp,
+                                            fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
+                                        ),
                                         color = Color(0xFF25282D),
                                     )
                                 }
@@ -1046,7 +1086,11 @@ private fun LearningSubtitlePanel(
                         subtitleLines.drop(1).forEach { translationLine ->
                             Text(
                                 text = translationLine,
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
+                                    fontSize = subtitleStyle.fontSizeSp.sp,
+                                    fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
+                                ),
                                 color = Color(0xFF50545B),
                             )
                         }

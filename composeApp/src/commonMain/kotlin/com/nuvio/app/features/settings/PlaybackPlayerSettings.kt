@@ -45,8 +45,8 @@ internal fun PlaybackPlayerSettings(
             SettingsGroup(isTablet = isTablet) {
                 if (!isIos) {
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_english_learning),
-                        description = stringResource(Res.string.settings_playback_english_learning_description),
+                        title = stringResource(Res.string.settings_playback_language_learning),
+                        description = stringResource(Res.string.settings_playback_language_learning_description),
                         checked = settings.englishLearningEnabled,
                         enabled = !settings.externalPlayerEnabled && settings.androidPlaybackEngine != AndroidPlaybackEngine.Libmpv,
                         isTablet = isTablet,
