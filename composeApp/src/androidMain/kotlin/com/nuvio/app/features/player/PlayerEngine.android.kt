@@ -458,8 +458,17 @@ private fun ExoPlayerSurface(
                 val format = playerViewRef?.player?.currentTracks?.groups
                     ?.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
                     ?.getTrackFormat(0)
-                if (sidecarControllerRef?.isSidecarActive() == true) emptyList()
-                else subtitlePresenter.present(cues, format?.sampleMimeType != MimeTypes.TEXT_SSA && format?.codecs != MimeTypes.TEXT_SSA)
+                if (
+                    PlayerSettingsRepository.uiState.value.englishLearningEnabled ||
+                    sidecarControllerRef?.isSidecarActive() == true
+                ) {
+                    emptyList()
+                } else {
+                    subtitlePresenter.present(
+                        cues,
+                        format?.sampleMimeType != MimeTypes.TEXT_SSA && format?.codecs != MimeTypes.TEXT_SSA,
+                    )
+                }
             },
             videoBoundsFractionProvider = {
                 playerViewRef?.videoBoundsFraction(latestVideoAspectRatio.value)
@@ -656,7 +665,13 @@ private fun ExoPlayerSurface(
             getPlayer = { exoPlayer },
             getSubtitleDelayMs = { latestSubtitleDelayMs.value },
             getAudioDelayUs = audioDelayUs::get,
-            presentCues = { cues -> subtitlePresenter.present(cues, sidecarControllerRef?.subtitleMimeType != MimeTypes.TEXT_SSA) },
+            presentCues = { cues ->
+                if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
+                    emptyList()
+                } else {
+                    subtitlePresenter.present(cues, sidecarControllerRef?.subtitleMimeType != MimeTypes.TEXT_SSA)
+                }
+            },
             onLearningCues = PlayerLearningSubtitleState::update,
         ).also { sidecarControllerRef = it }
     }
