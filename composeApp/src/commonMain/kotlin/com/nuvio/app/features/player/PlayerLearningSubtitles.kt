@@ -72,6 +72,17 @@ object PlayerLearningSubtitleState {
 
     fun markError() = setStatus(LearningSubtitleStatus.ERROR)
 
+    /** Updates the visible list with cues discovered by embedded-track extraction. */
+    fun updatePartial(newCues: List<LearningSubtitleCue>) {
+        cues = newCues
+            .asSequence()
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+            .toList()
+        mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.LOADING else LearningSubtitleStatus.PARTIAL
+    }
+
     fun update(newCues: List<LearningSubtitleCue>) {
         completedLiveCues.clear()
         activeLiveCues.clear()

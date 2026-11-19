@@ -580,7 +580,8 @@ private fun ExoPlayerSurface(
             val mediaSourceFactory = DefaultMediaSourceFactory(
                 dataSourceFactory,
                 extractorsFactory,
-            )
+            ).setSubtitleParserFactory(PlayerEmbeddedSubtitleCapture.createParserFactory())
+                .experimentalParseSubtitlesDuringExtraction(true)
 
             playerBuilder
                 .setRenderersFactory(renderersFactory)
@@ -904,6 +905,16 @@ private fun ExoPlayerSurface(
                         exoPlayer.selectTrackByIndex(C.TRACK_TYPE_TEXT, idx)
                     }
                 }
+                if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                    learningInternalSubtitleSelected.get()
+                ) {
+                    val selectedEmbeddedFormat = tracks.groups
+                        .asSequence()
+                        .filter { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
+                        .flatMap { group -> (0 until group.length).asSequence().filter(group::isTrackSelected).map(group::getTrackFormat) }
+                        .firstOrNull()
+                    PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat)
+                }
                 // Trigger player rebuild with video effects when ASS track becomes selected
                 // and render mode is VIDEO_EFFECT.
                 if (!videoEffectsNeeded && useLibass && libassRenderMode != "OVERLAY") {
@@ -1133,6 +1144,13 @@ private fun ExoPlayerSurface(
                     }
                     if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
                         PlayerLearningSubtitleState.beginLiveCapture()
+                        PlayerEmbeddedSubtitleCapture.selectTrack(
+                            exoPlayer.currentTracks.groups
+                                .asSequence()
+                                .filter { it.type == C.TRACK_TYPE_TEXT }
+                                .flatMap { group -> (0 until group.length).asSequence().map(group::getTrackFormat) }
+                                .getOrNull(index)
+                        )
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
