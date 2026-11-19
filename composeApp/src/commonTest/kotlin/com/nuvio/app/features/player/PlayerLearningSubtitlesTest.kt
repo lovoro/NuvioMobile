@@ -84,6 +84,13 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun learningVideoAspectRatioSupportsUltraWideAndPortraitVideo() {
+        assertEquals(2.76f, resolveLearningVideoAspectRatio(2760, 1000), 0.001f)
+        assertEquals(9f / 16f, resolveLearningVideoAspectRatio(900, 1600), 0.001f)
+        assertEquals(16f / 9f, resolveLearningVideoAspectRatio(0, 0), 0.001f)
+    }
+
+    @Test
     fun handlesEmptyCueLists() {
         assertEquals(emptyList(), buildLearningSubtitlePrefixMaxEndMs(emptyList()))
         assertEquals(-1, findLearningSubtitleIndex(emptyList(), emptyList(), 0L))

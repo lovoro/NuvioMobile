@@ -170,11 +170,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     val fold = LocalFold.current?.takeIf { !isInPip }
     val density = LocalDensity.current
     val learningVideoAspectRatio = remember(playbackSnapshot.videoWidth, playbackSnapshot.videoHeight) {
-        if (playbackSnapshot.videoWidth > 0 && playbackSnapshot.videoHeight > 0) {
-            (playbackSnapshot.videoWidth.toFloat() / playbackSnapshot.videoHeight.toFloat()).coerceIn(1f, 2.4f)
-        } else {
-            16f / 9f
-        }
+        resolveLearningVideoAspectRatio(
+            width = playbackSnapshot.videoWidth,
+            height = playbackSnapshot.videoHeight,
+        )
     }
     val learningVideoHeight = with(density) {
         if (layoutSize.width > 0) (layoutSize.width.toDp() / learningVideoAspectRatio).coerceAtMost(containerHeight)

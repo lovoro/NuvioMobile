@@ -228,3 +228,15 @@ internal fun findLearningSubtitleScrollIndex(
     val distanceToNext = (next.startTimeMs - positionMs).coerceAtLeast(0L)
     return if (distanceToNext <= distanceFromPrevious) nextIndex else nextIndex - 1
 }
+
+
+/**
+ * Keeps the actual video aspect ratio for Language Learning layout.
+ * Some sources (for example ultra-wide cinema and portrait clips) are wider/narrower
+ * than the old 1.0..2.4 range. Clamping them to 2.4 made the video viewport disagree
+ * with the PlayerView's own measured video bounds.
+ */
+internal fun resolveLearningVideoAspectRatio(width: Int, height: Int): Float {
+    if (width <= 0 || height <= 0) return 16f / 9f
+    return (width.toFloat() / height.toFloat()).coerceIn(0.5f, 3.0f)
+}
