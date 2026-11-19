@@ -101,7 +101,7 @@ class PlayerLearningSubtitlesTest {
         val text = "I really like it"
         assertEquals(0..0, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
         assertEquals(2..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
-        assertEquals(15..16, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+        assertEquals(14..15, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
     }
 
     @Test
