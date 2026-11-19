@@ -131,6 +131,7 @@ internal fun PlayerControlsShell(
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
+    centerControlsAreaHeight: Dp? = null,
     modifier: Modifier = Modifier,
     foldLayout: Boolean = false,
     gestureController: PlayerGestureController? = null,
@@ -282,25 +283,39 @@ internal fun PlayerControlsShell(
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (useLegacyLayout) LocalLayoutDirection.current else LayoutDirection.Ltr,
                 ) {
-                    CenterControls(
-                        snapshot = playbackSnapshot,
-                        metrics = metrics,
-                        onSeekBack = {
-                            if (!useLegacyLayout) onInteraction()
-                            onSeekBack()
-                        },
-                        onSeekForward = {
-                            if (!useLegacyLayout) onInteraction()
-                            onSeekForward()
-                        },
-                        onTogglePlayback = {
-                            if (!useLegacyLayout) onInteraction()
-                            onTogglePlayback()
-                        },
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(bottom = centerBottomPadding),
-                    )
+                    val centerControls = @Composable {
+                        CenterControls(
+                            snapshot = playbackSnapshot,
+                            metrics = metrics,
+                            onSeekBack = {
+                                if (!useLegacyLayout) onInteraction()
+                                onSeekBack()
+                            },
+                            onSeekForward = {
+                                if (!useLegacyLayout) onInteraction()
+                                onSeekForward()
+                            },
+                            onTogglePlayback = {
+                                if (!useLegacyLayout) onInteraction()
+                                onTogglePlayback()
+                            },
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(bottom = if (centerControlsAreaHeight == null) centerBottomPadding else 0.dp),
+                        )
+                    }
+                    if (centerControlsAreaHeight != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .height(centerControlsAreaHeight),
+                        ) {
+                            centerControls()
+                        }
+                    } else {
+                        centerControls()
+                    }
                 }
             }
 

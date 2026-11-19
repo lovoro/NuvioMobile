@@ -375,6 +375,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             displayedPositionMs = displayedPositionMs,
             isEpisode = isEpisode,
             folded = fold != null,
+            learningMode = learningMode && fold == null && !isInPip,
+            learningVideoHeight = containerHeight * 0.34f,
             modifier = panelModifier,
         )
         Box(modifier = videoModifier) {
@@ -430,6 +432,8 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
     displayedPositionMs: Long,
     isEpisode: Boolean,
     folded: Boolean,
+    learningMode: Boolean,
+    learningVideoHeight: Dp,
     modifier: Modifier,
 ) {
     val isInPip = rememberIsInPictureInPicture()
@@ -596,6 +600,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
     ) {
         FoldLockedControls(
             onUnlock = { unlockPlayerControls() },
+            centerControlsAreaHeight = learningVideoHeight.takeIf { learningMode },
             modifier = modifier,
         )
     }
