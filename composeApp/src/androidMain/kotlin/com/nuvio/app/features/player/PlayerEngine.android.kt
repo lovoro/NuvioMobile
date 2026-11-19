@@ -1144,14 +1144,15 @@ private fun ExoPlayerSurface(
                         return
                     }
                     if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
-                        PlayerLearningSubtitleState.beginLiveCapture()
-                        PlayerEmbeddedSubtitleCapture.selectTrack(
-                            exoPlayer.currentTracks.groups
-                                .asSequence()
-                                .filter { it.type == C.TRACK_TYPE_TEXT }
-                                .flatMap { group -> (0 until group.length).asSequence().map(group::getTrackFormat) }
-                                .elementAtOrNull(index)
-                        )
+                        val selectedFormat = exoPlayer.currentTracks.groups
+                            .asSequence()
+                            .filter { it.type == C.TRACK_TYPE_TEXT }
+                            .flatMap { group -> (0 until group.length).asSequence().map(group::getTrackFormat) }
+                            .elementAtOrNull(index)
+                        val subtitleName = selectedFormat?.label?.toString()?.takeIf { it.isNotBlank() }
+                            ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
+                        PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
+                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat)
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
