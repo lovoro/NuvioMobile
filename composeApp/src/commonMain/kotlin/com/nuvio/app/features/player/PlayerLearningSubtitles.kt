@@ -198,3 +198,33 @@ internal fun findLearningSubtitleWordRange(
     }
     return words.last().range
 }
+
+
+/**
+ * Returns a useful list target for [positionMs], even when no subtitle cue is active.
+ * During gaps, the closest neighboring cue is selected (preferring the upcoming cue on ties).
+ */
+internal fun findLearningSubtitleScrollIndex(
+    cues: List<LearningSubtitleCue>,
+    positionMs: Long,
+): Int {
+    if (cues.isEmpty()) return -1
+    val activeIndex = findLearningSubtitleIndex(cues, positionMs)
+    if (activeIndex >= 0) return activeIndex
+
+    var low = 0
+    var high = cues.size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (cues[middle].startTimeMs <= positionMs) low = middle + 1 else high = middle
+    }
+    val nextIndex = low
+    if (nextIndex == 0) return 0
+    if (nextIndex >= cues.size) return cues.lastIndex
+
+    val previous = cues[nextIndex - 1]
+    val next = cues[nextIndex]
+    val distanceFromPrevious = (positionMs - previous.endTimeMs).coerceAtLeast(0L)
+    val distanceToNext = (next.startTimeMs - positionMs).coerceAtLeast(0L)
+    return if (distanceToNext <= distanceFromPrevious) nextIndex else nextIndex - 1
+}

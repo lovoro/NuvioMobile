@@ -58,6 +58,32 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun scrollTargetUsesNearestCueWhenPlaybackIsBetweenSubtitles() {
+        val cues = listOf(
+            cue(1_000L, 2_000L, "first"),
+            cue(10_000L, 11_000L, "second"),
+            cue(20_000L, 21_000L, "third"),
+        )
+
+        assertEquals(0, findLearningSubtitleScrollIndex(cues, 500L))
+        assertEquals(1, findLearningSubtitleScrollIndex(cues, 8_000L))
+        assertEquals(1, findLearningSubtitleScrollIndex(cues, 15_000L))
+        assertEquals(2, findLearningSubtitleScrollIndex(cues, 18_000L))
+        assertEquals(2, findLearningSubtitleScrollIndex(cues, 30_000L))
+    }
+
+    @Test
+    fun scrollTargetPrefersActiveCueOverNeighboringCues() {
+        val cues = listOf(
+            cue(1_000L, 10_000L, "long"),
+            cue(5_000L, 6_000L, "overlap"),
+            cue(12_000L, 13_000L, "next"),
+        )
+
+        assertEquals(1, findLearningSubtitleScrollIndex(cues, 5_500L))
+    }
+
+    @Test
     fun handlesEmptyCueLists() {
         assertEquals(emptyList(), buildLearningSubtitlePrefixMaxEndMs(emptyList()))
         assertEquals(-1, findLearningSubtitleIndex(emptyList(), emptyList(), 0L))

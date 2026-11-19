@@ -978,10 +978,13 @@ private fun LearningSubtitlePanel(
     val activeIndex = remember(cues, prefixMaxEndMs, positionMs) {
         findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
     }
+    val scrollTargetIndex = remember(cues, positionMs, activeIndex) {
+        findLearningSubtitleScrollIndex(cues, positionMs)
+    }
     val listState = rememberLazyListState()
-    LaunchedEffect(activeIndex, cues.size) {
-        if (activeIndex >= 0) {
-            listState.animateScrollToItem(activeIndex)
+    LaunchedEffect(scrollTargetIndex, cues.size) {
+        if (scrollTargetIndex >= 0) {
+            listState.animateScrollToItem(scrollTargetIndex)
         }
     }
 
