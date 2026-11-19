@@ -185,6 +185,7 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
         }
         runtime.resetIdentityStateIfNeeded()
 
+        LockPlayerToPortrait(playerSettingsUiState.englishLearningEnabled)
         EnterImmersivePlayerMode(keepScreenAwake = keepScreenAwake)
         ManagePlayerPictureInPicture(
             isPlaying = isPlaying,
