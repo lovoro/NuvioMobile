@@ -49,8 +49,11 @@ internal fun PlayerDestination(
     // Android can request portrait orientation before the first player frame is displayed.
     PlayerSettingsRepository.ensureLoaded()
     val playerSettings by remember { PlayerSettingsRepository.uiState }.collectAsStateWithLifecycle()
-    LockPlayerToPortrait(playerSettings.englishLearningEnabled)
-    PlayerScreen(
+    val playerOrientationReady = LockPlayerToPortrait(playerSettings.englishLearningEnabled)
+    if (!playerOrientationReady) {
+        Box(modifier = Modifier.fillMaxSize())
+    } else {
+        PlayerScreen(
         profileId = launch.profileId,
         title = launch.title,
         sourceUrl = launch.sourceUrl,
@@ -143,5 +146,6 @@ internal fun PlayerDestination(
         },
         onOpenPartyMedia = onOpenPartyMedia,
         modifier = Modifier.fillMaxSize(),
-    )
+        )
+    }
 }
