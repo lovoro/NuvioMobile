@@ -21,6 +21,9 @@ private const val unlockPlayerOrientationNotification = "NuvioPlayerUnlockOrient
 private var playerLandscapeLockCount = 0
 
 @Composable
+actual fun LockPlayerToPortrait(enabled: Boolean) = Unit
+
+@Composable
 actual fun LockPlayerToLandscape() {
     DisposableEffect(Unit) {
         playerLandscapeLockCount += 1
