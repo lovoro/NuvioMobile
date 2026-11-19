@@ -196,6 +196,8 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
             partyPanelWidth = partyPanelWidth,
             partyPanelInset = partyPanelInset,
             dockPartyPanel = dockPartyPanel,
+            learningMode = playerSettingsUiState.englishLearningEnabled,
+            containerHeight = maxHeight,
         )
     }
 }
