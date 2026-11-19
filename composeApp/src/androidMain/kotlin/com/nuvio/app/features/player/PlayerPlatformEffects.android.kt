@@ -33,21 +33,25 @@ import kotlin.math.roundToInt
 actual fun LockPlayerToPortrait(enabled: Boolean) {
     val activity = LocalContext.current.findActivity() ?: return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInMultiWindowMode) return
-    val wasLearningEnabled = remember(activity) { mutableStateOf(enabled) }
+    // Remember whether learning mode was enabled at any point during this player session.
+    // Turning the mode off must not make the app return to landscape when the player closes.
+    val learningModeWasActive = remember(activity) { mutableStateOf(enabled) }
 
-    // Keep the player in portrait when the user turns learning mode off. Restore the
-    // orientation that existed before entering the player only when the player itself closes.
     DisposableEffect(activity) {
         val previousOrientation = activity.requestedOrientation
         onDispose {
-            activity.requestedOrientation = previousOrientation
+            activity.requestedOrientation = if (learningModeWasActive.value) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            } else {
+                previousOrientation
+            }
         }
     }
     SideEffect {
-        if (enabled || wasLearningEnabled.value) {
+        if (enabled || learningModeWasActive.value) {
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         }
-        wasLearningEnabled.value = enabled
+        learningModeWasActive.value = learningModeWasActive.value || enabled
     }
 }
 
