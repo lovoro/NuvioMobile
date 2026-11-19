@@ -10,9 +10,33 @@ data class LearningSubtitleCue(
     val text: String,
 )
 
+enum class LearningSubtitleStatus {
+    NONE,
+    LOADING,
+    READY,
+    UNSUPPORTED,
+    ERROR,
+}
+
 object PlayerLearningSubtitleState {
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
+    var status by mutableStateOf(LearningSubtitleStatus.NONE)
+        private set
+
+    fun setStatus(newStatus: LearningSubtitleStatus) {
+        status = newStatus
+        if (newStatus != LearningSubtitleStatus.READY) cues = emptyList()
+    }
+
+    fun beginLoading() {
+        cues = emptyList()
+        status = LearningSubtitleStatus.LOADING
+    }
+
+    fun markUnsupported() = setStatus(LearningSubtitleStatus.UNSUPPORTED)
+
+    fun markError() = setStatus(LearningSubtitleStatus.ERROR)
 
     fun update(newCues: List<LearningSubtitleCue>) {
         cues = newCues
@@ -20,10 +44,12 @@ object PlayerLearningSubtitleState {
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
             .sortedBy { it.startTimeMs }
             .toList()
+        status = if (cues.isEmpty()) LearningSubtitleStatus.UNSUPPORTED else LearningSubtitleStatus.READY
     }
 
     fun clear() {
         cues = emptyList()
+        status = LearningSubtitleStatus.NONE
     }
 }
 

@@ -922,6 +922,13 @@ private fun LearningSubtitlePanel(
             .background(Color(0xFF101216))
             .padding(top = 8.dp),
     ) {
+        val emptyMessage = when (PlayerLearningSubtitleState.status) {
+            LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
+            LearningSubtitleStatus.LOADING -> "Loading the selected subtitle..."
+            LearningSubtitleStatus.READY -> ""
+            LearningSubtitleStatus.UNSUPPORTED -> "The selected track cannot currently be extracted as a complete subtitle list. Try an SRT or VTT external subtitle."
+            LearningSubtitleStatus.ERROR -> "The selected subtitle could not be read. Check the subtitle source and try selecting it again."
+        }
         Text(
             text = if (cues.isEmpty()) "English Learning · Subtitles" else "English Learning · ${cues.size} lines",
             style = MaterialTheme.typography.labelLarge,
@@ -930,7 +937,7 @@ private fun LearningSubtitlePanel(
         )
         if (cues.isEmpty()) {
             Text(
-                text = "Select a supported external text subtitle to load its full list. Built-in subtitle extraction is being added next.",
+                text = emptyMessage,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFFB8BEC8),
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),

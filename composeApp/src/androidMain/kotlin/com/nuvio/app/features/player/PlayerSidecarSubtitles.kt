@@ -40,6 +40,7 @@ internal class SidecarSubtitleController(
     private val getAudioDelayUs: () -> Long = { 0L },
     private val presentCues: (List<Cue>) -> List<Cue> = { it },
     private val onLearningCues: (List<LearningSubtitleCue>) -> Unit = {},
+    private val onLearningStatus: (LearningSubtitleStatus) -> Unit = {},
 ) {
     private var sidecarSubtitleJob: Job? = null
     private var sidecarGenerationCounter = 0L
@@ -96,6 +97,7 @@ internal class SidecarSubtitleController(
         AutoSyncSyncedSubtitle.clear() // AutoSync hook
         sidecarTimedCues = emptyList()
         onLearningCues(emptyList())
+        onLearningStatus(LearningSubtitleStatus.NONE)
         resetSidecarCursor()
         if (clearView) {
             postToSubtitleView { view ->
@@ -124,6 +126,7 @@ internal class SidecarSubtitleController(
         activeSidecarSubtitleKey = subtitleKey
         sidecarTimedCues = emptyList()
         onLearningCues(emptyList())
+        onLearningStatus(LearningSubtitleStatus.LOADING)
         resetSidecarCursor()
         postToSubtitleView { view ->
             view.setTag(R.id.player_view_sidecar_generation_tag, generation)
@@ -153,6 +156,7 @@ internal class SidecarSubtitleController(
                     activeSidecarSubtitleKey = null
                     activeSidecarGeneration = 0L
                     sidecarTimedCues = emptyList()
+                    onLearningStatus(LearningSubtitleStatus.UNSUPPORTED)
                     postToSubtitleView { view ->
                         view.setTag(R.id.player_view_sidecar_generation_tag, null)
                         view.setCues(presentCues(emptyList()))
@@ -183,6 +187,7 @@ internal class SidecarSubtitleController(
                 activeSidecarSubtitleKey = null
                 activeSidecarGeneration = 0L
                 sidecarTimedCues = emptyList()
+                onLearningStatus(LearningSubtitleStatus.ERROR)
                 postToSubtitleView { view ->
                     view.setTag(R.id.player_view_sidecar_generation_tag, null)
                     view.setCues(presentCues(emptyList()))

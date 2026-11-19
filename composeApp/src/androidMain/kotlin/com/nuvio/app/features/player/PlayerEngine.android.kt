@@ -673,6 +673,7 @@ private fun ExoPlayerSurface(
                 }
             },
             onLearningCues = PlayerLearningSubtitleState::update,
+            onLearningStatus = PlayerLearningSubtitleState::setStatus,
         ).also { sidecarControllerRef = it }
     }
 
@@ -1112,6 +1113,9 @@ private fun ExoPlayerSurface(
                             .build()
                         return
                     }
+                    if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
+                        PlayerLearningSubtitleState.markUnsupported()
+                    }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -1126,8 +1130,9 @@ private fun ExoPlayerSurface(
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleSelectionUrl = url
-                    PlayerLearningSubtitleState.clear()
+                    PlayerLearningSubtitleState.beginLoading()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
+                    PlayerLearningSubtitleState.beginLoading()
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
                     if (sidecarController.canAttachAddonSubtitleViaSidecar(url, useLibass)) {
                         Log.d(TAG, "setSubtitleUri: using buffer-preserving sidecar for url=${url.redactedForLogs()}")
@@ -1160,9 +1165,16 @@ private fun ExoPlayerSurface(
                                 }
                             }
                             if (learningSubtitleSelectionUrl == url) {
-                                PlayerLearningSubtitleState.update(parsed)
+                                if (parsed.isEmpty()) {
+                                    PlayerLearningSubtitleState.markUnsupported()
+                                } else {
+                                    PlayerLearningSubtitleState.update(parsed)
+                                }
                             }
                         }.onFailure { error ->
+                            if (learningSubtitleSelectionUrl == url) {
+                                PlayerLearningSubtitleState.markError()
+                            }
                             Log.w(TAG, "Learning subtitle parse failed: ${error.message}")
                         }
                     }
