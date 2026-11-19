@@ -984,6 +984,11 @@ private fun LearningSubtitlePanel(
         findLearningSubtitleScrollIndex(cues, positionMs)
     }
     val listState = rememberLazyListState()
+    val currentLineNumber = if (cues.isNotEmpty()) {
+        (scrollTargetIndex + 1).coerceIn(1, cues.size)
+    } else {
+        0
+    }
     LaunchedEffect(scrollTargetIndex, cues.size) {
         if (scrollTargetIndex >= 0) {
             listState.animateScrollToItem(scrollTargetIndex)
@@ -1010,8 +1015,9 @@ private fun LearningSubtitlePanel(
                 cues.isEmpty() && PlayerLearningSubtitleState.status == LearningSubtitleStatus.LOADING ->
                     "Language Learning · Loading: ${loadingSubtitleName ?: "subtitle"}"
                 cues.isEmpty() -> "Language Learning · Subtitles"
-                PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "Language Learning · ${cues.size} lines · live capture"
-                else -> "Language Learning · ${cues.size} lines"
+                PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL ->
+                    "Language Learning · $currentLineNumber/${cues.size} lines · live capture"
+                else -> "Language Learning · $currentLineNumber/${cues.size} lines"
             },
             style = MaterialTheme.typography.titleSmall,
             color = Color(0xFF262A30),
