@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.text.Cue
+import androidx.media3.common.util.Consumer
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
@@ -75,12 +76,12 @@ internal object PlayerEmbeddedSubtitleCapture {
                         offset: Int,
                         length: Int,
                         outputOptions: SubtitleParser.OutputOptions,
-                        output: java.util.function.Consumer<CuesWithTiming>,
+                        output: Consumer<CuesWithTiming>,
                     ) {
-                        parser.parse(data, offset, length, outputOptions) { parsed ->
+                        parser.parse(data, offset, length, outputOptions, Consumer { parsed ->
                             capture(key, parsed)
                             output.accept(parsed)
-                        }
+                        })
                     }
 
                     override fun reset() = parser.reset()

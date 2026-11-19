@@ -1150,7 +1150,7 @@ private fun ExoPlayerSurface(
                                 .asSequence()
                                 .filter { it.type == C.TRACK_TYPE_TEXT }
                                 .flatMap { group -> (0 until group.length).asSequence().map(group::getTrackFormat) }
-                                .getOrNull(index)
+                                .elementAtOrNull(index)
                         )
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
