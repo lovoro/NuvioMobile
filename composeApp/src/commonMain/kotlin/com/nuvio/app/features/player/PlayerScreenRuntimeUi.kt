@@ -1007,7 +1007,7 @@ private fun LearningSubtitlePanel(
                         null
                     }
                     val wordMatches = remember(primaryLine) {
-                        Regex("\\S+").findAll(englishLine).toList()
+                        Regex("\\S+").findAll(primaryLine).toList()
                     }
                     Column(
                         modifier = Modifier
