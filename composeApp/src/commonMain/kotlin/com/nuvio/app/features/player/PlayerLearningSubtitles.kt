@@ -14,6 +14,7 @@ enum class LearningSubtitleStatus {
     NONE,
     LOADING,
     READY,
+    PARTIAL,
     UNSUPPORTED,
     ERROR,
 }
@@ -23,6 +24,37 @@ object PlayerLearningSubtitleState {
         private set
     private var mutableStatus by mutableStateOf(LearningSubtitleStatus.NONE)
     val status: LearningSubtitleStatus get() = mutableStatus
+    private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
+    private val activeLiveCues = linkedMapOf<String, Long>()
+
+    /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
+    fun beginLiveCapture() {
+        cues = emptyList()
+        completedLiveCues.clear()
+        activeLiveCues.clear()
+        mutableStatus = LearningSubtitleStatus.LOADING
+    }
+
+    /** Captures only cues actually emitted during playback; seeking can leave gaps. */
+    fun captureLiveCueGroup(texts: List<String>, positionMs: Long) {
+        val timeMs = positionMs.coerceAtLeast(0L)
+        val visibleTexts = texts.map(String::trim).filter(String::isNotEmpty).distinct()
+        val visibleSet = visibleTexts.toSet()
+        activeLiveCues.toMap().forEach { (text, startMs) ->
+            if (text !in visibleSet) {
+                completedLiveCues += LearningSubtitleCue(startMs, timeMs.coerceAtLeast(startMs + 1L), text)
+                activeLiveCues.remove(text)
+            }
+        }
+        visibleTexts.forEach { text -> if (text !in activeLiveCues) activeLiveCues[text] = timeMs }
+        val activeSnapshot = activeLiveCues.map { (text, startMs) ->
+            LearningSubtitleCue(startMs, maxOf(timeMs + 1_500L, startMs + 1_500L), text)
+        }
+        cues = (completedLiveCues + activeSnapshot)
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+        if (cues.isNotEmpty()) mutableStatus = LearningSubtitleStatus.PARTIAL
+    }
 
     fun setStatus(newStatus: LearningSubtitleStatus) {
         mutableStatus = newStatus
@@ -31,6 +63,8 @@ object PlayerLearningSubtitleState {
 
     fun beginLoading() {
         cues = emptyList()
+        completedLiveCues.clear()
+        activeLiveCues.clear()
         mutableStatus = LearningSubtitleStatus.LOADING
     }
 
@@ -39,6 +73,8 @@ object PlayerLearningSubtitleState {
     fun markError() = setStatus(LearningSubtitleStatus.ERROR)
 
     fun update(newCues: List<LearningSubtitleCue>) {
+        completedLiveCues.clear()
+        activeLiveCues.clear()
         cues = newCues
             .asSequence()
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
@@ -49,6 +85,8 @@ object PlayerLearningSubtitleState {
 
     fun clear() {
         cues = emptyList()
+        completedLiveCues.clear()
+        activeLiveCues.clear()
         mutableStatus = LearningSubtitleStatus.NONE
     }
 }

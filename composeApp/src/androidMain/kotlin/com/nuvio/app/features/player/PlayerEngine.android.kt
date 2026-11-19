@@ -454,6 +454,16 @@ private fun ExoPlayerSurface(
                 latestExternalSubtitleMimeType.value == MimeTypes.TEXT_VTT
             },
             shouldStripSdhProvider = { currentSubtitleStyle.stripSdh },
+            captureLearningCues = { cues, presentationTimeUs ->
+                if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                    sidecarControllerRef?.isSidecarActive() != true
+                ) {
+                    PlayerLearningSubtitleState.captureLiveCueGroup(
+                        texts = cues.mapNotNull { it.text?.toString() },
+                        positionMs = presentationTimeUs / 1_000L,
+                    )
+                }
+            },
             presentCues = { cues ->
                 val format = playerViewRef?.player?.currentTracks?.groups
                     ?.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
@@ -1114,7 +1124,7 @@ private fun ExoPlayerSurface(
                         return
                     }
                     if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
-                        PlayerLearningSubtitleState.markUnsupported()
+                        PlayerLearningSubtitleState.beginLiveCapture()
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
@@ -2978,6 +2988,7 @@ private class SubtitleOffsetRenderersFactory(
     private val onFfmpegAudioRenderer: (FfmpegAudioRenderer?) -> Unit,
     private val shouldNormalizeCuePositionProvider: () -> Boolean,
     private val shouldStripSdhProvider: () -> Boolean,
+    private val captureLearningCues: (List<Cue>, Long) -> Unit,
     private val presentCues: (List<Cue>) -> List<Cue>,
     private val videoBoundsFractionProvider: () -> RectF?,
 ) : DefaultRenderersFactory(context) {
@@ -3039,6 +3050,7 @@ private class SubtitleOffsetRenderersFactory(
             delegate = output,
             shouldNormalizeCuePositionProvider = shouldNormalizeCuePositionProvider,
             shouldStripSdhProvider = shouldStripSdhProvider,
+            captureLearningCues = captureLearningCues,
             presentCues = presentCues,
             videoBoundsFractionProvider = videoBoundsFractionProvider,
         )
@@ -3087,11 +3099,13 @@ private class CueNormalizingTextOutput(
     private val delegate: TextOutput,
     private val shouldNormalizeCuePositionProvider: () -> Boolean,
     private val shouldStripSdhProvider: () -> Boolean,
+    private val captureLearningCues: (List<Cue>, Long) -> Unit,
     private val presentCues: (List<Cue>) -> List<Cue>,
     private val videoBoundsFractionProvider: () -> RectF?,
 ) : TextOutput {
     override fun onCues(cueGroup: CueGroup) {
         val processed = cueGroup.cues.mapNotNull(::processCue)
+        captureLearningCues(processed, cueGroup.presentationTimeUs)
         delegate.onCues(CueGroup(presentCues(processed), cueGroup.presentationTimeUs))
     }
 

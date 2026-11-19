@@ -929,11 +929,16 @@ private fun LearningSubtitlePanel(
             LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
             LearningSubtitleStatus.LOADING -> "Loading the selected subtitle..."
             LearningSubtitleStatus.READY -> ""
+            LearningSubtitleStatus.PARTIAL -> ""
             LearningSubtitleStatus.UNSUPPORTED -> "The selected track cannot currently be extracted as a complete subtitle list. Try an SRT or VTT external subtitle."
             LearningSubtitleStatus.ERROR -> "The selected subtitle could not be read. Check the subtitle source and try selecting it again."
         }
         Text(
-            text = if (cues.isEmpty()) "English Learning · Subtitles" else "English Learning · ${cues.size} lines",
+            text = when {
+                cues.isEmpty() -> "English Learning · Subtitles"
+                PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "English Learning · ${cues.size} lines · live capture"
+                else -> "English Learning · ${cues.size} lines"
+            },
             style = MaterialTheme.typography.labelLarge,
             color = Color.White,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
