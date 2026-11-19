@@ -130,7 +130,11 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded(): Bool
                 val fetchKey = addonSubtitleFetchKey.takeUnless {
                     activeSourceUrl.startsWith("file:") && externalSubtitles.isNotEmpty()
                 }
-                if (fetchKey != null && autoFetchedAddonSubtitlesForKey != fetchKey) return false
+                val effectiveFetchKey = buildEffectiveAddonSubtitleFetchKey(
+                    fetchKey = fetchKey,
+                    isP2p = p2pResolvedSourceUrl != null,
+                )
+                if (effectiveFetchKey != null && autoFetchedAddonSubtitlesForKey != effectiveFetchKey) return false
 
                 val subtitle = findPersistedAddonSubtitle(addonSubtitles, preference)
                 val canRestoreWhileLoading = subtitle != null && (
