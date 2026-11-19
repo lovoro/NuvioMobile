@@ -20,6 +20,7 @@ actual object PlayerSettingsStorage {
     private const val pendingExternalPlaybackKey = "pending_external_playback"
     private const val playbackBrightnessKey = "playback_brightness"
     private const val useLegacyPlayerLayoutKey = "use_legacy_player_layout"
+    private const val englishLearningEnabledKey = "english_learning_enabled"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
     private const val pauseOverlayEnabledKey = "pause_overlay_enabled"
@@ -296,6 +297,12 @@ actual object PlayerSettingsStorage {
 
     actual fun saveUseLegacyPlayerLayout(enabled: Boolean) {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(useLegacyPlayerLayoutKey))
+    }
+
+    actual fun loadEnglishLearningEnabled(): Boolean? = loadBoolean(englishLearningEnabledKey)
+
+    actual fun saveEnglishLearningEnabled(enabled: Boolean) {
+        saveBoolean(englishLearningEnabledKey, enabled)
     }
 
     actual fun loadShowParentalGuide(): Boolean? {
