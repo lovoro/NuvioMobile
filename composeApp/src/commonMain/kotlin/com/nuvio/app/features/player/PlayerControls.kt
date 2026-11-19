@@ -283,7 +283,7 @@ internal fun PlayerControlsShell(
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (useLegacyLayout) LocalLayoutDirection.current else LayoutDirection.Ltr,
                 ) {
-                    val centerControls = @Composable {
+                    val centerControls: @Composable () -> Unit = {
                         CenterControls(
                             snapshot = playbackSnapshot,
                             metrics = metrics,
