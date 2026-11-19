@@ -21,6 +21,9 @@ data class PlayerAudioLevel(
 expect fun LockPlayerToLandscape()
 
 @Composable
+expect fun LockPlayerToPortrait(enabled: Boolean)
+
+@Composable
 expect fun FullscreenPlayerDialog(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
