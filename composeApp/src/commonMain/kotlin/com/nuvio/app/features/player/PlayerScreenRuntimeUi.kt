@@ -995,10 +995,10 @@ private fun LearningSubtitlePanel(
                     key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
                 ) { index, cue ->
                     val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
-                    val englishLine = subtitleLines.firstOrNull().orEmpty()
+                    val primaryLine = subtitleLines.firstOrNull().orEmpty()
                     val activeWordRange = if (index == activeIndex) {
                         findLearningSubtitleWordRange(
-                            text = englishLine,
+                            text = primaryLine,
                             startTimeMs = cue.startTimeMs,
                             endTimeMs = cue.endTimeMs,
                             positionMs = positionMs,
@@ -1006,7 +1006,7 @@ private fun LearningSubtitlePanel(
                     } else {
                         null
                     }
-                    val wordMatches = remember(englishLine) {
+                    val wordMatches = remember(primaryLine) {
                         Regex("\\S+").findAll(englishLine).toList()
                     }
                     Column(

@@ -155,7 +155,7 @@ internal fun findLearningSubtitleIndex(
 )
 
 /**
- * Estimates the active English word from a cue's overall timing.
+ * Estimates the active whitespace-delimited word from a cue's overall timing.
  *
  * Most SRT/VTT subtitles provide timing for the whole sentence, not individual words.
  * Word durations are therefore distributed by word length; this is a visual learning aid,
@@ -168,7 +168,7 @@ internal fun findLearningSubtitleWordRange(
     positionMs: Long,
 ): IntRange? {
     if (endTimeMs <= startTimeMs || positionMs < startTimeMs || positionMs >= endTimeMs) return null
-    val words = Regex("[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*").findAll(text).toList()
+    // Unicode letters/marks/numbers keep this usable for Latin, Cyrillic, Arabic, etc.\n    // Scripts without spaces (for example Japanese or Chinese) remain a single token:\n    // we deliberately avoid pretending to know word boundaries that the subtitle lacks.\n    val words = Regex("[\\\\p{L}\\\\p{M}\\\\p{N}]+(?:['’][\\\\p{L}\\\\p{M}\\\\p{N}]+)*").findAll(text).toList()
     if (words.isEmpty()) return null
 
     val totalWeight = words.sumOf { it.value.length }.toFloat()
