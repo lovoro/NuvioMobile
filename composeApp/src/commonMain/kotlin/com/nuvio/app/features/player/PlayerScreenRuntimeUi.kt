@@ -1028,19 +1028,15 @@ private fun LearningSubtitlePanel(
                     key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
                 ) { index, cue ->
                     val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
-                    val primaryLine = subtitleLines.firstOrNull().orEmpty()
                     val activeWordRange = if (index == activeIndex) {
                         findLearningSubtitleWordRange(
-                            text = primaryLine,
+                            text = cue.text,
                             startTimeMs = cue.startTimeMs,
                             endTimeMs = cue.endTimeMs,
                             positionMs = positionMs,
                         )
                     } else {
                         null
-                    }
-                    val wordMatches = remember(primaryLine) {
-                        Regex("\\S+").findAll(primaryLine).toList()
                     }
                     Column(
                         modifier = Modifier
@@ -1072,47 +1068,50 @@ private fun LearningSubtitlePanel(
                                 color = Color(0xFF9299A3),
                             )
                         }
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            wordMatches.forEach { match ->
-                                val wordIsActive = activeWordRange != null &&
-                                    match.range.first <= activeWordRange.last &&
-                                    match.range.last >= activeWordRange.first
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(7.dp))
-                                        .border(
-                                            width = 1.5.dp,
-                                            color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
-                                            shape = RoundedCornerShape(7.dp),
+                        var lineOffset = 0
+                        subtitleLines.forEachIndexed { lineIndex, subtitleLine ->
+                            val currentLineStart = lineOffset
+                            lineOffset += subtitleLine.length + 1
+                            val wordMatches = remember(subtitleLine) {
+                                Regex("\\S+").findAll(subtitleLine).toList()
+                            }
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                wordMatches.forEach { match ->
+                                    val globalWordStart = currentLineStart + match.range.first
+                                    val globalWordEnd = currentLineStart + match.range.last
+                                    val wordIsActive = activeWordRange != null &&
+                                        globalWordStart <= activeWordRange.last &&
+                                        globalWordEnd >= activeWordRange.first
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(7.dp))
+                                            .border(
+                                                width = 1.5.dp,
+                                                color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
+                                                shape = RoundedCornerShape(7.dp),
+                                            )
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(
+                                            text = match.value,
+                                            style = (if (lineIndex == 0) {
+                                                MaterialTheme.typography.headlineSmall
+                                            } else {
+                                                MaterialTheme.typography.titleMedium
+                                            }).copy(
+                                                fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
+                                                fontSize = subtitleStyle.fontSizeSp.sp,
+                                                fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
+                                            ),
+                                            color = if (lineIndex == 0) Color(0xFF25282D) else Color(0xFF50545B),
                                         )
-                                        .padding(horizontal = 5.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        text = match.value,
-                                        style = MaterialTheme.typography.headlineSmall.copy(
-                                            fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
-                                            fontSize = subtitleStyle.fontSizeSp.sp,
-                                            fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
-                                        ),
-                                        color = Color(0xFF25282D),
-                                    )
+                                    }
                                 }
                             }
-                        }
-                        subtitleLines.drop(1).forEach { translationLine ->
-                            Text(
-                                text = translationLine,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
-                                    fontSize = subtitleStyle.fontSizeSp.sp,
-                                    fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
-                                ),
-                                color = Color(0xFF50545B),
-                            )
                         }
                     }
                 }
