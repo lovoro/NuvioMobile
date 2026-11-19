@@ -34,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -973,9 +976,35 @@ private fun LearningSubtitlePanel(
                             color = Color(0xFF9BA8B8),
                         )
                         Spacer(Modifier.width(10.dp))
+                        val activeWordRange = if (index == activeIndex) {
+                            findLearningSubtitleWordRange(
+                                text = cue.text,
+                                startTimeMs = cue.startTimeMs,
+                                endTimeMs = cue.endTimeMs,
+                                positionMs = positionMs,
+                            )
+                        } else {
+                            null
+                        }
                         Text(
-                            text = cue.text,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = buildAnnotatedString {
+                                val range = activeWordRange
+                                if (range == null) {
+                                    append(cue.text)
+                                } else {
+                                    append(cue.text.substring(0, range.first))
+                                    withStyle(
+                                        SpanStyle(
+                                            background = Color(0xFFFFD66B),
+                                            color = Color(0xFF17191D),
+                                        ),
+                                    ) {
+                                        append(cue.text.substring(range.first, range.last + 1))
+                                    }
+                                    append(cue.text.substring(range.last + 1))
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
                             color = if (index == activeIndex) Color.White else Color(0xFFD8DCE3),
                         )
                     }

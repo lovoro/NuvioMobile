@@ -153,3 +153,34 @@ internal fun findLearningSubtitleIndex(
     prefixMaxEndMs = buildLearningSubtitlePrefixMaxEndMs(cues),
     positionMs = positionMs,
 )
+
+/**
+ * Estimates the active English word from a cue's overall timing.
+ *
+ * Most SRT/VTT subtitles provide timing for the whole sentence, not individual words.
+ * Word durations are therefore distributed by word length; this is a visual learning aid,
+ * not source-provided word-level timing.
+ */
+internal fun findLearningSubtitleWordRange(
+    text: String,
+    startTimeMs: Long,
+    endTimeMs: Long,
+    positionMs: Long,
+): IntRange? {
+    if (endTimeMs <= startTimeMs || positionMs < startTimeMs || positionMs >= endTimeMs) return null
+    val words = Regex("[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*").findAll(text).toList()
+    if (words.isEmpty()) return null
+
+    val totalWeight = words.sumOf { it.value.length }.toFloat()
+    if (totalWeight <= 0f) return null
+    val progress = ((positionMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs).toFloat())
+        .coerceIn(0f, 0.999999f)
+    val targetWeight = progress * totalWeight
+    var consumedWeight = 0f
+    words.forEach { word ->
+        val nextWeight = consumedWeight + word.value.length
+        if (targetWeight < nextWeight) return word.range
+        consumedWeight = nextWeight
+    }
+    return words.last().range
+}

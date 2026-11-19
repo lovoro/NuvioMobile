@@ -95,6 +95,22 @@ class PlayerLearningSubtitlesTest {
         PlayerLearningSubtitleState.clear()
     }
 
+
+    @Test
+    fun estimatesWordHighlightAcrossSentenceDuration() {
+        val text = "I really like it"
+        assertEquals(0..0, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(2..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
+        assertEquals(15..16, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+    }
+
+    @Test
+    fun wordHighlightIgnoresNonEnglishTextAndOutsideCueTime() {
+        val text = "你好\nHello world"
+        assertEquals(3..7, findLearningSubtitleWordRange(text, 1_000L, 3_000L, 1_000L))
+        assertEquals(null, findLearningSubtitleWordRange(text, 1_000L, 3_000L, 3_000L))
+    }
+
     private fun cue(start: Long, end: Long, text: String) =
         LearningSubtitleCue(startTimeMs = start, endTimeMs = end, text = text)
 }
