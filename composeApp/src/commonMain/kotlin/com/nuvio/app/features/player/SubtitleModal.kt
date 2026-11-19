@@ -168,10 +168,13 @@ fun SubtitleModal(
         visible = visible,
         onDismiss = onDismiss,
         modifier = modifier,
-        contentPadding = PaddingValues(start = 52.dp, end = 52.dp, top = 36.dp, bottom = 76.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 36.dp, bottom = 76.dp),
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val railMaxHeight = (maxHeight - 72.dp).coerceAtLeast(120.dp)
+            val compactWidth = maxWidth < 600.dp
+            val languageRailWidth = if (compactWidth) (maxWidth - 10.dp).coerceAtLeast(120.dp) * 0.38f else 200.dp
+            val optionsRailWidth = if (compactWidth) (maxWidth - 10.dp).coerceAtLeast(120.dp) * 0.62f else 300.dp
 
             Column(
                 modifier = Modifier.align(Alignment.BottomStart),
@@ -185,13 +188,13 @@ fun SubtitleModal(
                 )
 
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    modifier = if (compactWidth) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
                     SubtitleRail(
                         title = stringResource(Res.string.compose_player_languages),
-                        width = 200.dp,
+                        width = languageRailWidth,
                     ) {
                         LazyColumn(
                             state = languageListState,
@@ -224,7 +227,7 @@ fun SubtitleModal(
 
                     SubtitleRail(
                         title = stringResource(Res.string.compose_player_subtitles),
-                        width = 300.dp,
+                        width = optionsRailWidth,
                     ) {
                         when {
                             options.isEmpty() -> {
