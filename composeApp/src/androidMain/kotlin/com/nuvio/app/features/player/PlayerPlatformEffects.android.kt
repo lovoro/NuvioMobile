@@ -30,6 +30,21 @@ import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.roundToInt
 
 @Composable
+actual fun LockPlayerToPortrait(enabled: Boolean) {
+    if (!enabled) return
+    val activity = LocalContext.current.findActivity() ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInMultiWindowMode) return
+
+    DisposableEffect(activity) {
+        val previousOrientation = activity.requestedOrientation
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        onDispose {
+            activity.requestedOrientation = previousOrientation
+        }
+    }
+}
+
+@Composable
 actual fun LockPlayerToLandscape() {
     val activity = LocalContext.current.findActivity() ?: return
     if (!activity.shouldForceLandscapePlayer()) return
