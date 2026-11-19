@@ -992,9 +992,11 @@ private fun LearningSubtitlePanel(
             .background(Color(0xFFF3F4F6))
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
+        val loadingSubtitleName = PlayerLearningSubtitleState.loadingSubtitleName
         val emptyMessage = when (PlayerLearningSubtitleState.status) {
             LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
-            LearningSubtitleStatus.LOADING -> "Loading the selected subtitle..."
+            LearningSubtitleStatus.LOADING -> loadingSubtitleName?.let { "Loading subtitle: $it" }
+                ?: "Loading the selected subtitle..."
             LearningSubtitleStatus.READY -> ""
             LearningSubtitleStatus.PARTIAL -> ""
             LearningSubtitleStatus.UNSUPPORTED -> "The selected track cannot currently be extracted as a complete subtitle list. Try an SRT or VTT external subtitle."
@@ -1002,6 +1004,8 @@ private fun LearningSubtitlePanel(
         }
         Text(
             text = when {
+                cues.isEmpty() && PlayerLearningSubtitleState.status == LearningSubtitleStatus.LOADING ->
+                    "Language Learning · Loading: ${loadingSubtitleName ?: "subtitle"}"
                 cues.isEmpty() -> "Language Learning · Subtitles"
                 PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL -> "Language Learning · ${cues.size} lines · live capture"
                 else -> "Language Learning · ${cues.size} lines"
