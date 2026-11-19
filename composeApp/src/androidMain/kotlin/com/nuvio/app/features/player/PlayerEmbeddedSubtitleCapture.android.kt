@@ -77,6 +77,11 @@ internal object PlayerEmbeddedSubtitleCapture {
 
             override fun create(format: Format): SubtitleParser {
                 val parser = delegate.create(format)
+                // The playback parser may intentionally emit only cues near the current position.
+                // A second stateful parser requests all cues from the same samples for learning.
+                // Keeping parser instances separate prevents the full-track scan from changing
+                // the cues and timing behavior delivered to ExoPlayer.
+                val captureParser = delegate.create(format)
                 val key = trackKey(format)
                 return object : SubtitleParser {
                     override fun getCueReplacementBehavior(): Int =
@@ -89,13 +94,27 @@ internal object PlayerEmbeddedSubtitleCapture {
                         outputOptions: SubtitleParser.OutputOptions,
                         output: Consumer<CuesWithTiming>,
                     ) {
-                        parser.parse(data, offset, length, outputOptions, Consumer { parsed ->
-                            capture(key, parsed)
-                            output.accept(parsed)
-                        })
+                        if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
+                            val captureOptions = if (outputOptions.outputAllCues) {
+                                outputOptions
+                            } else {
+                                SubtitleParser.OutputOptions.allCues()
+                            }
+                            captureParser.parse(
+                                data,
+                                offset,
+                                length,
+                                captureOptions,
+                                Consumer { parsed -> capture(key, parsed) },
+                            )
+                        }
+                        parser.parse(data, offset, length, outputOptions, output)
                     }
 
-                    override fun reset() = parser.reset()
+                    override fun reset() {
+                        parser.reset()
+                        captureParser.reset()
+                    }
                 }
             }
         }
