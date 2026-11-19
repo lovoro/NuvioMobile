@@ -189,25 +189,23 @@ internal fun learningSubtitleHighlightableLines(lines: List<String>): List<Boole
 }
 
 private enum class LearningSubtitleScript {
-    Latin, Cyrillic, Arabic, Hebrew, Han, Japanese, Korean, Devanagari, Thai, Other, Unknown,
+    Latin, Cyrillic, Arabic, Hebrew, Korean, Devanagari, Thai, Other, Unknown,
 }
 
 private fun learningSubtitleScript(line: String): LearningSubtitleScript {
-    var hasKana = false
     var hasHangul = false
     val counts = mutableMapOf<LearningSubtitleScript, Int>()
     line.forEach { char ->
         val code = char.code
         val script = when {
-            code in 0x3040..0x30FF || code in 0x31F0..0x31FF -> {
-                hasKana = true
-                LearningSubtitleScript.Japanese
-            }
+            // Han and kana scripts do not provide reliable whitespace word boundaries.
+            // Keep those lines visible but exclude them from estimated word highlighting.
+            code in 0x3040..0x30FF || code in 0x31F0..0x31FF -> LearningSubtitleScript.Unknown
             code in 0xAC00..0xD7AF || code in 0x1100..0x11FF || code in 0x3130..0x318F -> {
                 hasHangul = true
                 LearningSubtitleScript.Korean
             }
-            code in 0x3400..0x4DBF || code in 0x4E00..0x9FFF || code in 0xF900..0xFAFF -> LearningSubtitleScript.Han
+            code in 0x3400..0x4DBF || code in 0x4E00..0x9FFF || code in 0xF900..0xFAFF -> LearningSubtitleScript.Unknown
             code in 0x0041..0x024F || code in 0x1E00..0x1EFF -> LearningSubtitleScript.Latin
             code in 0x0400..0x052F || code in 0x2DE0..0x2DFF || code in 0xA640..0xA69F -> LearningSubtitleScript.Cyrillic
             code in 0x0600..0x06FF || code in 0x0750..0x077F || code in 0x08A0..0x08FF ||
@@ -220,7 +218,6 @@ private fun learningSubtitleScript(line: String): LearningSubtitleScript {
         }
         if (script != null) counts[script] = (counts[script] ?: 0) + 1
     }
-    if (hasKana) return LearningSubtitleScript.Japanese
     if (hasHangul) return LearningSubtitleScript.Korean
     return counts.maxByOrNull { it.value }?.key ?: LearningSubtitleScript.Unknown
 }
