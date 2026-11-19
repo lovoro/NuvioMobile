@@ -654,6 +654,7 @@ private fun ExoPlayerSurface(
             getSubtitleDelayMs = { latestSubtitleDelayMs.value },
             getAudioDelayUs = audioDelayUs::get,
             presentCues = { cues -> subtitlePresenter.present(cues, sidecarControllerRef?.subtitleMimeType != MimeTypes.TEXT_SSA) },
+            onLearningCues = PlayerLearningSubtitleState::update,
         ).also { sidecarControllerRef = it }
     }
 
