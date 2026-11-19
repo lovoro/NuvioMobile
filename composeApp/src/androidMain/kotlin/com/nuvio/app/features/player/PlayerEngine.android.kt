@@ -456,11 +456,17 @@ private fun ExoPlayerSurface(
             shouldStripSdhProvider = { currentSubtitleStyle.stripSdh },
             captureLearningCues = { cues, presentationTimeUs ->
                 if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                    learningSubtitleSelectionUrl == null &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
+                    val cuePositionMs = if (presentationTimeUs == C.TIME_UNSET || presentationTimeUs < 0L) {
+                        exoPlayer.currentPosition
+                    } else {
+                        presentationTimeUs / 1_000L
+                    }
                     PlayerLearningSubtitleState.captureLiveCueGroup(
                         texts = cues.mapNotNull { it.text?.toString() },
-                        positionMs = presentationTimeUs / 1_000L,
+                        positionMs = cuePositionMs,
                     )
                 }
             },
