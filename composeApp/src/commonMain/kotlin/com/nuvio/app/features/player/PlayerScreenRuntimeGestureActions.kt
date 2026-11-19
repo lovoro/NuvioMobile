@@ -345,7 +345,7 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
             offset.x > layoutSize.width * PlayerRightGestureBoundary -> {
                 handleDoubleTapSeek(PlayerSeekDirection.Forward)
             }
-            else -> controlsVisible = !controlsVisible
+            else -> togglePlayback()
         }
     }
     return PlayerSurfaceGestureCallbacks(

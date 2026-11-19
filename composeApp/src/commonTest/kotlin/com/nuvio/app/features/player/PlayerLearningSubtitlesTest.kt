@@ -105,6 +105,15 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun wordHighlightRecognizesWhitespaceTokensAcrossLanguagesAndPunctuation() {
+        val text = "Give your Mum a hug. What are you waiting for?"
+        assertEquals(0..3, findLearningSubtitleWordRange(text, 0L, 10_000L, 0L))
+        assertEquals(5..8, findLearningSubtitleWordRange(text, 0L, 10_000L, 9_900L))
+        val multilingual = "Grüße aus Berlin"
+        assertEquals(0..4, findLearningSubtitleWordRange(multilingual, 0L, 3_000L, 0L))
+    }
+
+    @Test
     fun wordHighlightIgnoresNonEnglishTextAndOutsideCueTime() {
         val text = "你好\nHello world"
         assertEquals(3..7, findLearningSubtitleWordRange(text, 1_000L, 3_000L, 1_000L))

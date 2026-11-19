@@ -31,16 +31,23 @@ import kotlin.math.roundToInt
 
 @Composable
 actual fun LockPlayerToPortrait(enabled: Boolean) {
-    if (!enabled) return
     val activity = LocalContext.current.findActivity() ?: return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInMultiWindowMode) return
+    val wasLearningEnabled = remember(activity) { mutableStateOf(enabled) }
 
+    // Keep the player in portrait when the user turns learning mode off. Restore the
+    // orientation that existed before entering the player only when the player itself closes.
     DisposableEffect(activity) {
         val previousOrientation = activity.requestedOrientation
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         onDispose {
             activity.requestedOrientation = previousOrientation
         }
+    }
+    SideEffect {
+        if (enabled || wasLearningEnabled.value) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+        wasLearningEnabled.value = enabled
     }
 }
 

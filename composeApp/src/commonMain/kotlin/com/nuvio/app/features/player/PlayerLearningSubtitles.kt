@@ -182,7 +182,7 @@ internal fun findLearningSubtitleWordRange(
     // Unicode letters/marks/numbers keep this usable for Latin, Cyrillic, Arabic, etc.
     // Scripts without spaces (for example Japanese or Chinese) remain a single token:
     // we deliberately avoid pretending to know word boundaries that the subtitle lacks.
-    val words = Regex("[\\\\p{L}\\\\p{M}\\\\p{N}]+(?:['’][\\\\p{L}\\\\p{M}\\\\p{N}]+)*").findAll(text).toList()
+    val words = Regex("\\S+").findAll(text).toList()
     if (words.isEmpty()) return null
 
     val totalWeight = words.sumOf { it.value.length }.toFloat()
