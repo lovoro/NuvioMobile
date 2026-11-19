@@ -340,7 +340,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(containerHeight * 0.66f),
+                    .height((containerHeight - learningVideoHeight).coerceAtLeast(0.dp)),
             )
         }
 
