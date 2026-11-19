@@ -170,6 +170,34 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun bilingualEnglishAndChineseHighlightsOnlyTheOriginalLine() {
+        assertEquals(
+            listOf(true, false),
+            learningSubtitleHighlightableLines(listOf("Go, Bentley! You can do it!", "出发吧，本特利！你能做到！")),
+        )
+    }
+
+    @Test
+    fun multipleOriginalLinesInTheSameScriptRemainHighlightable() {
+        assertEquals(
+            listOf(true, true),
+            learningSubtitleHighlightableLines(listOf("First English line", "Second English line")),
+        )
+    }
+
+    @Test
+    fun supportsOtherWritingSystemsForOriginalSubtitleLines() {
+        assertEquals(
+            listOf(true, false),
+            learningSubtitleHighlightableLines(listOf("Привет, мир!", "你好，世界！")),
+        )
+        assertEquals(
+            listOf(true, false),
+            learningSubtitleHighlightableLines(listOf("こんにちは、世界！", "Hello, world!")),
+        )
+    }
+
+    @Test
     fun wordHighlightCanTargetWordsOnTheSecondSubtitleLine() {
         val text = "First line\nSecond line"
 
