@@ -8,6 +8,8 @@ data class PersistedPlayerTrackPreference(
     val addonSubtitleId: String? = null,
     val addonSubtitleUrl: String? = null,
     val addonSubtitleAddonName: String? = null,
+    val addonSubtitleAddonId: String? = null,
+    val addonSubtitleLabel: String? = null,
     val audioLanguage: String? = null,
     val audioName: String? = null,
     val audioTrackId: String? = null,
