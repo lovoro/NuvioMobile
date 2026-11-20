@@ -512,37 +512,46 @@ internal fun findPersistedAddonSubtitle(
     preference.addonSubtitleUrl?.takeIf { it.isNotBlank() }?.let { url ->
         subtitles.firstOrNull { it.url == url }?.let { return it }
     }
-    // URLs usually change between episodes, but an addon may keep its ids stable: when it
-    // offers several subtitles in one language, the id tells the one the user picked.
+    val savedAddonId = preference.addonSubtitleAddonId?.takeIf { it.isNotBlank() }
+    val savedAddonName = preference.addonSubtitleAddonName?.takeIf { it.isNotBlank() }
+    val language = preference.subtitleLanguage?.takeIf { it.isNotBlank() } ?: return null
+    val candidates = subtitles.filter { addonSubtitleMatchesLanguage(it, language) }
+
+    // The manifest addon id is stable even when its display title or subtitle URL changes.
+    if (savedAddonId != null) {
+        val providerMatches = candidates.filter { it.addonId == savedAddonId }
+        preference.addonSubtitleLabel?.takeIf { it.isNotBlank() }?.let { savedLabel ->
+            providerMatches.singleOrNull { it.label.equals(savedLabel, ignoreCase = true) }
+                ?.let { return it }
+        }
+        preference.addonSubtitleId?.takeIf { it.isNotBlank() }?.let { savedId ->
+            providerMatches.singleOrNull { it.id == savedId }?.let { return it }
+        }
+        if (providerMatches.size == 1) return providerMatches.single()
+    }
+
+    // Older saved preferences do not contain a manifest id; keep their stable-id path.
     preference.addonSubtitleId?.takeIf { it.isNotBlank() }?.let { id ->
         subtitles.firstOrNull { subtitle ->
             subtitle.id == id && (
-                preference.addonSubtitleAddonName.isNullOrBlank() ||
-                    subtitle.addonName.equals(preference.addonSubtitleAddonName, ignoreCase = true)
+                savedAddonName.isNullOrBlank() ||
+                    subtitle.addonName.equals(savedAddonName, ignoreCase = true)
                 )
         }?.let { return it }
     }
-    val language = preference.subtitleLanguage?.takeIf { it.isNotBlank() } ?: return null
-    val candidates = subtitles.filter { addonSubtitleMatchesLanguage(it, language) }
-    val savedAddonName = preference.addonSubtitleAddonName?.takeIf { it.isNotBlank() }
+
     val providerCandidates = savedAddonName?.let { name ->
         candidates.filter { it.addonName.equals(name, ignoreCase = true) }
     }.orEmpty()
 
-    // The display label is the best fallback when addon URLs or generated IDs change.
     preference.subtitleName?.takeIf { it.isNotBlank() }?.let { savedName ->
         providerCandidates.singleOrNull {
             it.display.equals(savedName, ignoreCase = true)
         }?.let { return it }
     }
-
-    // If the provider still exists, never silently switch to a different provider.
     if (savedAddonName != null && providerCandidates.isNotEmpty()) {
         return providerCandidates.singleOrNull()
     }
-
-    // A provider may have been renamed or removed. Only use a language fallback when
-    // it identifies exactly one candidate; never choose an arbitrary first subtitle.
     return candidates.singleOrNull()
 }
 
