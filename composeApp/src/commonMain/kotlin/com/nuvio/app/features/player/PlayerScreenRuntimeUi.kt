@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1125,7 +1126,11 @@ private fun LearningSubtitlePanel(
                                 repeatJob?.cancel()
                                 repeatJob = null
                                 onPause()
-                            } else onPlay()
+                            } else {
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                onPlay()
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1216,7 +1221,11 @@ private fun LearningSubtitlePanel(
                                 color = if (index == activeIndex) Color(0xFFB8C9DC) else Color(0xFFE1E3E7),
                                 shape = RoundedCornerShape(20.dp),
                             )
-                            .clickable { onCueClick(cue) }
+                            .clickable {
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                onCueClick(cue)
+                            }
                             .padding(horizontal = 20.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
