@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -27,7 +28,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -51,8 +51,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -1225,18 +1226,46 @@ private fun LearningSubtitlePanel(
                     modifier = Modifier.size(26.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Repeat,
-                        contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
-                        tint = repeatTint,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeWidth = 2.2.dp.toPx()
+                        val inset = 3.dp.toPx()
+                        val arrow = 5.dp.toPx()
+                        drawArc(
+                            color = repeatTint,
+                            startAngle = -48f,
+                            sweepAngle = 150f,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                            size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
+                            style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                        )
+                        drawArc(
+                            color = repeatTint,
+                            startAngle = 132f,
+                            sweepAngle = 150f,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                            size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
+                            style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                        )
+                        val topRightHead = Path().apply {
+                            moveTo(size.width - inset - 1.dp.toPx(), inset + 1.dp.toPx())
+                            lineTo(size.width - inset - arrow, inset)
+                            lineTo(size.width - inset, inset + arrow)
+                        }
+                        val bottomLeftHead = Path().apply {
+                            moveTo(inset + 1.dp.toPx(), size.height - inset - 1.dp.toPx())
+                            lineTo(inset, size.height - inset - arrow)
+                            lineTo(inset + arrow, size.height - inset)
+                        }
+                        drawPath(topRightHead, repeatTint, style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                        drawPath(bottomLeftHead, repeatTint, style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                    }
                     Text(
                         text = "1",
                         color = repeatTint,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
                     )
                 }
             }
