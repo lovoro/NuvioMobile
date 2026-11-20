@@ -225,10 +225,44 @@ private fun learningSubtitleScript(line: String): LearningSubtitleScript {
 /**
  * Estimates the active whitespace-delimited word from a cue's overall timing.
  *
- * Most SRT/VTT subtitles provide timing for the whole sentence, not individual words.
- * Word durations are therefore distributed by word length; this is a visual learning aid,
- * not source-provided word-level timing.
+ * Most subtitle formats only provide sentence-level timestamps. For Latin words we use a
+ * lightweight syllable estimate rather than raw character count, then add a small pause weight
+ * for punctuation. Other whitespace-delimited writing systems retain a character-based fallback.
+ * This remains an estimate, not source-provided word timing.
  */
+private fun estimatedLearningWordWeight(token: String): Float {
+    val letters = token.lowercase().filter { it.isLetter() }
+    if (letters.isEmpty()) return 1f
+
+    val script = learningSubtitleScript(letters)
+    if (script != LearningSubtitleScript.Latin) return letters.length.coerceAtLeast(1).toFloat()
+
+    val vowelGroups = Regex("[aeiouy]+").findAll(letters).count()
+    var syllables = vowelGroups.coerceAtLeast(1)
+    // A final silent "e" usually does not form a syllable, except common consonant + "le" endings.
+    if (letters.length > 2 && letters.endsWith("e") && !letters.endsWith("le") && syllables > 1) {
+        syllables--
+    }
+    if (letters.endsWith("le") && letters.length > 2 &&
+        letters[letters.lastIndex - 2] !in "aeiouy"
+    ) {
+        syllables++
+    }
+    if (letters.endsWith("ed") && letters.length > 3 &&
+        letters[letters.lastIndex - 2] !in "td"
+    ) {
+        syllables = (syllables - 1).coerceAtLeast(1)
+    }
+
+    val punctuationWeight = when {
+        token.endsWith("...") || token.endsWith("…") -> 0.65f
+        token.endsWith(".") || token.endsWith("!") || token.endsWith("?") -> 0.45f
+        token.endsWith(",") || token.endsWith(";") || token.endsWith(":") -> 0.2f
+        else -> 0f
+    }
+    return syllables.toFloat() + punctuationWeight
+}
+
 internal fun findLearningSubtitleWordRange(
     text: String,
     startTimeMs: Long,
@@ -236,22 +270,22 @@ internal fun findLearningSubtitleWordRange(
     positionMs: Long,
 ): IntRange? {
     if (endTimeMs <= startTimeMs || positionMs < startTimeMs || positionMs >= endTimeMs) return null
-    // Unicode letters/marks/numbers keep this usable for Latin, Cyrillic, Arabic, etc.
-    // Scripts without spaces (for example Japanese or Chinese) remain a single token:
-    // we deliberately avoid pretending to know word boundaries that the subtitle lacks.
+    // Scripts without whitespace (for example Japanese or Chinese) do not expose reliable
+    // word boundaries here, so we deliberately avoid inventing them.
     val words = Regex("\\S+").findAll(text)
         .filter { learningSubtitleScript(it.value) != LearningSubtitleScript.Unknown }
         .toList()
     if (words.isEmpty()) return null
 
-    val totalWeight = words.sumOf { it.value.length }.toFloat()
+    val weights = words.map { estimatedLearningWordWeight(it.value) }
+    val totalWeight = weights.sum()
     if (totalWeight <= 0f) return null
     val progress = ((positionMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs).toFloat())
         .coerceIn(0f, 0.999999f)
     val targetWeight = progress * totalWeight
     var consumedWeight = 0f
-    words.forEach { word ->
-        val nextWeight = consumedWeight + word.value.length
+    words.forEachIndexed { index, word ->
+        val nextWeight = consumedWeight + weights[index]
         if (targetWeight < nextWeight) return word.range
         consumedWeight = nextWeight
     }
