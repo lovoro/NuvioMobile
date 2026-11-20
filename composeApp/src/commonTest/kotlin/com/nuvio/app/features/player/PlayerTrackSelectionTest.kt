@@ -401,6 +401,72 @@ class PlayerTrackSelectionTest {
         assertEquals("pl-second", findPersistedAddonSubtitle(subtitles, preference)?.id)
     }
 
+    @Test
+    fun persistedAddonSubtitleMatchesManifestIdAndSubtitleLabelWhenUrlChanges() {
+        val subtitles = listOf(
+            AddonSubtitle(
+                id = "fallback_0",
+                url = "https://example.com/new/0.srt",
+                language = "en",
+                display = "English · Provider",
+                addonName = "Provider",
+                label = "subtitle-a",
+                addonId = "manifest-provider",
+            ),
+            AddonSubtitle(
+                id = "fallback_1",
+                url = "https://example.com/new/1.srt",
+                language = "en",
+                display = "English · Provider",
+                addonName = "Provider",
+                label = "subtitle-b",
+                addonId = "manifest-provider",
+            ),
+        )
+        val preference = PersistedPlayerTrackPreference(
+            subtitleType = PersistedSubtitleSelectionType.ADDON,
+            subtitleLanguage = "en",
+            subtitleName = "English · Provider",
+            addonSubtitleId = "old-generated-id",
+            addonSubtitleUrl = "https://example.com/old/subtitle.srt",
+            addonSubtitleAddonName = "Provider",
+            addonSubtitleAddonId = "manifest-provider",
+            addonSubtitleLabel = "subtitle-b",
+        )
+
+        assertEquals("fallback_1", findPersistedAddonSubtitle(subtitles, preference)?.id)
+    }
+
+    @Test
+    fun persistedAddonSubtitleDoesNotGuessWhenProviderHasMultipleUnidentifiedMatches() {
+        val subtitles = listOf(
+            AddonSubtitle(
+                id = "provider_0",
+                url = "https://example.com/new/0.srt",
+                language = "en",
+                display = "English · Provider",
+                addonName = "Provider",
+                addonId = "manifest-provider",
+            ),
+            AddonSubtitle(
+                id = "provider_1",
+                url = "https://example.com/new/1.srt",
+                language = "en",
+                display = "English · Provider",
+                addonName = "Provider",
+                addonId = "manifest-provider",
+            ),
+        )
+        val preference = PersistedPlayerTrackPreference(
+            subtitleType = PersistedSubtitleSelectionType.ADDON,
+            subtitleLanguage = "en",
+            addonSubtitleAddonName = "Provider",
+            addonSubtitleAddonId = "manifest-provider",
+        )
+
+        assertEquals(null, findPersistedAddonSubtitle(subtitles, preference))
+    }
+
     private fun addonSubtitle(
         id: String,
         language: String,
