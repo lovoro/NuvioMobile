@@ -164,8 +164,8 @@ class PlayerLearningSubtitlesTest {
     @Test
     fun punctuationAddsAWeightedPauseWithoutLeavingCueBounds() {
         val text = "Wait, really? Go!"
-        assertEquals(0..4, findLearningSubtitleWordRange(text, 0L, 3_000L, 200L))
-        assertEquals(14..16, findLearningSubtitleWordRange(text, 0L, 3_000L, 2_900L))
+        assertEquals(0..3, findLearningSubtitleWordRange(text, 0L, 3_000L, 200L))
+        assertEquals(14..15, findLearningSubtitleWordRange(text, 0L, 3_000L, 2_900L))
         assertEquals(null, findLearningSubtitleWordRange(text, 0L, 3_000L, 3_000L))
     }
 
@@ -222,6 +222,36 @@ class PlayerLearningSubtitlesTest {
         val text = "First line\nSecond line"
 
         assertEquals(11..16, findLearningSubtitleWordRange(text, 0L, 10_000L, 7_500L))
+    }
+
+
+    @Test
+    fun ignoresStandaloneSymbolsEmojiAndPunctuationWhenSelectingHighlight() {
+        val text = "♪ I'm still here ♪ !!!"
+        assertEquals(2..4, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(11..14, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+        assertEquals(null, findLearningSubtitleWordRange("♪ !!! 👏", 0L, 2_000L, 1_000L))
+    }
+
+    @Test
+    fun ignoresCommonMojibakeMarkersWithoutDroppingNeighboringWords() {
+        val text = "â™ª I'm still here â™ª"
+        assertEquals(5..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(14..17, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+    }
+
+    @Test
+    fun highlightsContractionsAndHyphenatedWordsAsSingleUnits() {
+        val text = "I'm still here; well-known words"
+        assertEquals(0..3, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(16..24, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
+    }
+
+    @Test
+    fun ignoresSpeakerAndDecorativePunctuationButKeepsWords() {
+        val text = "— Hello, world! —"
+        assertEquals(2..6, findLearningSubtitleWordRange(text, 0L, 2_000L, 0L))
+        assertEquals(9..13, findLearningSubtitleWordRange(text, 0L, 2_000L, 1_900L))
     }
 
     private fun cue(start: Long, end: Long, text: String) =
