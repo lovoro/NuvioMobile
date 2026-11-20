@@ -325,8 +325,14 @@ internal fun MainAppContent(
     )
     var visiblePlayerEntries by remember { mutableIntStateOf(0) }
     var streamLandscapeLoadingVisible by remember(currentRoute) { mutableStateOf(false) }
-    if (currentRoute is PlayerRoute || visiblePlayerEntries > 0 || streamLandscapeLoadingVisible) {
+    val playerSurfaceActive =
+        currentRoute is PlayerRoute || visiblePlayerEntries > 0 || streamLandscapeLoadingVisible
+    // Language Learning owns portrait orientation from the moment its player route is entered.
+    // Do not let the app-wide player/stream-loading effect briefly force landscape first.
+    if (playerSurfaceActive && !playerSettingsUiState.englishLearningEnabled) {
         LockPlayerToLandscape()
+    }
+    if (playerSurfaceActive) {
         HidePlayerSystemBars()
     }
     val p2pSettingsUiState by remember {
