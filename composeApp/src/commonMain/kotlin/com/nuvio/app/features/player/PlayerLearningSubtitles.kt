@@ -276,6 +276,34 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
         val tokenStart = tokenMatch.range.first
         var index = 0
         while (index < token.length) {
+            // Skip subtitle styling markup (ASS override blocks, HTML tags and entities).
+            if (token[index] == '{') {
+                val close = token.indexOf('}', index + 1)
+                if (close > index && token.substring(index + 1, close).startsWith("\\")) {
+                    index = close + 1
+                    continue
+                }
+            }
+            if (token[index] == '<') {
+                val close = token.indexOf('>', index + 1)
+                if (close > index) {
+                    val tag = token.substring(index + 1, close)
+                    if (tag.firstOrNull()?.let { it.isLetter() || it == '/' || it == '!' } == true) {
+                        index = close + 1
+                        continue
+                    }
+                }
+            }
+            if (token[index] == '&') {
+                val semicolon = token.indexOf(';', index + 1)
+                if (semicolon > index + 1 &&
+                    token.substring(index + 1, semicolon).all { it.isLetterOrDigit() || it == '#' }
+                ) {
+                    index = semicolon + 1
+                    continue
+                }
+            }
+
             // Skip common UTF-8 decoding artifacts without discarding adjacent real words.
             val artifactLength = when {
                 token.startsWith("â™ª", index) -> 3
