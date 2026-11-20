@@ -11,6 +11,8 @@ internal actual object PlayerTrackPreferenceStorage {
     private const val addonSubtitleIdKey = "addon_subtitle_id"
     private const val addonSubtitleUrlKey = "addon_subtitle_url"
     private const val addonSubtitleAddonNameKey = "addon_subtitle_addon_name"
+    private const val addonSubtitleAddonIdKey = "addon_subtitle_addon_id"
+    private const val addonSubtitleLabelKey = "addon_subtitle_label"
     private const val audioLanguageKey = "audio_language"
     private const val audioNameKey = "audio_name"
     private const val audioTrackIdKey = "audio_track_id"
@@ -28,6 +30,8 @@ internal actual object PlayerTrackPreferenceStorage {
             addonSubtitleId = loadString(addonSubtitleIdKey, id),
             addonSubtitleUrl = loadString(addonSubtitleUrlKey, id),
             addonSubtitleAddonName = loadString(addonSubtitleAddonNameKey, id),
+            addonSubtitleAddonId = loadString(addonSubtitleAddonIdKey, id),
+            addonSubtitleLabel = loadString(addonSubtitleLabelKey, id),
             audioLanguage = loadString(audioLanguageKey, id),
             audioName = loadString(audioNameKey, id),
             audioTrackId = loadString(audioTrackIdKey, id),
@@ -42,6 +46,8 @@ internal actual object PlayerTrackPreferenceStorage {
                 it.addonSubtitleId,
                 it.addonSubtitleUrl,
                 it.addonSubtitleAddonName,
+                it.addonSubtitleAddonId,
+                it.addonSubtitleLabel,
                 it.audioLanguage,
                 it.audioName,
                 it.audioTrackId,
@@ -58,6 +64,8 @@ internal actual object PlayerTrackPreferenceStorage {
         saveOptionalString(addonSubtitleIdKey, id, preference.addonSubtitleId)
         saveOptionalString(addonSubtitleUrlKey, id, preference.addonSubtitleUrl)
         saveOptionalString(addonSubtitleAddonNameKey, id, preference.addonSubtitleAddonName)
+        saveOptionalString(addonSubtitleAddonIdKey, id, preference.addonSubtitleAddonId)
+        saveOptionalString(addonSubtitleLabelKey, id, preference.addonSubtitleLabel)
         saveOptionalString(audioLanguageKey, id, preference.audioLanguage)
         saveOptionalString(audioNameKey, id, preference.audioName)
         saveOptionalString(audioTrackIdKey, id, preference.audioTrackId)
