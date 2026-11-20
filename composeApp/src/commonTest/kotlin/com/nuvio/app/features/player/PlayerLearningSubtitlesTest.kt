@@ -243,8 +243,8 @@ class PlayerLearningSubtitlesTest {
     @Test
     fun highlightsContractionsAndHyphenatedWordsAsSingleUnits() {
         val text = "I'm still here; well-known words"
-        assertEquals(0..3, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
-        assertEquals(18..27, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_800L))
+        assertEquals(0..2, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(16..25, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_800L))
     }
 
     @Test
