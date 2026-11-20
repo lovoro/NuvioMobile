@@ -1219,11 +1219,31 @@ private fun LearningSubtitlePanel(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Repeat,
-                    contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
-                    tint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D),
-                )
+                val repeatTint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D)
+                Box(
+                    modifier = Modifier.size(26.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Repeat,
+                        contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
+                        tint = repeatTint,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Text(
+                        text = "1",
+                        color = repeatTint,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .background(
+                                if (repeatCurrentCue) Color(0xFFE2ECF8) else MaterialTheme.colorScheme.surface,
+                                CircleShape,
+                            )
+                            .padding(horizontal = 2.dp),
+                    )
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
