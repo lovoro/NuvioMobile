@@ -126,12 +126,11 @@ internal object PlayerEmbeddedSubtitleCapture {
         val endUs = parsed.endTimeUs
         if (startUs == C.TIME_UNSET || endUs == C.TIME_UNSET || endUs <= startUs) return
 
-        val text = parsed.cues.mapNotNull(Cue::text)
+        val texts = parsed.cues.mapNotNull(Cue::text)
             .map { it.toString().trim() }
             .filter { it.isNotEmpty() }
             .distinct()
-            .joinToString("\n")
-            .takeIf { it.isNotBlank() } ?: return
+        if (texts.isEmpty()) return
 
         val startMs = startUs / 1_000L
         val endMs = endUs / 1_000L
@@ -139,15 +138,21 @@ internal object PlayerEmbeddedSubtitleCapture {
 
         val entry = tracks.getOrPut(key) { TrackCues() }
         val cueAdded = synchronized(entry.lock) {
-            val cue = LearningSubtitleCue(startMs, endMs, text)
-            val cueKey = "$startMs|$endMs|$text"
-            val isNewCue = !entry.cues.containsKey(cueKey)
-            entry.cues[cueKey] = cue
+            var added = false
+            // Media3 can emit several simultaneous Cue objects in one timed group. Keep each
+            // object as its own cue: joining them with newlines falsely treats separate cues as
+            // one sentence and spreads word highlighting across unrelated text.
+            texts.forEach { text ->
+                val cue = LearningSubtitleCue(startMs, endMs, text)
+                val cueKey = "$startMs|$endMs|$text"
+                if (!entry.cues.containsKey(cueKey)) added = true
+                entry.cues[cueKey] = cue
+            }
             while (entry.cues.size > MAX_CUES_PER_TRACK) {
                 val firstKey = entry.cues.keys.firstOrNull() ?: break
                 entry.cues.remove(firstKey)
             }
-            isNewCue
+            added
         }
         // Parsing can emit many samples quickly. Coalesce UI snapshots while retaining cues.
         if (cueAdded && selectedTrackKey == key && !snapshotPending) {
