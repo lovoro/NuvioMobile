@@ -263,6 +263,67 @@ private fun estimatedLearningWordWeight(token: String): Float {
     return syllables.toFloat() + punctuationWeight
 }
 
+private data class LearningSubtitleWord(
+    val highlightRange: IntRange,
+    val weightToken: String,
+)
+
+/** Finds lexical words rather than treating every non-whitespace token as a word. */
+private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
+    val result = mutableListOf<LearningSubtitleWord>()
+    Regex("\\S+").findAll(text).forEach { tokenMatch ->
+        val token = tokenMatch.value
+        val tokenStart = tokenMatch.range.first
+        var index = 0
+        while (index < token.length) {
+            // Skip common UTF-8 decoding artifacts without discarding adjacent real words.
+            val artifactLength = when {
+                token.startsWith("â™ª", index) -> 3
+                token.startsWith("â€™", index) || token.startsWith("â€œ", index) -> 4
+                token.startsWith("â€", index) || token.startsWith("ï¿½", index) -> 3
+                token.startsWith("Ã", index) || token.startsWith("Â", index) -> 2
+                token[index] == '\uFFFD' -> 1
+                else -> 0
+            }
+            if (artifactLength > 0) {
+                index = (index + artifactLength).coerceAtMost(token.length)
+                continue
+            }
+            if (!token[index].isLetterOrDigit()) {
+                index++
+                continue
+            }
+
+            val wordStart = index
+            var wordEnd = index + 1
+            while (wordEnd < token.length) {
+                val char = token[wordEnd]
+                when {
+                    char.isLetterOrDigit() || char.isSubtitleCombiningMark() -> wordEnd++
+                    (char == '\'' || char == '’' || char == '-' || char == '‐' || char == '‑') &&
+                        wordEnd + 1 < token.length &&
+                        token[wordEnd - 1].isLetterOrDigit() &&
+                        token[wordEnd + 1].isLetterOrDigit() -> wordEnd++
+                    else -> break
+                }
+            }
+            val word = token.substring(wordStart, wordEnd)
+            if (learningSubtitleScript(word) != LearningSubtitleScript.Unknown) {
+                result += LearningSubtitleWord(
+                    highlightRange = (tokenStart + wordStart)..(tokenStart + wordEnd - 1),
+                    weightToken = token.substring(wordStart),
+                )
+            }
+            index = wordEnd
+        }
+    }
+    return result
+}
+
+private fun Char.isSubtitleCombiningMark(): Boolean =
+    code in 0x0300..0x036F || code in 0x1AB0..0x1AFF ||
+        code in 0x1DC0..0x1DFF || code in 0x20D0..0x20FF || code in 0xFE20..0xFE2F
+
 internal fun findLearningSubtitleWordRange(
     text: String,
     startTimeMs: Long,
@@ -272,12 +333,10 @@ internal fun findLearningSubtitleWordRange(
     if (endTimeMs <= startTimeMs || positionMs < startTimeMs || positionMs >= endTimeMs) return null
     // Scripts without whitespace (for example Japanese or Chinese) do not expose reliable
     // word boundaries here, so we deliberately avoid inventing them.
-    val words = Regex("\\S+").findAll(text)
-        .filter { learningSubtitleScript(it.value) != LearningSubtitleScript.Unknown }
-        .toList()
+    val words = learningSubtitleWords(text)
     if (words.isEmpty()) return null
 
-    val weights = words.map { estimatedLearningWordWeight(it.value) }
+    val weights = words.map { estimatedLearningWordWeight(it.weightToken) }
     val totalWeight = weights.sum()
     if (totalWeight <= 0f) return null
     val progress = ((positionMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs).toFloat())
@@ -286,10 +345,10 @@ internal fun findLearningSubtitleWordRange(
     var consumedWeight = 0f
     words.forEachIndexed { index, word ->
         val nextWeight = consumedWeight + weights[index]
-        if (targetWeight < nextWeight) return word.range
+        if (targetWeight < nextWeight) return word.highlightRange
         consumedWeight = nextWeight
     }
-    return words.last().range
+    return words.last().highlightRange
 }
 
 
