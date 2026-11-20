@@ -348,19 +348,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 },
                 onPlay = { playerController?.play(); shouldPlay = true },
                 onPause = { playerController?.pause(); shouldPlay = false },
-                onPrevious = { cues ->
-                    val index = findLearningSubtitleScrollIndex(cues, displayedPositionMs)
-                    cues.getOrNull((index - 1).coerceAtLeast(0))?.let {
-                        playerController?.seekTo(it.startTimeMs)
-                        scrubbingPositionMs = null
-                    }
+                onPrevious = { cue ->
+                    playerController?.seekTo(cue.startTimeMs)
+                    scrubbingPositionMs = null
                 },
-                onNext = { cues ->
-                    val index = findLearningSubtitleScrollIndex(cues, displayedPositionMs)
-                    cues.getOrNull((index + 1).coerceAtMost(cues.lastIndex))?.let {
-                        playerController?.seekTo(it.startTimeMs)
-                        scrubbingPositionMs = null
-                    }
+                onNext = { cue ->
+                    playerController?.seekTo(cue.startTimeMs)
+                    scrubbingPositionMs = null
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1001,8 +995,8 @@ private fun LearningSubtitlePanel(
     onCueClick: (LearningSubtitleCue) -> Unit,
     onPlay: () -> Unit,
     onPause: () -> Unit,
-    onPrevious: (List<LearningSubtitleCue>) -> Unit,
-    onNext: (List<LearningSubtitleCue>) -> Unit,
+    onPrevious: (LearningSubtitleCue) -> Unit,
+    onNext: (LearningSubtitleCue) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val prefixMaxEndMs = remember(cues) {
@@ -1019,7 +1013,8 @@ private fun LearningSubtitlePanel(
     var repeatCurrentCue by remember { mutableStateOf(false) }
     var repeatDelayMs by remember { mutableStateOf(1_000L) }
     var repeatJob by remember { mutableStateOf<Job?>(null) }
-    var handledRepeatEndMs by remember { mutableStateOf(-1L) }
+    var repeatCueStartMs by remember { mutableStateOf<Long?>(null) }
+    val repeatCue = repeatCueStartMs?.let { startMs -> cues.firstOrNull { it.startTimeMs == startMs } }
     val currentLineNumber = if (cues.isNotEmpty()) {
         (scrollTargetIndex + 1).coerceIn(1, cues.size)
     } else {
@@ -1030,19 +1025,15 @@ private fun LearningSubtitlePanel(
             listState.animateScrollToItem(scrollTargetIndex)
         }
     }
-    LaunchedEffect(repeatCurrentCue, positionMs, isPlaying, cues) {
-        if (!repeatCurrentCue || !isPlaying || repeatJob != null || cues.isEmpty()) return@LaunchedEffect
-        val endedCue = cues.lastOrNull { cue ->
-            cue.endTimeMs <= positionMs &&
-                cue.endTimeMs > handledRepeatEndMs &&
-                positionMs - cue.endTimeMs <= 900L
-        } ?: return@LaunchedEffect
-        handledRepeatEndMs = endedCue.endTimeMs
-        onPause()
+    LaunchedEffect(repeatCurrentCue, repeatCueStartMs, repeatCue?.endTimeMs, positionMs, isPlaying) {
+        if (!repeatCurrentCue || !isPlaying || repeatJob != null) return@LaunchedEffect
+        val cue = repeatCue ?: return@LaunchedEffect
+        if (positionMs < cue.endTimeMs) return@LaunchedEffect
         repeatJob = controlScope.launch {
+            onPause()
             delay(repeatDelayMs)
-            if (repeatCurrentCue) {
-                onCueClick(endedCue)
+            if (repeatCurrentCue && repeatCueStartMs == cue.startTimeMs) {
+                onCueClick(cue)
                 onPlay()
             }
             repeatJob = null
@@ -1084,6 +1075,7 @@ private fun LearningSubtitlePanel(
                 color = Color(0xFFB8BEC8),
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             )
+            Spacer(Modifier.weight(1f))
         } else {
             LazyColumn(
                 state = listState,
@@ -1125,6 +1117,7 @@ private fun LearningSubtitlePanel(
                             .clickable {
                                 repeatJob?.cancel()
                                 repeatJob = null
+                                repeatCueStartMs = cue.startTimeMs
                                 onCueClick(cue)
                             }
                             .padding(horizontal = 20.dp, vertical = 16.dp),
@@ -1210,7 +1203,9 @@ private fun LearningSubtitlePanel(
                         repeatCurrentCue = !repeatCurrentCue
                         repeatJob?.cancel()
                         repeatJob = null
-                        handledRepeatEndMs = -1L
+                        repeatCueStartMs = if (!repeatCurrentCue) {
+                            cues.getOrNull(activeIndex.takeIf { it >= 0 } ?: scrollTargetIndex)?.startTimeMs
+                        } else null
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1228,7 +1223,15 @@ private fun LearningSubtitlePanel(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .clickable(enabled = cues.isNotEmpty()) { onPrevious(cues) },
+                        .clickable(enabled = cues.isNotEmpty()) {
+                            val index = findLearningSubtitleScrollIndex(cues, positionMs)
+                            cues.getOrNull((index - 1).coerceAtLeast(0))?.let { cue ->
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                repeatCueStartMs = cue.startTimeMs
+                                onPrevious(cue)
+                            }
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43))
@@ -1264,7 +1267,11 @@ private fun LearningSubtitlePanel(
                         .clickable(enabled = cues.isNotEmpty()) {
                             repeatJob?.cancel()
                             repeatJob = null
-                            onNext(cues)
+                            val index = findLearningSubtitleScrollIndex(cues, positionMs)
+                            cues.getOrNull((index + 1).coerceAtMost(cues.lastIndex))?.let { cue ->
+                                repeatCueStartMs = cue.startTimeMs
+                                onNext(cue)
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
