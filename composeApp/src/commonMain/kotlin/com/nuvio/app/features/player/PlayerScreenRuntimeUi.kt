@@ -1125,7 +1125,7 @@ private fun LearningSubtitlePanel(
                                                 fontSize = subtitleStyle.fontSizeSp.sp,
                                                 fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
                                             ),
-                                            color = Color(0xFF25282D),
+                                            color = if (lineIsHighlightable) Color(0xFF25282D) else Color(0xFF50545B),
                                         )
                                     }
                                 }
