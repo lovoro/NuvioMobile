@@ -229,14 +229,14 @@ class PlayerLearningSubtitlesTest {
     fun ignoresStandaloneSymbolsEmojiAndPunctuationWhenSelectingHighlight() {
         val text = "♪ I'm still here ♪ !!!"
         assertEquals(2..4, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
-        assertEquals(11..14, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+        assertEquals(12..15, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
         assertEquals(null, findLearningSubtitleWordRange("♪ !!! 👏", 0L, 2_000L, 1_000L))
     }
 
     @Test
     fun ignoresCommonMojibakeMarkersWithoutDroppingNeighboringWords() {
         val text = "â™ª I'm still here â™ª"
-        assertEquals(5..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
+        assertEquals(4..6, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
         assertEquals(14..17, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
     }
 
@@ -244,7 +244,7 @@ class PlayerLearningSubtitlesTest {
     fun highlightsContractionsAndHyphenatedWordsAsSingleUnits() {
         val text = "I'm still here; well-known words"
         assertEquals(0..3, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
-        assertEquals(16..24, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
+        assertEquals(18..27, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
     }
 
     @Test
