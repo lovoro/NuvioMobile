@@ -1120,16 +1120,12 @@ private fun LearningSubtitlePanel(
                                     ) {
                                         Text(
                                             text = match.value,
-                                            style = (if (lineIndex == 0) {
-                                                MaterialTheme.typography.headlineSmall
-                                            } else {
-                                                MaterialTheme.typography.titleMedium
-                                            }).copy(
+                                            style = MaterialTheme.typography.headlineSmall.copy(
                                                 fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
                                                 fontSize = subtitleStyle.fontSizeSp.sp,
                                                 fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
                                             ),
-                                            color = if (lineIndex == 0) Color(0xFF25282D) else Color(0xFF50545B),
+                                            color = Color(0xFF25282D),
                                         )
                                     }
                                 }
