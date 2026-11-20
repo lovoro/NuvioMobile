@@ -27,6 +27,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +41,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +76,8 @@ import com.nuvio.app.features.servers.ServerStreams
 import com.nuvio.app.features.streams.streamAddonInstanceId
 import com.nuvio.app.isIos
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -332,9 +340,26 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 cues = PlayerLearningSubtitleState.cues,
                 subtitleStyle = playerSettingsUiState.subtitleStyle,
                 positionMs = displayedPositionMs,
+                isPlaying = playbackSnapshot.isPlaying,
                 onCueClick = { cue ->
                     playerController?.seekTo(cue.startTimeMs)
                     scrubbingPositionMs = null
+                },
+                onPlay = { playerController?.play(); shouldPlay = true },
+                onPause = { playerController?.pause(); shouldPlay = false },
+                onPrevious = { cues ->
+                    val index = findLearningSubtitleScrollIndex(cues, displayedPositionMs)
+                    cues.getOrNull((index - 1).coerceAtLeast(0))?.let {
+                        playerController?.seekTo(it.startTimeMs)
+                        scrubbingPositionMs = null
+                    }
+                },
+                onNext = { cues ->
+                    val index = findLearningSubtitleScrollIndex(cues, displayedPositionMs)
+                    cues.getOrNull((index + 1).coerceAtMost(cues.lastIndex))?.let {
+                        playerController?.seekTo(it.startTimeMs)
+                        scrubbingPositionMs = null
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -971,7 +996,12 @@ private fun LearningSubtitlePanel(
     cues: List<LearningSubtitleCue>,
     subtitleStyle: SubtitleStyleState,
     positionMs: Long,
+    isPlaying: Boolean,
     onCueClick: (LearningSubtitleCue) -> Unit,
+    onPlay: () -> Unit,
+    onPause: () -> Unit,
+    onPrevious: (List<LearningSubtitleCue>) -> Unit,
+    onNext: (List<LearningSubtitleCue>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val prefixMaxEndMs = remember(cues) {
@@ -984,6 +1014,11 @@ private fun LearningSubtitlePanel(
         findLearningSubtitleScrollIndex(cues, positionMs)
     }
     val listState = rememberLazyListState()
+    val controlScope = rememberCoroutineScope()
+    var repeatCurrentCue by remember { mutableStateOf(false) }
+    var repeatDelayMs by remember { mutableStateOf(1_000L) }
+    var repeatJob by remember { mutableStateOf<Job?>(null) }
+    var handledRepeatEndMs by remember { mutableStateOf(-1L) }
     val currentLineNumber = if (cues.isNotEmpty()) {
         (scrollTargetIndex + 1).coerceIn(1, cues.size)
     } else {
@@ -992,6 +1027,24 @@ private fun LearningSubtitlePanel(
     LaunchedEffect(scrollTargetIndex, cues.size) {
         if (scrollTargetIndex >= 0) {
             listState.animateScrollToItem(scrollTargetIndex)
+        }
+    }
+    LaunchedEffect(repeatCurrentCue, positionMs, isPlaying, cues) {
+        if (!repeatCurrentCue || !isPlaying || repeatJob != null || cues.isEmpty()) return@LaunchedEffect
+        val endedCue = cues.lastOrNull { cue ->
+            cue.endTimeMs <= positionMs &&
+                cue.endTimeMs > handledRepeatEndMs &&
+                positionMs - cue.endTimeMs <= 900L
+        } ?: return@LaunchedEffect
+        handledRepeatEndMs = endedCue.endTimeMs
+        onPause()
+        repeatJob = controlScope.launch {
+            delay(repeatDelayMs)
+            if (repeatCurrentCue) {
+                onCueClick(endedCue)
+                onPlay()
+            }
+            repeatJob = null
         }
     }
 
@@ -1023,6 +1076,101 @@ private fun LearningSubtitlePanel(
             color = Color(0xFF262A30),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (repeatCurrentCue) Color(0xFFE2ECF8) else Color.Transparent)
+                    .clickable {
+                        repeatCurrentCue = !repeatCurrentCue
+                        repeatJob?.cancel()
+                        repeatJob = null
+                        handledRepeatEndMs = -1L
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Repeat,
+                    contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
+                    tint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D),
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = cues.isNotEmpty()) { onPrevious(cues) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43))
+                }
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF3978C5))
+                        .clickable(enabled = cues.isNotEmpty()) {
+                            if (isPlaying) {
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                onPause()
+                            } else onPlay()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = cues.isNotEmpty()) {
+                            repeatJob?.cancel()
+                            repeatJob = null
+                            onNext(cues)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43))
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFE7E9ED))
+                    .clickable {
+                        repeatDelayMs = when (repeatDelayMs) {
+                            500L -> 1_000L
+                            1_000L -> 1_500L
+                            1_500L -> 2_000L
+                            else -> 500L
+                        }
+                    }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "${repeatDelayMs / 1_000f}s",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF505762),
+                )
+            }
+        }
         if (cues.isEmpty()) {
             Text(
                 text = emptyMessage,
@@ -1033,7 +1181,7 @@ private fun LearningSubtitlePanel(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(
