@@ -146,11 +146,27 @@ class PlayerLearningSubtitlesTest {
 
 
     @Test
-    fun estimatesWordHighlightAcrossSentenceDuration() {
+    fun estimatesWordHighlightAcrossSentenceDurationUsingSyllableWeights() {
         val text = "I really like it"
         assertEquals(0..0, findLearningSubtitleWordRange(text, 0L, 4_000L, 0L))
-        assertEquals(2..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_000L))
+        // "really" is estimated as a longer spoken unit than the one-syllable words.
+        assertEquals(2..7, findLearningSubtitleWordRange(text, 0L, 4_000L, 1_500L))
+        assertEquals(9..12, findLearningSubtitleWordRange(text, 0L, 4_000L, 2_500L))
         assertEquals(14..15, findLearningSubtitleWordRange(text, 0L, 4_000L, 3_900L))
+    }
+
+    @Test
+    fun syllableWeightsGiveLongerWordsMoreTimeThanShortWords() {
+        val text = "I understand you"
+        assertEquals(2..12, findLearningSubtitleWordRange(text, 0L, 3_000L, 1_500L))
+    }
+
+    @Test
+    fun punctuationAddsAWeightedPauseWithoutLeavingCueBounds() {
+        val text = "Wait, really? Go!"
+        assertEquals(0..4, findLearningSubtitleWordRange(text, 0L, 3_000L, 700L))
+        assertEquals(14..16, findLearningSubtitleWordRange(text, 0L, 3_000L, 2_900L))
+        assertEquals(null, findLearningSubtitleWordRange(text, 0L, 3_000L, 3_000L))
     }
 
     @Test
