@@ -1077,105 +1077,6 @@ private fun LearningSubtitlePanel(
             color = Color(0xFF262A30),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (repeatCurrentCue) Color(0xFFE2ECF8) else Color.Transparent)
-                    .clickable {
-                        repeatCurrentCue = !repeatCurrentCue
-                        repeatJob?.cancel()
-                        repeatJob = null
-                        handledRepeatEndMs = -1L
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Repeat,
-                    contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
-                    tint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D),
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable(enabled = cues.isNotEmpty()) { onPrevious(cues) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43))
-                }
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF3978C5))
-                        .clickable(enabled = cues.isNotEmpty()) {
-                            if (isPlaying) {
-                                repeatJob?.cancel()
-                                repeatJob = null
-                                onPause()
-                            } else {
-                                repeatJob?.cancel()
-                                repeatJob = null
-                                onPlay()
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable(enabled = cues.isNotEmpty()) {
-                            repeatJob?.cancel()
-                            repeatJob = null
-                            onNext(cues)
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43))
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFE7E9ED))
-                    .clickable {
-                        repeatDelayMs = when (repeatDelayMs) {
-                            500L -> 1_000L
-                            1_000L -> 1_500L
-                            1_500L -> 2_000L
-                            else -> 500L
-                        }
-                    }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "${repeatDelayMs / 1_000f}s",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF505762),
-                )
-            }
-        }
         if (cues.isEmpty()) {
             Text(
                 text = emptyMessage,
@@ -1290,6 +1191,106 @@ private fun LearningSubtitlePanel(
                         }
                     }
                 }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (repeatCurrentCue) Color(0xFFE2ECF8) else Color.Transparent)
+                    .clickable {
+                        repeatCurrentCue = !repeatCurrentCue
+                        repeatJob?.cancel()
+                        repeatJob = null
+                        handledRepeatEndMs = -1L
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Repeat,
+                    contentDescription = if (repeatCurrentCue) "Disable sentence repeat" else "Repeat current sentence",
+                    tint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D),
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = cues.isNotEmpty()) { onPrevious(cues) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43))
+                }
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF3978C5))
+                        .clickable(enabled = cues.isNotEmpty()) {
+                            if (isPlaying) {
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                onPause()
+                            } else {
+                                repeatJob?.cancel()
+                                repeatJob = null
+                                onPlay()
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = cues.isNotEmpty()) {
+                            repeatJob?.cancel()
+                            repeatJob = null
+                            onNext(cues)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43))
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFE7E9ED))
+                    .clickable {
+                        repeatDelayMs = when (repeatDelayMs) {
+                            500L -> 1_000L
+                            1_000L -> 1_500L
+                            1_500L -> 2_000L
+                            else -> 500L
+                        }
+                    }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "${repeatDelayMs / 1_000f}s",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF505762),
+                )
             }
         }
     }
