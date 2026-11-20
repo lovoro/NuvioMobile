@@ -348,6 +348,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 },
                 onPlay = { playerController?.play(); shouldPlay = true },
                 onPause = { playerController?.pause(); shouldPlay = false },
+                onPauseAtCueEnd = { cue ->
+                    playerController?.pause()
+                    playerController?.seekTo(cue.endTimeMs)
+                    scrubbingPositionMs = null
+                    shouldPlay = false
+                },
                 onPrevious = { cue ->
                     playerController?.seekTo(cue.startTimeMs)
                     scrubbingPositionMs = null
@@ -995,6 +1001,7 @@ private fun LearningSubtitlePanel(
     onCueClick: (LearningSubtitleCue) -> Unit,
     onPlay: () -> Unit,
     onPause: () -> Unit,
+    onPauseAtCueEnd: (LearningSubtitleCue) -> Unit,
     onPrevious: (LearningSubtitleCue) -> Unit,
     onNext: (LearningSubtitleCue) -> Unit,
     modifier: Modifier = Modifier,
@@ -1030,7 +1037,10 @@ private fun LearningSubtitlePanel(
         val cue = repeatCue ?: return@LaunchedEffect
         if (positionMs < cue.endTimeMs) return@LaunchedEffect
         repeatJob = controlScope.launch {
-            onPause()
+            // Snapshot updates can arrive a little after the subtitle boundary.
+            // Pause and snap back to the exact cue end so playback never remains
+            // on the following sentence while the repeat delay is counting down.
+            onPauseAtCueEnd(cue)
             delay(repeatDelayMs)
             if (repeatCurrentCue && repeatCueStartMs == cue.startTimeMs) {
                 onCueClick(cue)
