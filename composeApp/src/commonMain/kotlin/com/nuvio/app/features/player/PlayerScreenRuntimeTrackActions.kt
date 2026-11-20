@@ -67,6 +67,8 @@ internal fun PlayerScreenRuntime.persistInternalSubtitlePreference(track: Subtit
             addonSubtitleId = null,
             addonSubtitleUrl = null,
             addonSubtitleAddonName = null,
+            addonSubtitleAddonId = null,
+            addonSubtitleLabel = null,
         )
     }
 }
@@ -81,6 +83,8 @@ internal fun PlayerScreenRuntime.persistAddonSubtitlePreference(subtitle: AddonS
             addonSubtitleId = subtitle.id,
             addonSubtitleUrl = subtitle.url,
             addonSubtitleAddonName = subtitle.addonName,
+            addonSubtitleAddonId = subtitle.addonId,
+            addonSubtitleLabel = subtitle.label,
             subtitleIsForced = null,
         )
     }
