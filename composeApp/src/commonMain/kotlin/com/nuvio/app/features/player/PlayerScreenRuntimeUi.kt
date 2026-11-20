@@ -1203,7 +1203,7 @@ private fun LearningSubtitlePanel(
                         repeatCurrentCue = !repeatCurrentCue
                         repeatJob?.cancel()
                         repeatJob = null
-                        repeatCueStartMs = if (!repeatCurrentCue) {
+                        repeatCueStartMs = if (repeatCurrentCue) {
                             cues.getOrNull(activeIndex.takeIf { it >= 0 } ?: scrollTargetIndex)?.startTimeMs
                         } else null
                     },
