@@ -254,6 +254,13 @@ class PlayerLearningSubtitlesTest {
         assertEquals(9..13, findLearningSubtitleWordRange(text, 0L, 2_000L, 1_900L))
     }
 
-    private fun cue(start: Long, end: Long, text: String) =
+
+    @Test
+    fun ignoresSubtitleMarkupAndHtmlEntitiesDuringHighlighting() {
+        val text = """{\\i1}Hello{\\i0} &amp; <b>world</b>"""
+        assertEquals(6..10, findLearningSubtitleWordRange(text, 0L, 2_000L, 0L))
+        assertEquals(18..22, findLearningSubtitleWordRange(text, 0L, 2_000L, 1_900L))
+    }
+\n    private fun cue(start: Long, end: Long, text: String) =
         LearningSubtitleCue(startTimeMs = start, endTimeMs = end, text = text)
 }
