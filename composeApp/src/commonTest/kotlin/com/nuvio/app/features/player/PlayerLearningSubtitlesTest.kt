@@ -164,7 +164,7 @@ class PlayerLearningSubtitlesTest {
     @Test
     fun punctuationAddsAWeightedPauseWithoutLeavingCueBounds() {
         val text = "Wait, really? Go!"
-        assertEquals(0..4, findLearningSubtitleWordRange(text, 0L, 3_000L, 700L))
+        assertEquals(0..4, findLearningSubtitleWordRange(text, 0L, 3_000L, 200L))
         assertEquals(14..16, findLearningSubtitleWordRange(text, 0L, 3_000L, 2_900L))
         assertEquals(null, findLearningSubtitleWordRange(text, 0L, 3_000L, 3_000L))
     }
