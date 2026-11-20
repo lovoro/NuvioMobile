@@ -1237,12 +1237,6 @@ private fun LearningSubtitlePanel(
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .background(
-                                if (repeatCurrentCue) Color(0xFFE2ECF8) else MaterialTheme.colorScheme.surface,
-                                CircleShape,
-                            )
-                            .padding(horizontal = 2.dp),
                     )
                 }
             }
