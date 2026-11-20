@@ -279,7 +279,7 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
             // Skip common UTF-8 decoding artifacts without discarding adjacent real words.
             val artifactLength = when {
                 token.startsWith("â™ª", index) -> 3
-                token.startsWith("â€™", index) || token.startsWith("â€œ", index) -> 4
+                token.startsWith("â€™", index) || token.startsWith("â€œ", index) -> 3
                 token.startsWith("â€", index) || token.startsWith("ï¿½", index) -> 3
                 token.startsWith("Ã", index) || token.startsWith("Â", index) -> 2
                 token[index] == '\uFFFD' -> 1
