@@ -1037,11 +1037,15 @@ private fun LearningSubtitlePanel(
     LaunchedEffect(repeatCurrentCue, repeatCueStartMs, repeatCue?.endTimeMs, positionMs, isPlaying) {
         if (!repeatCurrentCue || !isPlaying || repeatJob != null) return@LaunchedEffect
         val cue = repeatCue ?: return@LaunchedEffect
-        if (positionMs < cue.endTimeMs) return@LaunchedEffect
+        // Do not wait for a playback-position snapshot to cross the cue boundary:
+        // snapshots can arrive late enough for the next subtitle to become audible.
+        // Schedule the stop from the remaining cue duration instead.
+        val playbackPositionMs = maxOf(positionMs, cue.startTimeMs)
+        val remainingCueMs = (cue.endTimeMs - playbackPositionMs).coerceAtLeast(0L)
         repeatJob = controlScope.launch {
-            // Snapshot updates can arrive a little after the subtitle boundary.
-            // Pause and snap back to the exact cue end so playback never remains
-            // on the following sentence while the repeat delay is counting down.
+            // Stop slightly before the boundary to absorb coroutine/player command
+            // latency, then seek to the exact cue end while paused.
+            delay((remainingCueMs - 80L).coerceAtLeast(0L))
             onPauseAtCueEnd(cue)
             delay(repeatDelayMs)
             if (repeatCurrentCue && repeatCueStartMs == cue.startTimeMs) {
