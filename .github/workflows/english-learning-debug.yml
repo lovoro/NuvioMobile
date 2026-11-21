@@ -2,6 +2,9 @@ name: Build Language Learning Debug APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - build/language-learning-debug-20261121
 
 permissions:
   contents: read
