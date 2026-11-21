@@ -293,10 +293,17 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text)
         .filter { isLikelyNonSpeechCaption(it.value) }
         .toList()
+    val textOutsideAnnotations = buildString {
+        var cursor = 0
+        annotationMatches.forEach { match ->
+            append(text.substring(cursor, match.range.first))
+            append(' ')
+            cursor = match.range.last + 1
+        }
+        append(text.substring(cursor))
+    }
     val hasWordsOutsideAnnotations = annotationMatches.isNotEmpty() &&
-        annotationMatches.fold(text) { remaining, match ->
-            remaining.replaceRange(match.range, " ")
-        }.let { outside -> Regex("[\\p{L}\\p{N}]+").containsMatchIn(outside) }
+        Regex("[\\p{L}\\p{N}]+").containsMatchIn(textOutsideAnnotations)
     val excludedAnnotationRanges = if (hasWordsOutsideAnnotations) {
         annotationMatches.map { it.range }
     } else {
