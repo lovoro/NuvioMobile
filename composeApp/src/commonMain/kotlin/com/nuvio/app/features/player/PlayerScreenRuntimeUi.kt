@@ -364,6 +364,75 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     playerController?.seekTo(cue.startTimeMs)
                     scrubbingPositionMs = null
                 },
+                timelineContent = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp),
+                    ) {
+                        PlayerTimeline(
+                            snapshot = playbackSnapshot,
+                            displayedPositionMs = displayedPositionMs,
+                            onScrubChange = { positionMs ->
+                                isScrubbingTimeline = true
+                                scrubbingPositionMs = positionMs
+                            },
+                            onScrubFinished = { positionMs ->
+                                val targetMs = if (isPartyControlLocked) ownSeekTarget(positionMs) else positionMs
+                                if (targetMs == null) {
+                                    isScrubbingTimeline = false
+                                    scrubbingPositionMs = null
+                                } else {
+                                    finishTimelineScrub(targetMs)
+                                    playerController?.seekTo(targetMs)
+                                    scheduleProgressSyncAfterSeek()
+                                    publishPartyPlayback(positionMs = targetMs)
+                                }
+                            },
+                            chapters = chapters,
+                        )
+                        Text(
+                            text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
+                            style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
+                            color = Color(0xFF505762),
+                            modifier = Modifier.align(Alignment.End).padding(end = 12.dp, bottom = 2.dp),
+                        )
+                    }
+                },
+                toolbarContent = {
+                    PlayerControlActions(
+                        playbackSnapshot = playbackSnapshot,
+                        displayedPositionMs = displayedPositionMs,
+                        showRemainingTime = showRemainingTime,
+                        onRuntimeClick = { showRemainingTime = !showRemainingTime },
+                        metrics = metrics,
+                        resizeMode = resizeMode,
+                        onSubtitleClick = {
+                            refreshTracks()
+                            showSubtitleModal = true
+                        },
+                        onAudioClick = {
+                            refreshTracks()
+                            showAudioModal = true
+                        },
+                        onSourcesClick = if (activeVideoId != null) { { openSourcesPanel() } } else null,
+                        onEpisodesClick = if (isSeries) { { openEpisodesPanel() } } else null,
+                        onChaptersClick = if (chapters.isNotEmpty()) { { openChaptersPanel() } } else null,
+                        onNextEpisodeClick = if (nextEpisodeInfo?.hasAired == true && !nextEpisodeAutoPlaySearching && nextEpisodeAutoPlayCountdown == null) {
+                            { if (!partyBlocksControl()) playNextEpisode() }
+                        } else null,
+                        onSpeedClick = { cyclePlaybackSpeed() },
+                        onResizeModeClick = { cycleResizeMode() },
+                        onVideoSettingsClick = if (isIos) { { showVideoSettingsModal = true; controlsVisible = true } } else null,
+                        onOpenInExternalPlayer = null,
+                        onStreamInfoClick = { openStreamInfo() },
+                        onSubmitIntroClick = if (isSeries && playerSettingsUiState.introSubmitEnabled && playerSettingsUiState.introDbApiKey.isNotBlank()) {
+                            { showSubmitIntroModal = true }
+                        } else null,
+                        onInteraction = { controlsActivityTick += 1 },
+                        showRuntime = false,
+                    )
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -1006,6 +1075,8 @@ private fun LearningSubtitlePanel(
     onPauseAtCueEnd: (LearningSubtitleCue) -> Unit,
     onPrevious: (LearningSubtitleCue) -> Unit,
     onNext: (LearningSubtitleCue) -> Unit,
+    timelineContent: @Composable () -> Unit,
+    toolbarContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val prefixMaxEndMs = remember(cues) {
@@ -1203,6 +1274,8 @@ private fun LearningSubtitlePanel(
             }
         }
 
+        timelineContent()
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1358,6 +1431,9 @@ private fun LearningSubtitlePanel(
                 )
             }
         }
+
+        Spacer(Modifier.height(2.dp))
+        toolbarContent()
     }
 }
 
