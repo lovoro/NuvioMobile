@@ -271,6 +271,19 @@ private data class LearningSubtitleWord(
 /** Finds lexical words rather than treating every non-whitespace token as a word. */
 private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val result = mutableListOf<LearningSubtitleWord>()
+    // In a mixed cue, bracketed sound-effect captions should not consume the
+    // estimated speaking-time budget. A cue made entirely of a sound caption
+    // remains highlightable, which is useful for learning vocabulary such as
+    // "whistles", "footsteps", or "phone rings".
+    val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text).toList()
+    val hasWordsOutsideAnnotations = annotationMatches.isNotEmpty() &&
+        text.replace(Regex("\\[[^\\]\\r\\n]+\\]"), " ")
+            .let { outside -> Regex("[\\p{L}\\p{N}]+").containsMatchIn(outside) }
+    val excludedAnnotationRanges = if (hasWordsOutsideAnnotations) {
+        annotationMatches.map { it.range }
+    } else {
+        emptyList()
+    }
     Regex("\\S+").findAll(text).forEach { tokenMatch ->
         val token = tokenMatch.value
         val tokenStart = tokenMatch.range.first
@@ -315,6 +328,11 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
             }
             if (artifactLength > 0) {
                 index = (index + artifactLength).coerceAtMost(token.length)
+                continue
+            }
+            val absoluteIndex = tokenStart + index
+            if (excludedAnnotationRanges.any { absoluteIndex in it }) {
+                index++
                 continue
             }
             if (!token[index].isLetterOrDigit()) {
