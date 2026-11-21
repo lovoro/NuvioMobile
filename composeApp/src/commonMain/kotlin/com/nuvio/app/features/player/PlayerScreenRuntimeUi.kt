@@ -393,7 +393,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         )
                         Text(
                             text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
-                            style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = (metrics.timeSize.value + 2).sp),
                             color = Color(0xFF505762),
                             modifier = Modifier.align(Alignment.End).padding(end = 12.dp, bottom = 2.dp),
                         )
