@@ -122,6 +122,7 @@ internal fun PlayerControlActions(
     onStreamInfoClick: () -> Unit,
     onSubmitIntroClick: (() -> Unit)?,
     onInteraction: () -> Unit,
+    showRuntime: Boolean = true,
 ) {
     val actions = playerControlActions(
         playbackSnapshot = playbackSnapshot,
