@@ -1215,7 +1215,7 @@ private fun LearningSubtitlePanel(
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(1.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalArrangement = Arrangement.spacedBy(1.dp),
                             ) {
                                 wordMatches.forEach { match ->
                                     val globalWordStart = currentLineStart + match.range.first
