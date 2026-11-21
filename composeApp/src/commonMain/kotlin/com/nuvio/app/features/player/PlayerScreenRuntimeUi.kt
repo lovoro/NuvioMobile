@@ -1179,7 +1179,7 @@ private fun LearningSubtitlePanel(
                             .background(Color(0xFFFFFFFF))
                             .border(
                                 width = if (index == activeIndex) 1.5.dp else 1.dp,
-                                color = if (index == activeIndex) Color(0xFFB8C9DC) else Color(0xFFE1E3E7),
+                                color = if (index == activeIndex) Color(0xFF9FBFE3) else Color(0xFFE1E3E7),
                                 shape = RoundedCornerShape(20.dp),
                             )
                             .clickable {
@@ -1231,11 +1231,11 @@ private fun LearningSubtitlePanel(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(7.dp))
                                             .border(
-                                                width = 1.5.dp,
+                                                width = 1.dp,
                                                 color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
                                                 shape = RoundedCornerShape(7.dp),
                                             )
-                                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                                            .padding(horizontal = 2.dp, vertical = 1.dp),
                                     ) {
                                         Text(
                                             text = match.value,
