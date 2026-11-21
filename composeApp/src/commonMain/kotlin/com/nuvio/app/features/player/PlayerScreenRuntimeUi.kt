@@ -1235,7 +1235,7 @@ private fun LearningSubtitlePanel(
                                                 color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
                                                 shape = RoundedCornerShape(7.dp),
                                             )
-                                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                                            .padding(horizontal = 1.dp, vertical = 2.dp),
                                     ) {
                                         Text(
                                             text = match.value,
