@@ -305,15 +305,17 @@ internal fun PlayerControlsShell(
                     if (centerControlsAreaHeight != null) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopCenter)
                                 .fillMaxWidth()
                                 .height(centerControlsAreaHeight),
                         ) {
+                            centerControls(Modifier.align(Alignment.Center))
+
                             Column(
                                 modifier = Modifier
-                                    .align(Alignment.Center)
+                                    .align(Alignment.BottomCenter)
                                     .fillMaxWidth()
-                                    .padding(horizontal = metrics.horizontalPadding),
+                                    .padding(horizontal = metrics.horizontalPadding)
+                                    .padding(bottom = 56.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 PlayerTimeline(
@@ -338,9 +340,17 @@ internal fun PlayerControlsShell(
                                     color = Color.White.copy(alpha = 0.9f),
                                     modifier = Modifier
                                         .align(Alignment.End)
-                                        .padding(end = 12.dp, bottom = 4.dp),
+                                        .padding(end = 12.dp, bottom = 2.dp),
                                 )
-                                centerControls(Modifier.align(Alignment.CenterHorizontally))
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = metrics.horizontalPadding)
+                                    .padding(bottom = 4.dp),
+                            ) {
                                 PlayerControlActions(
                                     playbackSnapshot = playbackSnapshot,
                                     displayedPositionMs = displayedPositionMs,
