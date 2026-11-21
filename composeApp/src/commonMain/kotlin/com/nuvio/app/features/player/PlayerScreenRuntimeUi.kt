@@ -1285,39 +1285,56 @@ private fun LearningSubtitlePanel(
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokeWidth = 2.2.dp.toPx()
-                        val inset = 3.dp.toPx()
-                        val arrow = 5.dp.toPx()
-                        // One continuous circular arrow; the arrowhead joins the arc at its upper-right end.
-                        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-                        val radius = size.width / 2f - inset
-                        val startRadians = Math.toRadians(-42.0)
-                        val tipX = center.x + radius * kotlin.math.cos(startRadians).toFloat()
-                        val tipY = center.y + radius * kotlin.math.sin(startRadians).toFloat()
-                        drawArc(
-                            color = repeatTint,
-                            startAngle = -42f,
-                            sweepAngle = 300f,
-                            useCenter = false,
-                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                            size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
+                        val scale = size.width / 24f
+                        val strokeWidth = 2.1.dp.toPx()
+                        fun p(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * scale, y * scale)
+
+                        // Match the supplied reference: one rounded circular sweep, a two-arm
+                        // arrowhead at the upper-right, and a hand-drawn numeral 1 in the center.
+                        val circle = Path().apply {
+                            moveTo(p(17.5f, 7.0f).x, p(17.5f, 7.0f).y)
+                            cubicTo(
+                                p(13.8f, 3.5f).x, p(13.8f, 3.5f).y,
+                                p(7.3f, 3.7f).x, p(7.3f, 3.7f).y,
+                                p(4.5f, 8.5f).x, p(4.5f, 8.5f).y,
+                            )
+                            cubicTo(
+                                p(1.5f, 13.8f).x, p(1.5f, 13.8f).y,
+                                p(4.0f, 19.5f).x, p(4.0f, 19.5f).y,
+                                p(9.0f, 21.0f).x, p(9.0f, 21.0f).y,
+                            )
+                            cubicTo(
+                                p(14.5f, 23.0f).x, p(14.5f, 23.0f).y,
+                                p(20.5f, 19.0f).x, p(20.5f, 19.0f).y,
+                                p(20.5f, 12.0f).x, p(20.5f, 12.0f).y,
+                            )
+                        }
+                        drawPath(
+                            circle,
+                            repeatTint,
                             style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
                         )
-                        val tangentX = -kotlin.math.sin(startRadians).toFloat()
-                        val tangentY = kotlin.math.cos(startRadians).toFloat()
-                        val normalX = -tangentY
-                        val normalY = tangentX
-                        val arrowLength = 4.2.dp.toPx()
-                        val arrowHalfWidth = 2.6.dp.toPx()
-                        val baseX = tipX - tangentX * arrowLength
-                        val baseY = tipY - tangentY * arrowLength
                         val arrowHead = Path().apply {
-                            moveTo(tipX, tipY)
-                            lineTo(baseX + normalX * arrowHalfWidth, baseY + normalY * arrowHalfWidth)
-                            lineTo(baseX - normalX * arrowHalfWidth, baseY - normalY * arrowHalfWidth)
-                            close()
+                            moveTo(p(17.5f, 7.0f).x, p(17.5f, 7.0f).y)
+                            lineTo(p(15.2f, 2.2f).x, p(15.2f, 2.2f).y)
+                            moveTo(p(17.5f, 7.0f).x, p(17.5f, 7.0f).y)
+                            lineTo(p(12.1f, 7.0f).x, p(12.1f, 7.0f).y)
                         }
-                        drawPath(arrowHead, repeatTint)
+                        drawPath(
+                            arrowHead,
+                            repeatTint,
+                            style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                        )
+                        val numeral = Path().apply {
+                            moveTo(p(9.2f, 11.0f).x, p(9.2f, 11.0f).y)
+                            lineTo(p(11.0f, 9.8f).x, p(11.0f, 9.8f).y)
+                            lineTo(p(11.0f, 17.2f).x, p(11.0f, 17.2f).y)
+                        }
+                        drawPath(
+                            numeral,
+                            repeatTint,
+                            style = Stroke(width = 2.2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                        )
                     }
                     Text(
                         text = "1",
