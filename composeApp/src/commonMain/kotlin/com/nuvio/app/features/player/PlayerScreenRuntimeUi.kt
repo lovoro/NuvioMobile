@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -51,8 +50,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -1280,64 +1277,12 @@ private fun LearningSubtitlePanel(
                 contentAlignment = Alignment.Center,
             ) {
                 val repeatTint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF343A43)
-                Box(
+                Icon(
+                    painter = appIconPainter(AppIconResource.PlayerRepeatOne),
+                    contentDescription = "Repeat current sentence",
+                    tint = repeatTint,
                     modifier = Modifier.size(26.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Match the reference icon: a bold open circular arrow and a centered numeral 1.
-                        val scale = size.width / 24f
-                        fun p(x: Float, y: Float) =
-                            androidx.compose.ui.geometry.Offset(x * scale, y * scale)
-                        val iconStroke = Stroke(
-                            width = 2.35f * scale,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                            join = androidx.compose.ui.graphics.StrokeJoin.Round,
-                        )
-
-                        // The circular stroke leaves a deliberate opening at the upper-right.
-                        val loopArrow = Path().apply {
-                            moveTo(p(16.1f, 5.2f).x, p(16.1f, 5.2f).y)
-                            cubicTo(
-                                p(18.6f, 7.1f).x, p(18.6f, 7.1f).y,
-                                p(20.0f, 10.0f).x, p(20.0f, 10.0f).y,
-                                p(20.0f, 12.2f).x, p(20.0f, 12.2f).y,
-                            )
-                            cubicTo(
-                                p(20.0f, 16.7f).x, p(20.0f, 16.7f).y,
-                                p(16.4f, 20.0f).x, p(16.4f, 20.0f).y,
-                                p(12.0f, 20.0f).x, p(12.0f, 20.0f).y,
-                            )
-                            cubicTo(
-                                p(7.6f, 20.0f).x, p(7.6f, 20.0f).y,
-                                p(4.0f, 16.4f).x, p(4.0f, 16.4f).y,
-                                p(4.0f, 12.0f).x, p(4.0f, 12.0f).y,
-                            )
-                            cubicTo(
-                                p(4.0f, 7.6f).x, p(4.0f, 7.6f).y,
-                                p(7.6f, 4.0f).x, p(7.6f, 4.0f).y,
-                                p(12.8f, 3.5f).x, p(12.8f, 3.5f).y,
-                            )
-                        }
-                        drawPath(loopArrow, repeatTint, style = iconStroke)
-
-                        // Arrow head is deliberately broad and rounded, like the reference.
-                        val arrowHead = Path().apply {
-                            moveTo(p(14.9f, 1.5f).x, p(14.9f, 1.5f).y)
-                            lineTo(p(19.8f, 4.4f).x, p(19.8f, 4.4f).y)
-                            lineTo(p(14.9f, 7.4f).x, p(14.9f, 7.4f).y)
-                        }
-                        drawPath(arrowHead, repeatTint, style = iconStroke)
-
-                        // The numeral uses the same stroke weight and rounded ends.
-                        val digitOne = Path().apply {
-                            moveTo(p(9.2f, 10.7f).x, p(9.2f, 10.7f).y)
-                            lineTo(p(12.0f, 8.8f).x, p(12.0f, 8.8f).y)
-                            lineTo(p(12.0f, 16.0f).x, p(12.0f, 16.0f).y)
-                        }
-                        drawPath(digitOne, repeatTint, style = iconStroke)
-                    }
-                }
+                )
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
