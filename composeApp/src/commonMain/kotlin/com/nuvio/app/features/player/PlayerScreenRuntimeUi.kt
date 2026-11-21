@@ -1288,36 +1288,30 @@ private fun LearningSubtitlePanel(
                         val strokeWidth = 2.2.dp.toPx()
                         val inset = 3.dp.toPx()
                         val arrow = 5.dp.toPx()
+                        // Single circular replay arrow with an open gap and one arrowhead.
                         drawArc(
                             color = repeatTint,
-                            startAngle = -48f,
-                            sweepAngle = 150f,
+                            startAngle = -42f,
+                            sweepAngle = 300f,
                             useCenter = false,
                             topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
                             size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
                             style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
                         )
-                        drawArc(
-                            color = repeatTint,
-                            startAngle = 132f,
-                            sweepAngle = 150f,
-                            useCenter = false,
-                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                            size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
-                            style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-                        )
-                        val topRightHead = Path().apply {
+                        val arrowHead = Path().apply {
                             moveTo(size.width - inset - 1.dp.toPx(), inset + 1.dp.toPx())
                             lineTo(size.width - inset - arrow, inset)
                             lineTo(size.width - inset, inset + arrow)
                         }
-                        val bottomLeftHead = Path().apply {
-                            moveTo(inset + 1.dp.toPx(), size.height - inset - 1.dp.toPx())
-                            lineTo(inset, size.height - inset - arrow)
-                            lineTo(inset + arrow, size.height - inset)
-                        }
-                        drawPath(topRightHead, repeatTint, style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-                        drawPath(bottomLeftHead, repeatTint, style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                        drawPath(
+                            arrowHead,
+                            repeatTint,
+                            style = Stroke(
+                                width = strokeWidth,
+                                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                            ),
+                        )
                     }
                     Text(
                         text = "1",
