@@ -125,7 +125,6 @@ internal fun PlayerControlActions(
     onInteraction: () -> Unit,
     showRuntime: Boolean = true,
     iconTint: Color = Color.White,
-    showResizeModeAction: Boolean = true,
     expandAllActions: Boolean = false,
 ) {
     val actions = playerControlActions(
@@ -215,7 +214,7 @@ internal fun PlayerControlActions(
 }
 
 @Composable
-private fun PlayerAction(
+internal fun PlayerAction(
     description: String,
     onClick: () -> Unit,
     icon: ImageVector? = null,
