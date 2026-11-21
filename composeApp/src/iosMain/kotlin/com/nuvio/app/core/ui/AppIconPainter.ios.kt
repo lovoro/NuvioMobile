@@ -10,6 +10,7 @@ import nuvio.composeapp.generated.resources.ic_player_pause
 import nuvio.composeapp.generated.resources.ic_player_play
 import nuvio.composeapp.generated.resources.ic_player_source
 import nuvio.composeapp.generated.resources.ic_player_subtitles
+import nuvio.composeapp.generated.resources.ic_player_repeat_one
 import nuvio.composeapp.generated.resources.ic_language_learning
 import nuvio.composeapp.generated.resources.library_add_plus
 import org.jetbrains.compose.resources.painterResource
@@ -26,6 +27,7 @@ actual fun appIconPainter(icon: AppIconResource): Painter =
             AppIconResource.PlayerAudioFilled -> Res.drawable.ic_player_audio_filled
             AppIconResource.PlayerSource -> Res.drawable.ic_player_source
             AppIconResource.PlayerEpisodes -> Res.drawable.ic_player_episodes
+            AppIconResource.PlayerRepeatOne -> Res.drawable.ic_player_repeat_one
             AppIconResource.LibraryAddPlus -> Res.drawable.library_add_plus
         }
     )
