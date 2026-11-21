@@ -1304,7 +1304,7 @@ private fun LearningSubtitlePanel(
                                 p(20.0f, 13.0f).x, p(20.0f, 13.0f).y,
                             )
                             cubicTo(
-                                p(20.0f, 17.4f).x, p(17.4f, 20.0f).y,
+                                p(20.0f, 17.4f).x, p(20.0f, 17.4f).y,
                                 p(16.4f, 20.0f).x, p(16.4f, 20.0f).y,
                                 p(12.0f, 20.0f).x, p(12.0f, 20.0f).y,
                             )
