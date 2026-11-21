@@ -424,40 +424,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         onSpeedClick = { cyclePlaybackSpeed() },
                         onResizeModeClick = { cycleResizeMode() },
                         onVideoSettingsClick = if (isIos) { { showVideoSettingsModal = true; controlsVisible = true } } else null,
-                        onOpenInExternalPlayer = args.onOpenInExternalPlayer
-                            ?.takeUnless { ServerStreams.isServerSourceId(activeProviderAddonId) }
-                            ?.let { openExternal ->
-                                {
-                                    val loadedSubtitles = addonSubtitles
-                                        .takeIf { it.isNotEmpty() }
-                                        ?.map { sub ->
-                                            SubtitleInput(
-                                                url = sub.url,
-                                                name = buildString {
-                                                    if (!sub.addonName.isNullOrBlank()) append("[${sub.addonName}] ")
-                                                    append(sub.display)
-                                                },
-                                                lang = sub.language,
-                                            )
-                                        }
-                                    PlayerStreamsRepository.pauseSearchForPlayback()
-                                    openExternal(
-                                        ExternalPlayerPlaybackRequest(
-                                            sourceUrl = activeSourceUrl,
-                                            title = title,
-                                            streamTitle = activeStreamTitle,
-                                            sourceHeaders = activeSourceHeaders,
-                                            resumePositionMs = playbackSnapshot.positionMs,
-                                            durationMs = playbackSnapshot.durationMs.takeIf { it > 0L },
-                                            playbackSession = playbackSession,
-                                            subtitles = loadedSubtitles,
-                                            season = activeSeasonNumber,
-                                            episode = activeEpisodeNumber,
-                                            episodeTitle = activeEpisodeTitle,
-                                        ),
-                                    )
-                                }
-                            },
+                        onOpenInExternalPlayer = null,
                         onStreamInfoClick = { openStreamInfo() },
                         onSubmitIntroClick = if (isSeries && playerSettingsUiState.introSubmitEnabled && playerSettingsUiState.introDbApiKey.isNotBlank()) {
                             { showSubmitIntroModal = true }
@@ -465,6 +432,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         onInteraction = { controlsActivityTick += 1 },
                         showRuntime = false,
                         iconTint = Color(0xFF343A43),
+                        showResizeModeAction = false,
+                        expandAllActions = true,
                     )
                 },
                 modifier = Modifier
