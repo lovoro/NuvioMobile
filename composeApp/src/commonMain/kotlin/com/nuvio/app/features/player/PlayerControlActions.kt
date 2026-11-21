@@ -157,7 +157,7 @@ internal fun PlayerControlActions(
     val hasOverflow = actions.size > 5
     var expanded by remember(hasOverflow, expandAllActions) { mutableStateOf(expandAllActions) }
     val scrollState = rememberScrollState()
-    val startOffset = if (expandAllActions) { if (onNextEpisodeClick != null) (-9).dp else (-8).dp } else if (onNextEpisodeClick != null) (-13).dp else (-12).dp
+    val startOffset = if (expandAllActions) 0.dp else if (onNextEpisodeClick != null) (-13).dp else (-12).dp
     LaunchedEffect(expanded, scrollState.maxValue) {
         if (expanded) scrollState.animateScrollTo(scrollState.maxValue) else scrollState.scrollTo(0)
     }
