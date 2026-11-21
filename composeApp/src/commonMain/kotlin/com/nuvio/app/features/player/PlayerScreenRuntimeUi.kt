@@ -464,6 +464,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         } else null,
                         onInteraction = { controlsActivityTick += 1 },
                         showRuntime = false,
+                        iconTint = Color(0xFF343A43),
                     )
                 },
                 modifier = Modifier
