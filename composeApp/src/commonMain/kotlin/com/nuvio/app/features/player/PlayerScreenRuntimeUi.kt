@@ -1297,9 +1297,9 @@ private fun LearningSubtitlePanel(
 
                         // The circular stroke leaves a deliberate opening at the upper-right.
                         val loopArrow = Path().apply {
-                            moveTo(p(15.1f, 4.8f).x, p(15.1f, 4.8f).y)
+                            moveTo(p(16.1f, 5.2f).x, p(16.1f, 5.2f).y)
                             cubicTo(
-                                p(18.1f, 6.8f).x, p(18.1f, 6.8f).y,
+                                p(18.6f, 7.1f).x, p(18.6f, 7.1f).y,
                                 p(20.0f, 10.0f).x, p(20.0f, 10.0f).y,
                                 p(20.0f, 12.2f).x, p(20.0f, 12.2f).y,
                             )
@@ -1316,12 +1316,7 @@ private fun LearningSubtitlePanel(
                             cubicTo(
                                 p(4.0f, 7.6f).x, p(4.0f, 7.6f).y,
                                 p(7.6f, 4.0f).x, p(7.6f, 4.0f).y,
-                                p(12.0f, 4.0f).x, p(12.0f, 4.0f).y,
-                            )
-                            cubicTo(
-                                p(13.1f, 4.0f).x, p(13.1f, 4.0f).y,
-                                p(14.2f, 4.3f).x, p(14.2f, 4.3f).y,
-                                p(15.1f, 4.8f).x, p(15.1f, 4.8f).y,
+                                p(12.8f, 3.5f).x, p(12.8f, 3.5f).y,
                             )
                         }
                         drawPath(loopArrow, repeatTint, style = iconStroke)
