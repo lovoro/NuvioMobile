@@ -398,7 +398,7 @@ internal fun PlayerControlsShell(
                         .padding(bottom = metrics.sliderBottomOffset),
                 )
             }
-            if (showPlaybackControls && !useLegacyLayout) {
+            if (showPlaybackControls && !useLegacyLayout && centerControlsAreaHeight == null) {
                 Column(
                     modifier = Modifier
                         .onSizeChanged { size -> timelineHeight = with(density) { size.height.toDp() } }
