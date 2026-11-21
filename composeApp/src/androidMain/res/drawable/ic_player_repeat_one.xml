@@ -16,7 +16,7 @@
         android:fillColor="#00000000"
         android:pathData="M10.7,1.8 L15.2,3.5 L10.7,5.5"
         android:strokeColor="#FF000000"
-        android:strokeWidth="2.45"
+        android:strokeWidth="1.9"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <!-- Rounded numeral 1. -->
