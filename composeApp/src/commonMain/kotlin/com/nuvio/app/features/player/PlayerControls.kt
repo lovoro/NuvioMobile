@@ -303,77 +303,14 @@ internal fun PlayerControlsShell(
                         )
                     }
                     if (centerControlsAreaHeight != null) {
+                        // In Language Learning mode, keep only the main video controls
+                        // over the video. Timeline and toolbar are rendered below subtitles.
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(centerControlsAreaHeight),
                         ) {
                             centerControls(Modifier.align(Alignment.Center))
-
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = metrics.horizontalPadding)
-                                    .padding(bottom = 56.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                PlayerTimeline(
-                                    snapshot = playbackSnapshot,
-                                    displayedPositionMs = displayedPositionMs,
-                                    onScrubChange = onScrubChange,
-                                    onScrubFinished = {
-                                        onInteraction()
-                                        onScrubFinished(it)
-                                    },
-                                    chapters = chapters,
-                                )
-                                Text(
-                                    text = formatPlaybackRuntime(
-                                        displayedPositionMs,
-                                        playbackSnapshot.durationMs,
-                                        showRemainingTime,
-                                    ),
-                                    style = MaterialTheme.nuvioTypeScale.bodyMd.copy(
-                                        fontSize = (metrics.timeSize.value + 2).sp,
-                                    ),
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    modifier = Modifier
-                                        .align(Alignment.End)
-                                        .padding(end = 12.dp, bottom = 2.dp),
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = metrics.horizontalPadding)
-                                    .padding(bottom = 4.dp),
-                            ) {
-                                PlayerControlActions(
-                                    playbackSnapshot = playbackSnapshot,
-                                    displayedPositionMs = displayedPositionMs,
-                                    showRemainingTime = showRemainingTime,
-                                    onRuntimeClick = onRuntimeClick,
-                                    metrics = metrics,
-                                    resizeMode = resizeMode,
-                                    onSubtitleClick = onSubtitleClick,
-                                    onAudioClick = onAudioClick,
-                                    onSourcesClick = onSourcesClick,
-                                    onEpisodesClick = onEpisodesClick,
-                                    onChaptersClick = onChaptersClick,
-                                    onNextEpisodeClick = onNextEpisodeClick,
-                                    onSpeedClick = onSpeedClick,
-                                    onResizeModeClick = onResizeModeClick,
-                                    onVideoSettingsClick = onVideoSettingsClick,
-                                    onOpenInExternalPlayer = onOpenInExternalPlayer,
-                                    onStreamInfoClick = onStreamInfoClick,
-                                    onSubmitIntroClick = onSubmitIntroClick,
-                                    onInteraction = onInteraction,
-                                    showRuntime = false,
-                                )
-                            }
                         }
                     } else {
                         centerControls(
