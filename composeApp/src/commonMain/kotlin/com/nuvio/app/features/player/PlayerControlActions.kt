@@ -65,6 +65,7 @@ internal fun PlayerToolbar(
     onPartyClick: (() -> Unit)? = null,
     partyActive: Boolean = false,
     onSwitchEngineClick: (() -> Unit)? = null,
+    onLearningModeClick: (() -> Unit)? = null,
 ) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.weight(1f))
@@ -98,6 +99,15 @@ internal fun PlayerToolbar(
             iconSize = 24.dp,
             contentDescription = stringResource(Res.string.compose_player_close),
         )
+        if (onLearningModeClick != null) {
+            PlayerAction(
+                description = "Language Learning",
+                painter = appIconPainter(AppIconResource.LanguageLearning),
+                onClick = onLearningModeClick,
+                iconSize = 24.dp,
+                tint = Color.White,
+            )
+        }
     }
 }
 
