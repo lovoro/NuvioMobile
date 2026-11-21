@@ -8,6 +8,7 @@ enum class AppIconResource {
     PlayerPause,
     PlayerAspectRatio,
     PlayerSubtitles,
+    LanguageLearning,
     PlayerAudioFilled,
     PlayerSource,
     PlayerEpisodes,
