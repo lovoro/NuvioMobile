@@ -1,16 +1,17 @@
-name: Build English Learning Debug APK
+name: Build Language Learning Debug APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - chatgpt/english-learning-v1
+      - language-learning-v1
 
 permissions:
   contents: read
 
 concurrency:
-  group: english-learning-debug-${{ github.ref }}
+  group: language-learning-debug-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,7 +54,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-english-learning-debug
+          name: nuvio-language-learning-debug
           path: androidApp/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
           retention-days: 14
