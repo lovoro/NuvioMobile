@@ -1235,13 +1235,13 @@ private fun LearningSubtitlePanel(
                                                 color = if (wordIsActive) Color(0xFF3978C5) else Color.Transparent,
                                                 shape = RoundedCornerShape(7.dp),
                                             )
-                                            .padding(horizontal = 1.dp, vertical = 2.dp),
+                                            .padding(horizontal = 2.dp, vertical = 0.dp),
                                     ) {
                                         Text(
                                             text = match.value,
                                             style = MaterialTheme.typography.headlineSmall.copy(
                                                 fontFamily = rememberSubtitleFontFamily(subtitleStyle.appearance.fontId),
-                                                fontSize = subtitleStyle.fontSizeSp.sp,
+                                                fontSize = (subtitleStyle.fontSizeSp - if (lineIsHighlightable) 0f else 2f).coerceAtLeast(1f).sp,
                                                 fontWeight = if (subtitleStyle.bold) FontWeight.Bold else FontWeight.Normal,
                                             ),
                                             color = if (lineIsHighlightable) Color(0xFF25282D) else Color(0xFF50545B),
