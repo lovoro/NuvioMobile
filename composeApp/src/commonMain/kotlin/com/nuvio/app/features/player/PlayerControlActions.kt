@@ -117,6 +117,7 @@ internal fun PlayerControlActions(
     onNextEpisodeClick: (() -> Unit)?,
     onSpeedClick: () -> Unit,
     onResizeModeClick: () -> Unit,
+    showResizeModeAction: Boolean = true,
     onVideoSettingsClick: (() -> Unit)?,
     onOpenInExternalPlayer: (() -> Unit)?,
     onStreamInfoClick: () -> Unit,
@@ -124,6 +125,8 @@ internal fun PlayerControlActions(
     onInteraction: () -> Unit,
     showRuntime: Boolean = true,
     iconTint: Color = Color.White,
+    showResizeModeAction: Boolean = true,
+    expandAllActions: Boolean = false,
 ) {
     val actions = playerControlActions(
         playbackSnapshot = playbackSnapshot,
@@ -136,15 +139,16 @@ internal fun PlayerControlActions(
         onNextEpisodeClick = onNextEpisodeClick,
         onSpeedClick = onSpeedClick,
         onResizeModeClick = onResizeModeClick,
+        showResizeModeAction = showResizeModeAction,
         onVideoSettingsClick = onVideoSettingsClick,
         onOpenInExternalPlayer = onOpenInExternalPlayer,
         onStreamInfoClick = onStreamInfoClick,
         onSubmitIntroClick = onSubmitIntroClick,
     )
     val hasOverflow = actions.size > 5
-    var expanded by remember(hasOverflow) { mutableStateOf(false) }
+    var expanded by remember(hasOverflow, expandAllActions) { mutableStateOf(expandAllActions) }
     val scrollState = rememberScrollState()
-    val startOffset = if (onNextEpisodeClick != null) (-13).dp else (-12).dp
+    val startOffset = if (expandAllActions) { if (onNextEpisodeClick != null) (-9).dp else (-8).dp } else if (onNextEpisodeClick != null) (-13).dp else (-12).dp
     LaunchedEffect(expanded, scrollState.maxValue) {
         if (expanded) scrollState.animateScrollTo(scrollState.maxValue) else scrollState.scrollTo(0)
     }
@@ -171,7 +175,7 @@ internal fun PlayerControlActions(
                         tint = iconTint,
                     )
                 }
-                if (hasOverflow) {
+                if (hasOverflow && !expandAllActions) {
                     PlayerAction(
                         description = stringResource(
                             if (expanded) Res.string.compose_player_fewer_actions else Res.string.compose_player_more_actions,
@@ -282,10 +286,10 @@ internal fun playerControlActions(
             "${stringResource(Res.string.compose_player_speed)} ${formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed)}",
             onSpeedClick, icon = Icons.Rounded.Speed,
         ),
-        PlayerControlAction(
+        if (showResizeModeAction) PlayerControlAction(
             stringResource(resizeMode.labelRes), onResizeModeClick,
             painter = appIconPainter(AppIconResource.PlayerAspectRatio),
-        ),
+        ) else null,
         onOpenInExternalPlayer?.let {
             PlayerControlAction(
                 stringResource(Res.string.streams_open_external_player), it,
