@@ -1279,7 +1279,7 @@ private fun LearningSubtitlePanel(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                val repeatTint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF68717D)
+                val repeatTint = if (repeatCurrentCue) Color(0xFF3978C5) else Color(0xFF343A43)
                 Box(
                     modifier = Modifier.size(26.dp),
                     contentAlignment = Alignment.Center,
@@ -1361,7 +1361,7 @@ private fun LearningSubtitlePanel(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43), modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43), modifier = Modifier.size(32.dp))
                 }
                 Box(
                     modifier = Modifier
