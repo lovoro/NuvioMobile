@@ -12,6 +12,7 @@ enum class AppIconResource {
     PlayerAudioFilled,
     PlayerSource,
     PlayerEpisodes,
+    PlayerRepeatOne,
     LibraryAddPlus,
 }
 
