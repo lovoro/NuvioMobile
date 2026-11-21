@@ -1285,26 +1285,26 @@ private fun LearningSubtitlePanel(
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Keep the exact VectorDrawable geometry supplied by the user.
+                        // Match the reference icon: a bold open circular arrow and a centered numeral 1.
                         val scale = size.width / 24f
-                        val strokeWidth = 1.8f * scale
-                        fun p(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * scale, y * scale)
-                        val roundedStroke = Stroke(
-                            width = strokeWidth,
+                        fun p(x: Float, y: Float) =
+                            androidx.compose.ui.geometry.Offset(x * scale, y * scale)
+                        val iconStroke = Stroke(
+                            width = 2.35f * scale,
                             cap = androidx.compose.ui.graphics.StrokeCap.Round,
                             join = androidx.compose.ui.graphics.StrokeJoin.Round,
                         )
 
-                        // Single-cue repeat: open circular arrow with the numeral 1 centered.
+                        // The circular stroke leaves a deliberate opening at the upper-right.
                         val loopArrow = Path().apply {
-                            moveTo(p(15.2f, 4.9f).x, p(15.2f, 4.9f).y)
+                            moveTo(p(15.1f, 4.8f).x, p(15.1f, 4.8f).y)
                             cubicTo(
-                                p(18.4f, 7.1f).x, p(18.4f, 7.1f).y,
-                                p(20.0f, 10.2f).x, p(20.0f, 10.2f).y,
-                                p(20.0f, 13.0f).x, p(20.0f, 13.0f).y,
+                                p(18.1f, 6.8f).x, p(18.1f, 6.8f).y,
+                                p(20.0f, 10.0f).x, p(20.0f, 10.0f).y,
+                                p(20.0f, 12.2f).x, p(20.0f, 12.2f).y,
                             )
                             cubicTo(
-                                p(20.0f, 17.4f).x, p(20.0f, 17.4f).y,
+                                p(20.0f, 16.7f).x, p(20.0f, 16.7f).y,
                                 p(16.4f, 20.0f).x, p(16.4f, 20.0f).y,
                                 p(12.0f, 20.0f).x, p(12.0f, 20.0f).y,
                             )
@@ -1321,24 +1321,26 @@ private fun LearningSubtitlePanel(
                             cubicTo(
                                 p(13.1f, 4.0f).x, p(13.1f, 4.0f).y,
                                 p(14.2f, 4.3f).x, p(14.2f, 4.3f).y,
-                                p(15.2f, 4.9f).x, p(15.2f, 4.9f).y,
+                                p(15.1f, 4.8f).x, p(15.1f, 4.8f).y,
                             )
                         }
-                        drawPath(loopArrow, repeatTint, style = roundedStroke)
+                        drawPath(loopArrow, repeatTint, style = iconStroke)
 
+                        // Arrow head is deliberately broad and rounded, like the reference.
                         val arrowHead = Path().apply {
-                            moveTo(p(15.0f, 2.8f).x, p(15.0f, 2.8f).y)
-                            lineTo(p(19.0f, 6.0f).x, p(19.0f, 6.0f).y)
-                            lineTo(p(15.0f, 8.2f).x, p(15.0f, 8.2f).y)
+                            moveTo(p(14.9f, 1.5f).x, p(14.9f, 1.5f).y)
+                            lineTo(p(19.8f, 4.4f).x, p(19.8f, 4.4f).y)
+                            lineTo(p(14.9f, 7.4f).x, p(14.9f, 7.4f).y)
                         }
-                        drawPath(arrowHead, repeatTint, style = roundedStroke)
+                        drawPath(arrowHead, repeatTint, style = iconStroke)
 
+                        // The numeral uses the same stroke weight and rounded ends.
                         val digitOne = Path().apply {
-                            moveTo(p(10.0f, 10.8f).x, p(10.0f, 10.8f).y)
-                            lineTo(p(12.0f, 9.0f).x, p(12.0f, 9.0f).y)
-                            lineTo(p(12.0f, 15.5f).x, p(12.0f, 15.5f).y)
+                            moveTo(p(9.2f, 10.7f).x, p(9.2f, 10.7f).y)
+                            lineTo(p(12.0f, 8.8f).x, p(12.0f, 8.8f).y)
+                            lineTo(p(12.0f, 16.0f).x, p(12.0f, 16.0f).y)
                         }
-                        drawPath(digitOne, repeatTint, style = roundedStroke)
+                        drawPath(digitOne, repeatTint, style = iconStroke)
                     }
                 }
             }
