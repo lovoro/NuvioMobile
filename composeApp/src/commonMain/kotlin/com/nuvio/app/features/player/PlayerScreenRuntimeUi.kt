@@ -1295,45 +1295,48 @@ private fun LearningSubtitlePanel(
                             join = androidx.compose.ui.graphics.StrokeJoin.Round,
                         )
 
+                        // Single-cue repeat: open circular arrow with the numeral 1 centered.
                         val loopArrow = Path().apply {
-                            moveTo(p(17.6f, 6.4f).x, p(17.6f, 6.4f).y)
+                            moveTo(p(15.2f, 4.9f).x, p(15.2f, 4.9f).y)
                             cubicTo(
-                                p(16.2f, 4.9f).x, p(16.2f, 4.9f).y,
-                                p(14.2f, 4.0f).x, p(14.2f, 4.0f).y,
-                                p(12.0f, 4.0f).x, p(12.0f, 4.0f).y,
+                                p(18.4f, 7.1f).x, p(18.4f, 7.1f).y,
+                                p(20.0f, 10.2f).x, p(20.0f, 10.2f).y,
+                                p(20.0f, 13.0f).x, p(20.0f, 13.0f).y,
                             )
                             cubicTo(
-                                p(7.6f, 4.0f).x, p(7.6f, 4.0f).y,
-                                p(4.0f, 7.6f).x, p(4.0f, 7.6f).y,
-                                p(4.0f, 12.0f).x, p(4.0f, 12.0f).y,
-                            )
-                            cubicTo(
-                                p(4.0f, 16.4f).x, p(4.0f, 16.4f).y,
-                                p(7.6f, 20.0f).x, p(7.6f, 20.0f).y,
+                                p(20.0f, 17.4f).x, p(17.4f, 20.0f).y,
+                                p(16.4f, 20.0f).x, p(16.4f, 20.0f).y,
                                 p(12.0f, 20.0f).x, p(12.0f, 20.0f).y,
                             )
                             cubicTo(
-                                p(14.3f, 20.0f).x, p(14.3f, 20.0f).y,
-                                p(16.4f, 19.1f).x, p(16.4f, 19.1f).y,
-                                p(17.8f, 17.6f).x, p(17.8f, 17.6f).y,
+                                p(7.6f, 20.0f).x, p(7.6f, 20.0f).y,
+                                p(4.0f, 16.4f).x, p(4.0f, 16.4f).y,
+                                p(4.0f, 12.0f).x, p(4.0f, 12.0f).y,
+                            )
+                            cubicTo(
+                                p(4.0f, 7.6f).x, p(4.0f, 7.6f).y,
+                                p(7.6f, 4.0f).x, p(7.6f, 4.0f).y,
+                                p(12.0f, 4.0f).x, p(12.0f, 4.0f).y,
+                            )
+                            cubicTo(
+                                p(13.1f, 4.0f).x, p(13.1f, 4.0f).y,
+                                p(14.2f, 4.3f).x, p(14.2f, 4.3f).y,
+                                p(15.2f, 4.9f).x, p(15.2f, 4.9f).y,
                             )
                         }
                         drawPath(loopArrow, repeatTint, style = roundedStroke)
 
                         val arrowHead = Path().apply {
-                            moveTo(p(17.0f, 4.0f).x, p(17.0f, 4.0f).y)
+                            moveTo(p(15.0f, 2.8f).x, p(15.0f, 2.8f).y)
                             lineTo(p(19.0f, 6.0f).x, p(19.0f, 6.0f).y)
-                            lineTo(p(17.0f, 8.0f).x, p(17.0f, 8.0f).y)
+                            lineTo(p(15.0f, 8.2f).x, p(15.0f, 8.2f).y)
                         }
                         drawPath(arrowHead, repeatTint, style = roundedStroke)
 
                         val digitOne = Path().apply {
-                            moveTo(p(12.2f, 8.8f).x, p(12.2f, 8.8f).y)
-                            lineTo(p(10.6f, 10.4f).x, p(10.6f, 10.4f).y)
-                            moveTo(p(12.2f, 8.8f).x, p(12.2f, 8.8f).y)
-                            lineTo(p(13.8f, 10.4f).x, p(13.8f, 10.4f).y)
-                            moveTo(p(12.2f, 8.8f).x, p(12.2f, 8.8f).y)
-                            lineTo(p(12.2f, 15.2f).x, p(12.2f, 15.2f).y)
+                            moveTo(p(10.0f, 10.8f).x, p(10.0f, 10.8f).y)
+                            lineTo(p(12.0f, 9.0f).x, p(12.0f, 9.0f).y)
+                            lineTo(p(12.0f, 15.5f).x, p(12.0f, 15.5f).y)
                         }
                         drawPath(digitOne, repeatTint, style = roundedStroke)
                     }
