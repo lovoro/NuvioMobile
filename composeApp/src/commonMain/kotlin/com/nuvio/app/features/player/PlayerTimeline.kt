@@ -159,6 +159,15 @@ internal fun PlayerTimeline(
                                 size = Size(size.width, trackHeight),
                                 cornerRadius = radius,
                             )
+                            // A very subtle hairline keeps the full progress track visible
+                            // against both light and dark video frames.
+                            drawRoundRect(
+                                color = Color(0xFF9CA3AF).copy(alpha = 0.45f),
+                                topLeft = trackOrigin,
+                                size = Size(size.width, trackHeight),
+                                cornerRadius = radius,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5.dp.toPx()),
+                            )
                             drawRoundRect(
                                 color = accent.copy(alpha = 0.35f),
                                 topLeft = trackOrigin,
