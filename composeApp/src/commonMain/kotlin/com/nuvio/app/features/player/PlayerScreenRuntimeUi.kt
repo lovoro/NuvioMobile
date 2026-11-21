@@ -464,28 +464,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             )
         }
 
-        if (!isIos && !playerSettingsUiState.externalPlayerEnabled &&
-            playerSettingsUiState.androidPlaybackEngine != AndroidPlaybackEngine.Libmpv &&
-            !isInPip
-        ) {
-            AnimatedVisibility(
-                visible = (controlsVisible || fold != null || showParentalGuide) && !playerControlsLocked,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 14.dp, end = 14.dp),
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                PlayerAction(
-                    description = if (learningMode) "Disable Language Learning" else "Enable Language Learning",
-                    painter = appIconPainter(AppIconResource.LanguageLearning),
-                    onClick = { PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode) },
-                    iconSize = 24.dp,
-                    tint = Color.White,
-                )
-            }
-        }
-
         RenderPlayerControls(
             displayedPositionMs = displayedPositionMs,
             isEpisode = isEpisode,
@@ -675,6 +653,16 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             },
             onSwitchEngineClick = if (playerController?.playbackEngine != null) {
                 { showSwitchEngineConfirm = true }
+            } else {
+                null
+            },
+            onLearningModeClick = if (
+                !isIos &&
+                !playerSettingsUiState.externalPlayerEnabled &&
+                playerSettingsUiState.androidPlaybackEngine != AndroidPlaybackEngine.Libmpv &&
+                !isInPip
+            ) {
+                { PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode) }
             } else {
                 null
             },
