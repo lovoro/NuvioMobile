@@ -1281,7 +1281,7 @@ private fun LearningSubtitlePanel(
                     painter = appIconPainter(AppIconResource.PlayerRepeatOne),
                     contentDescription = "Repeat current sentence",
                     tint = repeatTint,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(30.dp),
                 )
             }
             Row(
