@@ -188,7 +188,7 @@ fun SubtitleModal(
                 )
 
                 Row(
-                    modifier = if (compactWidth) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
