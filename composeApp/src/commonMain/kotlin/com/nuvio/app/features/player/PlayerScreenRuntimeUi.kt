@@ -1281,7 +1281,7 @@ private fun LearningSubtitlePanel(
                     painter = appIconPainter(AppIconResource.PlayerRepeatOne),
                     contentDescription = "Repeat current sentence",
                     tint = repeatTint,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(28.dp),
                 )
             }
             Row(
@@ -1303,7 +1303,7 @@ private fun LearningSubtitlePanel(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43), modifier = Modifier.size(32.dp))
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43), modifier = Modifier.size(34.dp))
                 }
                 Box(
                     modifier = Modifier
@@ -1344,7 +1344,7 @@ private fun LearningSubtitlePanel(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43), modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43), modifier = Modifier.size(34.dp))
                 }
             }
             Box(
