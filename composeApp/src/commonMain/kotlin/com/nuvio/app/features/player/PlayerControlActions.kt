@@ -123,6 +123,7 @@ internal fun PlayerControlActions(
     onSubmitIntroClick: (() -> Unit)?,
     onInteraction: () -> Unit,
     showRuntime: Boolean = true,
+    iconTint: Color = Color.White,
 ) {
     val actions = playerControlActions(
         playbackSnapshot = playbackSnapshot,
@@ -167,6 +168,7 @@ internal fun PlayerControlActions(
                         icon = action.icon,
                         painter = action.painter,
                         iconSize = action.iconSize,
+                        tint = iconTint,
                     )
                 }
                 if (hasOverflow) {
