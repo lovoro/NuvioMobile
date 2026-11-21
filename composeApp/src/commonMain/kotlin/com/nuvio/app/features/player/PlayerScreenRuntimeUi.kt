@@ -1288,7 +1288,12 @@ private fun LearningSubtitlePanel(
                         val strokeWidth = 2.2.dp.toPx()
                         val inset = 3.dp.toPx()
                         val arrow = 5.dp.toPx()
-                        // Single circular replay arrow with an open gap and one arrowhead.
+                        // One continuous circular arrow; the arrowhead joins the arc at its upper-right end.
+                        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                        val radius = size.width / 2f - inset
+                        val startRadians = Math.toRadians(-42.0)
+                        val tipX = center.x + radius * kotlin.math.cos(startRadians).toFloat()
+                        val tipY = center.y + radius * kotlin.math.sin(startRadians).toFloat()
                         drawArc(
                             color = repeatTint,
                             startAngle = -42f,
@@ -1298,20 +1303,21 @@ private fun LearningSubtitlePanel(
                             size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
                             style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round),
                         )
+                        val tangentX = -kotlin.math.sin(startRadians).toFloat()
+                        val tangentY = kotlin.math.cos(startRadians).toFloat()
+                        val normalX = -tangentY
+                        val normalY = tangentX
+                        val arrowLength = 4.2.dp.toPx()
+                        val arrowHalfWidth = 2.6.dp.toPx()
+                        val baseX = tipX - tangentX * arrowLength
+                        val baseY = tipY - tangentY * arrowLength
                         val arrowHead = Path().apply {
-                            moveTo(size.width - inset - 1.dp.toPx(), inset + 1.dp.toPx())
-                            lineTo(size.width - inset - arrow, inset)
-                            lineTo(size.width - inset, inset + arrow)
+                            moveTo(tipX, tipY)
+                            lineTo(baseX + normalX * arrowHalfWidth, baseY + normalY * arrowHalfWidth)
+                            lineTo(baseX - normalX * arrowHalfWidth, baseY - normalY * arrowHalfWidth)
+                            close()
                         }
-                        drawPath(
-                            arrowHead,
-                            repeatTint,
-                            style = Stroke(
-                                width = strokeWidth,
-                                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                                join = androidx.compose.ui.graphics.StrokeJoin.Round,
-                            ),
-                        )
+                        drawPath(arrowHead, repeatTint)
                     }
                     Text(
                         text = "1",
