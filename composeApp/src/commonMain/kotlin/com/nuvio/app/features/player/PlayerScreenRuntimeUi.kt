@@ -1358,7 +1358,7 @@ private fun LearningSubtitlePanel(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43))
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous sentence", tint = Color(0xFF343A43), modifier = Modifier.size(28.dp))
                 }
                 Box(
                     modifier = Modifier
@@ -1399,7 +1399,7 @@ private fun LearningSubtitlePanel(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43))
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next sentence", tint = Color(0xFF343A43), modifier = Modifier.size(28.dp))
                 }
             }
             Box(
