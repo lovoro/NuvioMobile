@@ -478,7 +478,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             ) {
                 PlayerAction(
                     description = if (learningMode) "Disable Language Learning" else "Enable Language Learning",
-                    painter = appIconPainter(AppIconResource.PlayerSubtitles),
+                    painter = appIconPainter(AppIconResource.LanguageLearning),
                     onClick = { PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode) },
                     iconSize = 24.dp,
                     tint = Color.White,
