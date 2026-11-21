@@ -268,6 +268,21 @@ private data class LearningSubtitleWord(
     val weightToken: String,
 )
 
+/** Conservative vocabulary cues for bracketed sound-effect captions. */
+private fun isLikelyNonSpeechCaption(annotation: String): Boolean {
+    val words = annotation.lowercase().filter { it.isLetterOrDigit() || it.isWhitespace() }
+    val cues = listOf(
+        "whistle", "whistles", "whistling", "phone rings", "phone ringing", "cellphone",
+        "ringing", "buzzing", "vibrating", "alarm", "door", "footsteps", "footstep",
+        "keys jingling", "jingling", "music", "laughs", "laughing", "chuckles",
+        "sighs", "sighing", "coughs", "coughing", "sobbing", "crying", "gasps",
+        "thunder", "rain", "wind", "engine", "car horn", "horn honks", "honking",
+        "glass breaking", "shattering", "explosion", "gunshot", "birds chirping",
+        "dog barking", "cat meowing", "applause", "cheering", "crowd", "static",
+    )
+    return cues.any { cue -> words.contains(cue) }
+}
+
 /** Finds lexical words rather than treating every non-whitespace token as a word. */
 private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val result = mutableListOf<LearningSubtitleWord>()
@@ -275,10 +290,13 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     // estimated speaking-time budget. A cue made entirely of a sound caption
     // remains highlightable, which is useful for learning vocabulary such as
     // "whistles", "footsteps", or "phone rings".
-    val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text).toList()
+    val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text)
+        .filter { isLikelyNonSpeechCaption(it.value) }
+        .toList()
     val hasWordsOutsideAnnotations = annotationMatches.isNotEmpty() &&
-        text.replace(Regex("\\[[^\\]\\r\\n]+\\]"), " ")
-            .let { outside -> Regex("[\\p{L}\\p{N}]+").containsMatchIn(outside) }
+        annotationMatches.fold(text) { remaining, match ->
+            remaining.replaceRange(match.range, " ")
+        }.let { outside -> Regex("[\\p{L}\\p{N}]+").containsMatchIn(outside) }
     val excludedAnnotationRanges = if (hasWordsOutsideAnnotations) {
         annotationMatches.map { it.range }
     } else {
