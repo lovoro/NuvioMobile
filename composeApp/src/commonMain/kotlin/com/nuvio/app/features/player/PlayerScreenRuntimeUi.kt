@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -67,6 +66,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.AppIconResource
+import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.core.ui.LocalFold
@@ -475,24 +476,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xDD17191D))
-                        .border(1.dp, Color(0x557F8997), CircleShape)
-                        .clickable {
-                            PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode)
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Translate,
-                        contentDescription = if (learningMode) "Disable Language Learning" else "Enable Language Learning",
-                        tint = if (learningMode) MaterialTheme.colorScheme.primary else Color.White,
-                        modifier = Modifier.size(23.dp),
-                    )
-                }
+                PlayerAction(
+                    description = if (learningMode) "Disable Language Learning" else "Enable Language Learning",
+                    painter = appIconPainter(AppIconResource.PlayerSubtitles),
+                    onClick = { PlayerSettingsRepository.setEnglishLearningEnabled(!learningMode) },
+                    iconSize = 24.dp,
+                    tint = Color.White,
+                )
             }
         }
 
