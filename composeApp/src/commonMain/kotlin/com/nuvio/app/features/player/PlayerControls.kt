@@ -322,7 +322,7 @@ internal fun PlayerControlsShell(
                 }
             }
 
-            if (showPlaybackControls && useLegacyLayout) {
+            if (showPlaybackControls && useLegacyLayout && centerControlsAreaHeight == null) {
                 ProgressControls(
                     playbackSnapshot = playbackSnapshot,
                     displayedPositionMs = displayedPositionMs,
