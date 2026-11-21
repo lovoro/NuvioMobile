@@ -243,6 +243,7 @@ internal fun playerControlActions(
     onNextEpisodeClick: (() -> Unit)?,
     onSpeedClick: () -> Unit,
     onResizeModeClick: () -> Unit,
+    showResizeModeAction: Boolean = true,
     onVideoSettingsClick: (() -> Unit)?,
     onOpenInExternalPlayer: (() -> Unit)?,
     onStreamInfoClick: () -> Unit,
