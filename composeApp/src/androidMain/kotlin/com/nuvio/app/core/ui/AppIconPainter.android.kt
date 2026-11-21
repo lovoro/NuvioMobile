@@ -13,6 +13,7 @@ actual fun appIconPainter(icon: AppIconResource): Painter =
             AppIconResource.PlayerPause -> R.drawable.ic_player_pause
             AppIconResource.PlayerAspectRatio -> R.drawable.ic_player_aspect_ratio
             AppIconResource.PlayerSubtitles -> R.drawable.ic_player_subtitles
+            AppIconResource.LanguageLearning -> R.drawable.ic_language_learning
             AppIconResource.PlayerAudioFilled -> R.drawable.ic_player_audio_filled
             AppIconResource.PlayerSource -> R.drawable.ic_player_source
             AppIconResource.PlayerEpisodes -> R.drawable.ic_player_episodes
