@@ -931,10 +931,18 @@ private fun ExoPlayerSurface(
                         learningSubtitleLoadJob?.cancel()
                         val selectedTrackNumber = selectedEmbeddedFormat.id?.toIntOrNull()
                         learningSubtitleLoadJob = coroutineScope.launch {
-                            val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
+                            val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
                                 sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
                             )
-                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.update(prefetched)
+                            if (extraction.cues.isNotEmpty()) {
+                                if (extraction.isComplete) {
+                                    PlayerLearningSubtitleState.update(extraction.cues)
+                                } else {
+                                    // An incomplete range scan must not stop Media3's live fallback.
+                                    PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
+                                    Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
+                                }
+                            }
                         }
                     } else {
                         learningInternalSubtitleSelected.set(false)
@@ -1181,10 +1189,18 @@ private fun ExoPlayerSurface(
                         learningSubtitleLoadJob?.cancel()
                         val selectedTrackNumber = selectedFormat?.id?.toIntOrNull()
                         learningSubtitleLoadJob = coroutineScope.launch {
-                            val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
+                            val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
                                 sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
                             )
-                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.update(prefetched)
+                            if (extraction.cues.isNotEmpty()) {
+                                if (extraction.isComplete) {
+                                    PlayerLearningSubtitleState.update(extraction.cues)
+                                } else {
+                                    // An incomplete range scan must not stop Media3's live fallback.
+                                    PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
+                                    Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
+                                }
+                            }
                         }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters

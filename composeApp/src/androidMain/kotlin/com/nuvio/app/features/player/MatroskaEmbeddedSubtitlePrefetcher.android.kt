@@ -20,10 +20,12 @@ import kotlin.coroutines.resume
 internal object MatroskaEmbeddedSubtitlePrefetcher {
     private const val PROBE = 512 * 1024
     private const val TAIL = 16 * 1024 * 1024
-    private const val MAX_CLUSTER = 4 * 1024 * 1024
-    private const val MAX_BYTES = 256L * 1024 * 1024
-    private const val MAX_REQUESTS = 3_200
-    private const val MAX_CLUSTERS = 1_500
+    // Long films and high-bitrate video can have thousands of indexed clusters.
+    // Keep generous safety budgets, but never silently treat a truncated scan as complete.
+    private const val MAX_CLUSTER = 32 * 1024 * 1024
+    private const val MAX_BYTES = 2L * 1024 * 1024 * 1024
+    private const val MAX_REQUESTS = 40_100
+    private const val EXTRACTION_TIMEOUT_MS = 900_000L
     private val client = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -31,22 +33,27 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         .followSslRedirects(true)
         .build()
 
+    data class LoadResult(
+        val cues: List<LearningSubtitleCue>,
+        val isComplete: Boolean,
+    )
+
     suspend fun load(
         url: String,
         headers: Map<String, String>,
         selectedTrackNumber: Int?,
-    ): List<LearningSubtitleCue> {
+    ): LoadResult {
         if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
             !(url.startsWith("http://", true) || url.startsWith("https://", true))
-        ) return emptyList()
+        ) return LoadResult(emptyList(), false)
         return withContext(Dispatchers.IO) {
-            withTimeoutOrNull(180_000L) {
+            withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
                     loadInternal(url, headers, selectedTrackNumber)
                 } catch (_: Exception) {
-                    emptyList()
+                    LoadResult(emptyList(), false)
                 }
-            } ?: emptyList()
+            } ?: LoadResult(emptyList(), false)
         }
     }
 
@@ -54,17 +61,18 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         url: String,
         headers: Map<String, String>,
         selectedTrack: Int,
-    ): List<LearningSubtitleCue> {
+    ): LoadResult {
         val budget = Budget()
-        val initial = range(url, headers, 0L, PROBE, budget) ?: return emptyList()
-        val segment = find(initial, ID_SEGMENT) ?: return emptyList()
+        val initial = range(url, headers, 0L, PROBE, budget) ?: return LoadResult(emptyList(), false)
+        val segment = find(initial, ID_SEGMENT) ?: return LoadResult(emptyList(), false)
         val segmentData = segment.data.toLong()
         val top = children(initial, segment.data, segment.end)
         val tracksElement = top.firstOrNull { it.id == ID_TRACKS }
             ?: seekElement(initial, top, ID_TRACKS, segmentData, url, headers, budget)
-            ?: return emptyList()
-        val tracksBytes = elementBytes(initial, tracksElement, url, headers, budget) ?: return emptyList()
-        val trackInfo = parseTrack(tracksBytes, selectedTrack) ?: return emptyList()
+            ?: return LoadResult(emptyList(), false)
+        val tracksBytes = elementBytes(initial, tracksElement, url, headers, budget)
+            ?: return LoadResult(emptyList(), false)
+        val trackInfo = parseTrack(tracksBytes, selectedTrack) ?: return LoadResult(emptyList(), false)
         val scale = top.firstOrNull { it.id == ID_INFO }?.let {
             elementBytes(initial, it, url, headers, budget)?.let(::parseScale)
         } ?: DEFAULT_SCALE
@@ -72,36 +80,61 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         val cuesElement = cuesTop ?: seekElement(initial, top, ID_CUES, segmentData, url, headers, budget)
         var cuesBytes = cuesElement?.let { elementBytes(initial, it, url, headers, budget) }
         if (cuesBytes == null) {
-            val total = budget.totalLength ?: return emptyList()
+            val total = budget.totalLength ?: return LoadResult(emptyList(), false)
             val tailStart = (total - TAIL).coerceAtLeast(0L)
-            val tail = range(url, headers, tailStart, minOf(TAIL.toLong(), total).toInt(), budget) ?: return emptyList()
-            val offset = findOffset(tail, ID_CUES) ?: return emptyList()
-            val e = readElement(tail, offset) ?: return emptyList()
-            if (e.end > tail.size) return emptyList()
+            val tail = range(url, headers, tailStart, minOf(TAIL.toLong(), total).toInt(), budget)
+                ?: return LoadResult(emptyList(), false)
+            val offset = findOffset(tail, ID_CUES) ?: return LoadResult(emptyList(), false)
+            val e = readElement(tail, offset) ?: return LoadResult(emptyList(), false)
+            if (e.end > tail.size) return LoadResult(emptyList(), false)
             cuesBytes = tail.copyOfRange(offset, e.end)
         }
-        val positions = parseCuePositions(cuesBytes)
+        val positions = parseCuePositions(cuesBytes, selectedTrack)
             .distinctBy { it.second }
-            .take(MAX_CLUSTERS)
-        if (positions.isEmpty()) return emptyList()
+            .sortedBy { it.second }
+        if (positions.isEmpty()) return LoadResult(emptyList(), false)
         val result = mutableListOf<LearningSubtitleCue>()
-        for ((cueTicks, clusterPosition) in positions) {
-            if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) break
+        var complete = true
+        for ((_, clusterPosition) in positions) {
+            if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
+                complete = false
+                break
+            }
             val absolute = segmentData + clusterPosition
-            val header = range(url, headers, absolute, 64, budget) ?: continue
-            val clusterHeader = readElement(header, 0) ?: continue
-            if (clusterHeader.id != ID_CLUSTER || clusterHeader.size <= 0 || clusterHeader.size > MAX_CLUSTER) continue
+            val header = range(url, headers, absolute, 64, budget)
+            if (header == null) {
+                complete = false
+                continue
+            }
+            val clusterHeader = readElement(header, 0)
+            if (clusterHeader == null || clusterHeader.id != ID_CLUSTER ||
+                clusterHeader.size <= 0 || clusterHeader.size > MAX_CLUSTER
+            ) {
+                complete = false
+                continue
+            }
             val totalSize = clusterHeader.headerSize + clusterHeader.size
-            if (totalSize > budget.remainingBytes() || budget.requests >= MAX_REQUESTS) continue
-            val cluster = range(url, headers, absolute, totalSize, budget) ?: continue
+            if (totalSize > budget.remainingBytes() || budget.requests >= MAX_REQUESTS) {
+                complete = false
+                break
+            }
+            val cluster = range(url, headers, absolute, totalSize, budget)
+            if (cluster == null || cluster.size < totalSize) {
+                complete = false
+                continue
+            }
             val decoded = MatroskaSubtitleTextParser.parseCluster(
                 cluster,
                 listOf(trackInfo),
                 scale,
             )[selectedTrack].orEmpty()
+            if (decoded.isEmpty()) complete = false
             result += decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
         }
-        return result.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs }
+        return LoadResult(
+            cues = result.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },
+            isComplete = complete,
+        )
     }
 
     private fun parseTrack(bytes: ByteArray, wanted: Int): MatroskaSubtitleTextParser.Track? {
@@ -129,7 +162,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return null
     }
 
-    private fun parseCuePositions(bytes: ByteArray): List<Pair<Long, Long>> {
+    private fun parseCuePositions(bytes: ByteArray, selectedTrack: Int): List<Pair<Long, Long>> {
         val root = readElement(bytes, 0) ?: return emptyList()
         if (root.id != ID_CUES) return emptyList()
         val result = mutableListOf<Pair<Long, Long>>()
@@ -138,8 +171,11 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             val time = pointChildren.firstOrNull { it.id == ID_CUE_TIME }?.let { unsigned(bytes, it) } ?: return@forEach
             pointChildren.filter { it.id == ID_CUE_TRACK_POSITIONS }.forEach { pos ->
                 val p = children(bytes, pos.data, pos.end)
-                val cluster = p.firstOrNull { it.id == ID_CUE_CLUSTER_POSITION }?.let { unsigned(bytes, it) }
-                if (cluster != null) result += time to cluster
+                val cueTrack = p.firstOrNull { it.id == ID_CUE_TRACK }?.let { unsigned(bytes, it) }
+                if (cueTrack == selectedTrack.toLong()) {
+                    val cluster = p.firstOrNull { it.id == ID_CUE_CLUSTER_POSITION }?.let { unsigned(bytes, it) }
+                    if (cluster != null) result += time to cluster
+                }
             }
         }
         return result
