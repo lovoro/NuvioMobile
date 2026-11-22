@@ -1182,7 +1182,7 @@ private fun ExoPlayerSurface(
                         val selectedTrackNumber = selectedFormat?.id?.toIntOrNull()
                         learningSubtitleLoadJob = coroutineScope.launch {
                             val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
-                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
+                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber, exoPlayer.currentPosition,
                             )
                             if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.mergePrefetched(prefetched)
                         }

@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Callback
@@ -39,11 +40,15 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
             !(url.startsWith("http://", true) || url.startsWith("https://", true))
         ) return emptyList()
-        return withTimeoutOrNull(12_000L) {
-            withContext(Dispatchers.IO) {
-                runCatching { loadInternal(url, headers, selectedTrackNumber, playbackPositionMs) }.getOrDefault(emptyList())
-            }
-        }.orEmpty()
+        return withContext(Dispatchers.IO) {
+            withTimeoutOrNull(12_000L) {
+                try {
+                    loadInternal(url, headers, selectedTrackNumber, playbackPositionMs)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } ?: emptyList()
+        }
     }
 
     private suspend fun loadInternal(
@@ -158,9 +163,11 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             if (id == wanted && position != null) {
                 val absolute = segmentData + position
                 val header = range(url, headers, absolute, 64, budget) ?: return null
-                return readElement(header, 0)?.takeIf { it.id == wanted }?.copy(
-                    data = (absolute + it.data).toInt(),
-                    end = (absolute + it.end).toInt(),
+                val element = readElement(header, 0) ?: return null
+                if (element.id != wanted) return null
+                return element.copy(
+                    data = (absolute + element.data).toInt(),
+                    end = (absolute + element.end).toInt(),
                 )
             }
         }
@@ -264,13 +271,14 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return out
     }
 
-    private fun readElement(bytes: ByteArray, offset: Int): Element? {
-        val id = vint(bytes, offset, bytes.size, false) ?: return null
-        val size = vint(bytes, offset + id.second, bytes.size, true) ?: return null
+    private fun readElement(bytes: ByteArray, offset: Int, limit: Int = bytes.size): Element? {
+        val safeLimit = limit.coerceAtMost(bytes.size)
+        val id = vint(bytes, offset, safeLimit, false) ?: return null
+        val size = vint(bytes, offset + id.second, safeLimit, true) ?: return null
         val data = offset + id.second + size.second
         if (size.first < 0) return null
         val unknownSize = size.first == (1L shl (7 * size.second)) - 1L
-        val actualSize = if (unknownSize) (limit - data).coerceAtLeast(0).toLong() else size.first
+        val actualSize = if (unknownSize) (safeLimit - data).coerceAtLeast(0).toLong() else size.first
         if (actualSize > Int.MAX_VALUE || data.toLong() + actualSize > Int.MAX_VALUE) return null
         return Element(
             id.first, data, data + actualSize.toInt(), actualSize.toInt(),
