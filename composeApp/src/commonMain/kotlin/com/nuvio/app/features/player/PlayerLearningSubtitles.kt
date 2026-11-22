@@ -29,6 +29,7 @@ object PlayerLearningSubtitleState {
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
     private val activeLiveCues = linkedMapOf<String, Long>()
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
+    private var completeExtractionLoaded = false
 
     private fun publishCombined(live: List<LearningSubtitleCue>) {
         cues = (live + prefetchedCues)
@@ -53,11 +54,13 @@ object PlayerLearningSubtitleState {
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
+        completeExtractionLoaded = false
         mutableStatus = LearningSubtitleStatus.LOADING
     }
 
     /** Captures only cues actually emitted during playback; seeking can leave gaps. */
     fun captureLiveCueGroup(texts: List<String>, positionMs: Long) {
+        if (completeExtractionLoaded) return
         val timeMs = positionMs.coerceAtLeast(0L)
         val visibleTexts = texts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val visibleSet = visibleTexts.toSet()
@@ -109,6 +112,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun update(newCues: List<LearningSubtitleCue>) {
+        completeExtractionLoaded = true
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
@@ -122,6 +126,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun clear() {
+        completeExtractionLoaded = false
         prefetchedCues = emptyList()
         cues = emptyList()
         completedLiveCues.clear()

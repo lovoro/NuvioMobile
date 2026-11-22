@@ -932,9 +932,9 @@ private fun ExoPlayerSurface(
                         val selectedTrackNumber = selectedEmbeddedFormat.id?.toIntOrNull()
                         learningSubtitleLoadJob = coroutineScope.launch {
                             val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
-                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber, exoPlayer.currentPosition,
+                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
                             )
-                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.mergePrefetched(prefetched)
+                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.update(prefetched)
                         }
                     } else {
                         learningInternalSubtitleSelected.set(false)
@@ -1182,9 +1182,9 @@ private fun ExoPlayerSurface(
                         val selectedTrackNumber = selectedFormat?.id?.toIntOrNull()
                         learningSubtitleLoadJob = coroutineScope.launch {
                             val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
-                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber, exoPlayer.currentPosition,
+                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
                             )
-                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.mergePrefetched(prefetched)
+                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.update(prefetched)
                         }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
