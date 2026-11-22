@@ -1373,6 +1373,8 @@ private fun ExoPlayerSurface(
                     Log.d(TAG, "clearExternalSubtitleAndSelect: trackIndex=$trackIndex")
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
+                    learningSubtitleLoadJob = null
+                    learningSubtitlePrefetchTrackKey = null
                     learningSubtitleSelectionUrl = null
                     learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.clear()
