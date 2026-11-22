@@ -26,6 +26,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     private const val MAX_BYTES = 2L * 1024 * 1024 * 1024
     private const val MAX_REQUESTS = 40_100
     private const val EXTRACTION_TIMEOUT_MS = 900_000L
+    private const val PRIORITY_BEFORE_MS = 5 * 60 * 1000L
+    private const val PRIORITY_AFTER_MS = 10 * 60 * 1000L
     private val client = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -42,6 +44,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         url: String,
         headers: Map<String, String>,
         selectedTrackNumber: Int?,
+        currentPositionMs: () -> Long,
+        onPartialCues: (List<LearningSubtitleCue>) -> Unit,
     ): LoadResult {
         if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
             !(url.startsWith("http://", true) || url.startsWith("https://", true))
@@ -49,7 +53,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return withContext(Dispatchers.IO) {
             withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
-                    loadInternal(url, headers, selectedTrackNumber)
+                    loadInternal(url, headers, selectedTrackNumber, currentPositionMs, onPartialCues)
                 } catch (_: Exception) {
                     LoadResult(emptyList(), false)
                 }
@@ -61,6 +65,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         url: String,
         headers: Map<String, String>,
         selectedTrack: Int,
+        currentPositionMs: () -> Long,
+        onPartialCues: (List<LearningSubtitleCue>) -> Unit,
     ): LoadResult {
         val budget = Budget()
         val initial = range(url, headers, 0L, PROBE, budget) ?: return LoadResult(emptyList(), false)
@@ -92,17 +98,35 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         // Matroska Cues commonly index video/audio blocks rather than subtitle tracks.
         // Read every indexed Cluster, then filter actual subtitle blocks by TrackNumber
         // inside MatroskaSubtitleTextParser. Filtering CueTrack here can yield zero cues.
-        val positions = parseCuePositions(cuesBytes)
+        // Keep the full scan, but always pick clusters around the live playback position first.
+        // Re-evaluate the playback window between clusters so a seek immediately changes priority.
+        val pendingPositions = parseCuePositions(cuesBytes)
             .distinctBy { it.second }
-            .sortedBy { it.second }
-        if (positions.isEmpty()) return LoadResult(emptyList(), false)
+            .sortedBy { it.first }
+            .toMutableList()
+        if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
         val result = mutableListOf<LearningSubtitleCue>()
+        val partialBatch = mutableListOf<LearningSubtitleCue>()
+        var clustersSinceCallback = 0
         var complete = true
-        for ((_, clusterPosition) in positions) {
+        while (pendingPositions.isNotEmpty()) {
             if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
                 complete = false
                 break
             }
+
+            val playbackPosition = withContext(Dispatchers.Main.immediate) {
+                currentPositionMs().coerceAtLeast(0L)
+            }
+            val windowStart = (playbackPosition - PRIORITY_BEFORE_MS).coerceAtLeast(0L)
+            val windowEnd = playbackPosition + PRIORITY_AFTER_MS
+            val priorityIndex = pendingPositions.indexOfFirst { (cueTime, _) ->
+                val cueTimeMs = ticksToMs(cueTime, scale)
+                cueTimeMs in windowStart..windowEnd
+            }
+            val selectedIndex = if (priorityIndex >= 0) priorityIndex else 0
+            val (_, clusterPosition) = pendingPositions.removeAt(selectedIndex)
+
             val absolute = segmentData + clusterPosition
             val header = range(url, headers, absolute, 64, budget)
             if (header == null) {
@@ -131,7 +155,25 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 listOf(trackInfo),
                 scale,
             )[selectedTrack].orEmpty()
-            result += decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
+            val decodedCues = decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
+            result += decodedCues
+            partialBatch += decodedCues
+            clustersSinceCallback++
+
+            val hasPriorityRemaining = pendingPositions.any { (cueTime, _) ->
+                val cueTimeMs = ticksToMs(cueTime, scale)
+                cueTimeMs in windowStart..windowEnd
+            }
+            if (partialBatch.isNotEmpty() && (clustersSinceCallback >= 8 || !hasPriorityRemaining)) {
+                val batch = partialBatch.distinctBy { it.startTimeMs to it.text }
+                withContext(Dispatchers.Main.immediate) { onPartialCues(batch) }
+                partialBatch.clear()
+                clustersSinceCallback = 0
+            }
+        }
+        if (partialBatch.isNotEmpty()) {
+            val batch = partialBatch.distinctBy { it.startTimeMs to it.text }
+            withContext(Dispatchers.Main.immediate) { onPartialCues(batch) }
         }
         return LoadResult(
             cues = result.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },

@@ -700,7 +700,21 @@ private fun ExoPlayerSurface(
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
         learningSubtitleLoadJob = coroutineScope.launch {
             val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
-                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
+                url = sourceUrl,
+                headers = sanitizedSourceHeaders,
+                selectedTrackNumber = selectedTrackNumber,
+                currentPositionMs = { exoPlayer.currentPosition },
+                onPartialCues = { partialCues ->
+                    if (
+                        partialCues.isNotEmpty() &&
+                        learningSubtitlePrefetchTrackKey == trackKey &&
+                        learningSubtitleSelectionUrl == null &&
+                        selectedExternalSubtitleMimeType == null
+                    ) {
+                        PlayerLearningSubtitleState.mergePrefetched(partialCues)
+                        Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
+                    }
+                },
             )
             // A cancelled or superseded scan must never overwrite the currently selected track.
             if (
