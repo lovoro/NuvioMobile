@@ -1310,7 +1310,7 @@ private fun LearningSubtitlePanel(
                         .size(48.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF3978C5))
-                        .clickable(enabled = cues.isNotEmpty()) {
+                        .clickable {
                             if (isPlaying) {
                                 repeatJob?.cancel()
                                 repeatJob = null
