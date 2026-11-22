@@ -671,6 +671,58 @@ private fun ExoPlayerSurface(
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
     var learningSubtitleLoadJob by remember { mutableStateOf<Job?>(null) }
     var learningSubtitleSelectionUrl by remember { mutableStateOf<String?>(null) }
+    var learningSubtitlePrefetchTrackKey by remember(playerSourceKey) { mutableStateOf<String?>(null) }
+
+    // Both automatic language-based selection and manual selection use this single entry point.
+    // Media3 may report the same selected track repeatedly; do not restart its scan.
+    fun startEmbeddedSubtitlePrefetch(format: Format?) {
+        if (format == null) return
+        val trackKey = listOf(
+            format.id.orEmpty(),
+            format.sampleMimeType.orEmpty(),
+            format.language.orEmpty(),
+            format.label?.toString().orEmpty(),
+            format.codecs.orEmpty(),
+        ).joinToString("|")
+        if (learningSubtitlePrefetchTrackKey == trackKey) {
+            Log.d(TAG, "Embedded subtitle prefetch already started for track=${format.id}; keeping current job")
+            return
+        }
+
+        learningSubtitleLoadJob?.cancel()
+        learningSubtitlePrefetchTrackKey = trackKey
+        val selectedTrackNumber = format.id?.toIntOrNull()
+        if (selectedTrackNumber == null) {
+            Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id})")
+            return
+        }
+
+        Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
+        learningSubtitleLoadJob = coroutineScope.launch {
+            val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
+                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
+            )
+            // A cancelled or superseded scan must never overwrite the currently selected track.
+            if (
+                learningSubtitlePrefetchTrackKey != trackKey ||
+                learningSubtitleSelectionUrl != null ||
+                selectedExternalSubtitleMimeType != null
+            ) {
+                return@launch
+            }
+            if (extraction.cues.isNotEmpty()) {
+                if (extraction.isComplete) {
+                    PlayerLearningSubtitleState.update(extraction.cues)
+                } else {
+                    // An incomplete range scan must not stop Media3's live fallback.
+                    PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
+                    Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
+                }
+            } else {
+                Log.w(TAG, "Embedded subtitle extraction returned no cues for selected track=$selectedTrackNumber")
+            }
+        }
+    }
     val isInPip = rememberIsInPictureInPicture()
     // Player size outside PiP, so PiP subtitles keep the full-screen size relative to the video.
     var playerSizeOutsidePip by remember { mutableStateOf(IntSize.Zero) }
@@ -928,32 +980,13 @@ private fun ExoPlayerSurface(
                             PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         }
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat) { exoPlayer.currentPosition }
-                        learningSubtitleLoadJob?.cancel()
-                        val selectedTrackNumber = selectedEmbeddedFormat.id?.toIntOrNull()
-                        if (selectedTrackNumber != null) {
-                            learningSubtitleLoadJob?.cancel()
-                            learningSubtitleLoadJob = coroutineScope.launch {
-                                val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
-                                    sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
-                                )
-                                if (extraction.cues.isNotEmpty()) {
-                                    if (extraction.isComplete) {
-                                        PlayerLearningSubtitleState.update(extraction.cues)
-                                    } else {
-                                        // An incomplete range scan must not stop Media3's live fallback.
-                                        PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
-                                        Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
-                                    }
-                                } else {
-                                    Log.w(TAG, "Embedded subtitle extraction returned no cues for selected track=$selectedTrackNumber")
-                                }
-                            }
-                        } else {
-                            Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${selectedEmbeddedFormat.id})")
-                        }
+                        startEmbeddedSubtitlePrefetch(selectedEmbeddedFormat)
                     } else {
                         learningInternalSubtitleSelected.set(false)
                         PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                        learningSubtitleLoadJob?.cancel()
+                        learningSubtitleLoadJob = null
+                        learningSubtitlePrefetchTrackKey = null
                     }
                 }
                 // Trigger player rebuild with video effects when ASS track becomes selected
@@ -1171,6 +1204,8 @@ private fun ExoPlayerSurface(
                 override fun selectSubtitleTrack(index: Int) {
                     Log.d(TAG, "selectSubtitleTrack: index=$index")
                     learningSubtitleLoadJob?.cancel()
+                    learningSubtitleLoadJob = null
+                    learningSubtitlePrefetchTrackKey = null
                     learningSubtitleSelectionUrl = null
                     selectedExternalSubtitleMimeType = null
                     learningInternalSubtitleSelected.set(index >= 0 && PlayerSettingsRepository.uiState.value.englishLearningEnabled)
@@ -1194,30 +1229,10 @@ private fun ExoPlayerSurface(
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
-                        learningSubtitleLoadJob?.cancel()
-                        // External subtitles are parsed from their own subtitle file. Only a
-                        // numeric Matroska TrackNumber from an embedded track may start this scan.
-                        val selectedTrackNumber = selectedFormat?.id?.toIntOrNull()
-                            ?.takeIf { learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null }
-                        if (selectedTrackNumber != null) {
-                            learningSubtitleLoadJob = coroutineScope.launch {
-                                val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
-                                    sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
-                                )
-                                if (extraction.cues.isNotEmpty()) {
-                                    if (extraction.isComplete) {
-                                        PlayerLearningSubtitleState.update(extraction.cues)
-                                    } else {
-                                        // An incomplete range scan must not stop Media3's live fallback.
-                                        PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
-                                        Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
-                                    }
-                                } else {
-                                    Log.w(TAG, "Embedded subtitle extraction returned no cues for track=$selectedTrackNumber")
-                                }
-                            }
+                        if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) {
+                            startEmbeddedSubtitlePrefetch(selectedFormat)
                         } else {
-                            Log.d(TAG, "Skipping Matroska extraction: selected subtitle is not an embedded numeric track")
+                            Log.d(TAG, "Skipping Matroska extraction: selected subtitle is external")
                         }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
@@ -1233,6 +1248,8 @@ private fun ExoPlayerSurface(
                     Log.d(TAG, "setSubtitleUri: url=${url.redactedForLogs()}")
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
+                    learningSubtitleLoadJob = null
+                    learningSubtitlePrefetchTrackKey = null
                     learningSubtitleSelectionUrl = url
                     learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.beginLoading()
@@ -1327,6 +1344,8 @@ private fun ExoPlayerSurface(
                     Log.d(TAG, "clearExternalSubtitle called")
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
+                    learningSubtitleLoadJob = null
+                    learningSubtitlePrefetchTrackKey = null
                     learningSubtitleSelectionUrl = null
                     learningInternalSubtitleSelected.set(false)
                     PlayerLearningSubtitleState.clear()
