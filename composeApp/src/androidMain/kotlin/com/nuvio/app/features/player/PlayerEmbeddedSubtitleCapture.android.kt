@@ -32,10 +32,30 @@ internal object PlayerEmbeddedSubtitleCapture {
         val key = selectedTrackKey ?: return@Runnable
         val entry = tracks[key] ?: return@Runnable
         val snapshot = synchronized(entry.lock) { entry.cues.values.toList() }
-        if (snapshot.isNotEmpty()) PlayerLearningSubtitleState.updatePartial(snapshot)
+        if (snapshot.isNotEmpty()) {
+            PlayerLearningSubtitleState.updatePartial(snapshot)
+            val maxCueEndMs = snapshot.maxOfOrNull { it.endTimeMs } ?: return@Runnable
+            val shouldLogCoverage = lastLoggedCueEndMs == Long.MIN_VALUE ||
+                maxCueEndMs >= lastLoggedCueEndMs + 30_000L ||
+                snapshot.size >= lastLoggedCueCount + 500
+            if (shouldLogCoverage) {
+                val playheadMs = playbackPositionMsProvider?.invoke()?.coerceAtLeast(0L)
+                val aheadMs = playheadMs?.let { maxCueEndMs - it }
+                Log.i(
+                    TAG,
+                    "coverage cues=${snapshot.size} playheadMs=${playheadMs ?: -1L} " +
+                        "maxCueEndMs=$maxCueEndMs aheadMs=${aheadMs ?: -1L}",
+                )
+                lastLoggedCueCount = snapshot.size
+                lastLoggedCueEndMs = maxCueEndMs
+            }
+        }
     }
     private val tracks = ConcurrentHashMap<String, TrackCues>()
     @Volatile private var selectedTrackKey: String? = null
+    @Volatile private var playbackPositionMsProvider: (() -> Long)? = null
+    private var lastLoggedCueCount = 0
+    private var lastLoggedCueEndMs = Long.MIN_VALUE
 
     private data class TrackCues(
         val lock: Any = Any(),
@@ -44,6 +64,9 @@ internal object PlayerEmbeddedSubtitleCapture {
 
     fun reset() {
         selectedTrackKey = null
+        playbackPositionMsProvider = null
+        lastLoggedCueCount = 0
+        lastLoggedCueEndMs = Long.MIN_VALUE
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
         tracks.clear()
@@ -55,9 +78,12 @@ internal object PlayerEmbeddedSubtitleCapture {
         return synchronized(entry.lock) { entry.cues.isNotEmpty() }
     }
 
-    fun selectTrack(format: Format?) {
+    fun selectTrack(format: Format?, playbackPositionMs: (() -> Long)? = null) {
         val key = format?.let(::trackKey)
         selectedTrackKey = key
+        playbackPositionMsProvider = if (key == null) null else playbackPositionMs
+        lastLoggedCueCount = 0
+        lastLoggedCueEndMs = Long.MIN_VALUE
         if (key == null) return
         val snapshot = tracks[key]?.let { entry ->
             synchronized(entry.lock) { entry.cues.values.toList() }

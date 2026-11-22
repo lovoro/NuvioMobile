@@ -927,7 +927,7 @@ private fun ExoPlayerSurface(
                         if (PlayerLearningSubtitleState.status == LearningSubtitleStatus.NONE) {
                             PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         }
-                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat)
+                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat) { exoPlayer.currentPosition }
                     } else {
                         learningInternalSubtitleSelected.set(false)
                         PlayerEmbeddedSubtitleCapture.selectTrack(null)
@@ -1169,7 +1169,7 @@ private fun ExoPlayerSurface(
                         val subtitleName = selectedFormat?.label?.toString()?.takeIf { it.isNotBlank() }
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
-                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat)
+                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()
