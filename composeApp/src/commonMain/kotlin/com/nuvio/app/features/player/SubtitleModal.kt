@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -177,8 +176,10 @@ fun SubtitleModal(
             val optionsRailWidth = if (compactWidth) (maxWidth - 10.dp).coerceAtLeast(120.dp) * 0.62f else 300.dp
 
             Column(
-                modifier = Modifier.align(Alignment.BottomStart),
-                verticalArrangement = Arrangement.Bottom,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .align(Alignment.TopStart),
+                verticalArrangement = Arrangement.Top,
             ) {
                 Text(
                     text = stringResource(Res.string.compose_player_subtitles),
@@ -188,7 +189,10 @@ fun SubtitleModal(
                 )
 
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
@@ -198,7 +202,7 @@ fun SubtitleModal(
                     ) {
                         LazyColumn(
                             state = languageListState,
-                            modifier = Modifier.heightIn(max = railMaxHeight),
+                            modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             contentPadding = PaddingValues(vertical = 8.dp),
                         ) {
@@ -260,7 +264,7 @@ fun SubtitleModal(
                             else -> {
                                 LazyColumn(
                                     state = optionsListState,
-                                    modifier = Modifier.heightIn(max = railMaxHeight),
+                                    modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
                                     contentPadding = PaddingValues(vertical = 8.dp),
                                 ) {
@@ -299,7 +303,7 @@ fun SubtitleModal(
                         ) {
                             Column(
                                 modifier = Modifier
-                                    .heightIn(max = railMaxHeight)
+                                    .weight(1f)
                                     .verticalScroll(rememberScrollState()),
                             ) {
                                 SubtitleStylePanel(
@@ -334,7 +338,9 @@ private fun SubtitleRail(
     val tokens = MaterialTheme.nuvio
 
     Column(
-        modifier = Modifier.width(width),
+        modifier = Modifier
+            .width(width)
+            .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
