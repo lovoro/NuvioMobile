@@ -1066,6 +1066,10 @@ private fun LearningSubtitlePanel(
     val scrollTargetIndex = remember(cues, positionMs, activeIndex) {
         findLearningSubtitleScrollIndex(cues, positionMs)
     }
+    // Keep the scroll target tied to the subtitle itself, not its mutable list index.
+    // Background prefetch inserts earlier cues and shifts indices; that must not trigger
+    // an animated scroll every time another batch is merged.
+    val scrollTargetCue = cues.getOrNull(scrollTargetIndex)
     val listState = rememberLazyListState()
     val controlScope = rememberCoroutineScope()
     var repeatCurrentCue by remember { mutableStateOf(false) }
@@ -1078,8 +1082,12 @@ private fun LearningSubtitlePanel(
     } else {
         0
     }
-    LaunchedEffect(scrollTargetIndex, cues.size) {
-        if (scrollTargetIndex >= 0) {
+    LaunchedEffect(
+        scrollTargetCue?.startTimeMs,
+        scrollTargetCue?.endTimeMs,
+        scrollTargetCue?.text,
+    ) {
+        if (scrollTargetCue != null && scrollTargetIndex >= 0) {
             listState.animateScrollToItem(scrollTargetIndex)
         }
     }
@@ -1149,7 +1157,7 @@ private fun LearningSubtitlePanel(
             ) {
                 itemsIndexed(
                     items = cues,
-                    key = { index, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-$index" },
+                    key = { _, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-${cue.text}" },
                 ) { index, cue ->
                     val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
                     val highlightableLines = remember(subtitleLines) {
