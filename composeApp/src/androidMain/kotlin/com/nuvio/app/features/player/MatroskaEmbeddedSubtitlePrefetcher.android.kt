@@ -89,7 +89,10 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             if (e.end > tail.size) return LoadResult(emptyList(), false)
             cuesBytes = tail.copyOfRange(offset, e.end)
         }
-        val positions = parseCuePositions(cuesBytes, selectedTrack)
+        // Matroska Cues commonly index video/audio blocks rather than subtitle tracks.
+        // Read every indexed Cluster, then filter actual subtitle blocks by TrackNumber
+        // inside MatroskaSubtitleTextParser. Filtering CueTrack here can yield zero cues.
+        val positions = parseCuePositions(cuesBytes)
             .distinctBy { it.second }
             .sortedBy { it.second }
         if (positions.isEmpty()) return LoadResult(emptyList(), false)
@@ -128,7 +131,6 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 listOf(trackInfo),
                 scale,
             )[selectedTrack].orEmpty()
-            if (decoded.isEmpty()) complete = false
             result += decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
         }
         return LoadResult(
@@ -162,20 +164,19 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return null
     }
 
-    private fun parseCuePositions(bytes: ByteArray, selectedTrack: Int): List<Pair<Long, Long>> {
+    private fun parseCuePositions(bytes: ByteArray): List<Pair<Long, Long>> {
         val root = readElement(bytes, 0) ?: return emptyList()
         if (root.id != ID_CUES) return emptyList()
         val result = mutableListOf<Pair<Long, Long>>()
         children(bytes, root.data, root.end).filter { it.id == ID_CUE_POINT }.forEach { point ->
             val pointChildren = children(bytes, point.data, point.end)
             val time = pointChildren.firstOrNull { it.id == ID_CUE_TIME }?.let { unsigned(bytes, it) } ?: return@forEach
+            // CueTrack often points to the video track, not the subtitle track. The actual
+            // selected subtitle TrackNumber is filtered while decoding each Cluster's Blocks.
             pointChildren.filter { it.id == ID_CUE_TRACK_POSITIONS }.forEach { pos ->
                 val p = children(bytes, pos.data, pos.end)
-                val cueTrack = p.firstOrNull { it.id == ID_CUE_TRACK }?.let { unsigned(bytes, it) }
-                if (cueTrack == selectedTrack.toLong()) {
-                    val cluster = p.firstOrNull { it.id == ID_CUE_CLUSTER_POSITION }?.let { unsigned(bytes, it) }
-                    if (cluster != null) result += time to cluster
-                }
+                val cluster = p.firstOrNull { it.id == ID_CUE_CLUSTER_POSITION }?.let { unsigned(bytes, it) }
+                if (cluster != null) result += time to cluster
             }
         }
         return result
