@@ -53,6 +53,24 @@ internal object MatroskaSubtitleTextParser {
             }
         }
         val byNumber = tracks.filter { it.codecId in TEXT_CODECS }.associateBy { it.number }
+        // Precompute the next valid timestamp per track in one reverse pass.
+        // This preserves the previous "first later block on the same track" behavior
+        // without rescanning the remaining block list for every subtitle block.
+        val nextStartByIndex = LongArray(blockRecords.size) { Long.MIN_VALUE }
+        val nextStartByTrack = mutableMapOf<Int, Long>()
+        for (index in blockRecords.indices.reversed()) {
+            val record = blockRecords[index]
+            val trackNumber = record.block.trackNumber
+            nextStartByIndex[index] = nextStartByTrack[trackNumber] ?: Long.MIN_VALUE
+            val timestamp = ticksToMs(
+                clusterTimecode + record.block.relativeTimecode,
+                timestampScaleNs,
+            )
+            if (timestamp != null) {
+                nextStartByTrack[trackNumber] = timestamp
+            }
+        }
+
         val result = linkedMapOf<Int, MutableList<Cue>>()
         blockRecords.forEachIndexed { index, record ->
             val track = byNumber[record.block.trackNumber] ?: return@forEachIndexed
@@ -60,10 +78,7 @@ internal object MatroskaSubtitleTextParser {
             val startMs = ticksToMs(startTicks, timestampScaleNs) ?: return@forEachIndexed
             val explicitDuration = record.durationTicks?.let { ticksToMs(it, timestampScaleNs) }
                 ?.takeIf { it > 0L }
-            val nextStart = blockRecords.drop(index + 1).firstNotNullOfOrNull { next ->
-                if (next.block.trackNumber != track.number) null
-                else ticksToMs(clusterTimecode + next.block.relativeTimecode, timestampScaleNs)
-            }
+            val nextStart = nextStartByIndex[index].takeUnless { it == Long.MIN_VALUE }
             val endMs = explicitDuration?.let { startMs + it }
                 ?: nextStart?.takeIf { it > startMs }
                 ?: startMs + DEFAULT_DURATION_MS
