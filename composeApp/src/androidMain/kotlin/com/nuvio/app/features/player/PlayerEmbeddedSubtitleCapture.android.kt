@@ -29,10 +29,11 @@ internal object PlayerEmbeddedSubtitleCapture {
     @Volatile private var snapshotPending = false
     private val publishSelectedSnapshot = Runnable {
         snapshotPending = false
+        val generation = selectionGeneration
         val key = selectedTrackKey ?: return@Runnable
         val entry = tracks[key] ?: return@Runnable
         val snapshot = synchronized(entry.lock) { entry.cues.values.toList() }
-        if (snapshot.isNotEmpty()) {
+        if (snapshot.isNotEmpty() && selectionGeneration == generation && selectedTrackKey == key) {
             PlayerLearningSubtitleState.updatePartial(snapshot)
             val maxCueEndMs = snapshot.maxOfOrNull { it.endTimeMs } ?: return@Runnable
             val shouldLogCoverage = lastLoggedCueEndMs == Long.MIN_VALUE ||
@@ -52,6 +53,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
     private val tracks = ConcurrentHashMap<String, TrackCues>()
+    @Volatile private var activeSourceIdentity: String = ""
+    @Volatile private var selectionGeneration: Long = 0L
     @Volatile private var selectedTrackKey: String? = null
     @Volatile private var playbackPositionMsProvider: (() -> Long)? = null
     private var lastLoggedCueCount = 0
@@ -62,7 +65,18 @@ internal object PlayerEmbeddedSubtitleCapture {
         val cues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
     )
 
+    fun configureSource(sourceIdentity: String) {
+        if (activeSourceIdentity == sourceIdentity) return
+        activeSourceIdentity = sourceIdentity
+        selectionGeneration += 1L
+        selectedTrackKey = null
+        mainHandler.removeCallbacks(publishSelectedSnapshot)
+        snapshotPending = false
+        tracks.clear()
+    }
+
     fun reset() {
+        selectionGeneration += 1L
         selectedTrackKey = null
         playbackPositionMsProvider = null
         lastLoggedCueCount = 0
@@ -79,6 +93,9 @@ internal object PlayerEmbeddedSubtitleCapture {
     }
 
     fun selectTrack(format: Format?, playbackPositionMs: (() -> Long)? = null) {
+        val generation = ++selectionGeneration
+        mainHandler.removeCallbacks(publishSelectedSnapshot)
+        snapshotPending = false
         val key = format?.let(::trackKey)
         selectedTrackKey = key
         playbackPositionMsProvider = if (key == null) null else playbackPositionMs
@@ -89,7 +106,11 @@ internal object PlayerEmbeddedSubtitleCapture {
             synchronized(entry.lock) { entry.cues.values.toList() }
         }.orEmpty()
         if (snapshot.isNotEmpty()) {
-            mainHandler.post { PlayerLearningSubtitleState.updatePartial(snapshot) }
+            mainHandler.post {
+                if (selectionGeneration == generation && selectedTrackKey == key) {
+                    PlayerLearningSubtitleState.updatePartial(snapshot)
+                }
+            }
         }
     }
 
@@ -188,6 +209,8 @@ internal object PlayerEmbeddedSubtitleCapture {
     }
 
     private fun trackKey(format: Format): String =
-        format.id?.takeIf { it.isNotBlank() }
-            ?: listOf(format.sampleMimeType, format.language, format.label).joinToString("|")
+        activeSourceIdentity + "|" + (
+            format.id?.takeIf { it.isNotBlank() }
+                ?: listOf(format.sampleMimeType, format.language, format.label).joinToString("|")
+        )
 }

@@ -101,6 +101,7 @@ object PlayerLearningSubtitleState {
 
     /** Updates the visible list with cues discovered by embedded-track extraction. */
     fun updatePartial(newCues: List<LearningSubtitleCue>) {
+        if (completeExtractionLoaded) return
         publishCombined(newCues
             .asSequence()
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }

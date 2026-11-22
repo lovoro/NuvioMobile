@@ -229,6 +229,10 @@ private fun ExoPlayerSurface(
     onError: (String?) -> Unit,
 ) {
     val context = LocalContext.current
+    PlayerEmbeddedSubtitleCache.initialize(context)
+    PlayerEmbeddedSubtitleCapture.configureSource(
+        PlayerEmbeddedSubtitleCache.videoIdentity(sourceUrl, sanitizedSourceHeaders),
+    )
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestOnSnapshot = rememberUpdatedState(onSnapshot)
     val latestOnError = rememberUpdatedState(onError)
@@ -672,6 +676,7 @@ private fun ExoPlayerSurface(
     var learningSubtitleLoadJob by remember { mutableStateOf<Job?>(null) }
     var learningSubtitleSelectionUrl by remember { mutableStateOf<String?>(null) }
     var learningSubtitlePrefetchTrackKey by remember(playerSourceKey) { mutableStateOf<String?>(null) }
+    var learningSubtitleSelectionGeneration by remember(playerSourceKey) { mutableStateOf(0L) }
 
     // Both automatic language-based selection and manual selection use this single entry point.
     // Media3 may report the same selected track repeatedly; do not restart its scan.
@@ -691,14 +696,31 @@ private fun ExoPlayerSurface(
 
         learningSubtitleLoadJob?.cancel()
         learningSubtitlePrefetchTrackKey = trackKey
+        learningSubtitleSelectionGeneration += 1L
+        val selectionGeneration = learningSubtitleSelectionGeneration
         val selectedTrackNumber = format.id?.toIntOrNull()
         if (selectedTrackNumber == null) {
             Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id})")
             return
         }
 
+        val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, trackKey)
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
         learningSubtitleLoadJob = coroutineScope.launch {
+            val cachedCues = PlayerEmbeddedSubtitleCache.read(cacheKey)
+            if (
+                !isActive ||
+                learningSubtitleSelectionGeneration != selectionGeneration ||
+                learningSubtitlePrefetchTrackKey != trackKey ||
+                learningSubtitleSelectionUrl != null ||
+                selectedExternalSubtitleMimeType != null
+            ) return@launch
+            if (!cachedCues.isNullOrEmpty()) {
+                PlayerLearningSubtitleState.update(cachedCues)
+                Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
+                return@launch
+            }
+            Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
                 url = sourceUrl,
                 headers = sanitizedSourceHeaders,
@@ -707,6 +729,7 @@ private fun ExoPlayerSurface(
                 onPartialCues = { partialCues ->
                     if (
                         partialCues.isNotEmpty() &&
+                        learningSubtitleSelectionGeneration == selectionGeneration &&
                         learningSubtitlePrefetchTrackKey == trackKey &&
                         learningSubtitleSelectionUrl == null &&
                         selectedExternalSubtitleMimeType == null
@@ -718,6 +741,7 @@ private fun ExoPlayerSurface(
             )
             // A cancelled or superseded scan must never overwrite the currently selected track.
             if (
+                learningSubtitleSelectionGeneration != selectionGeneration ||
                 learningSubtitlePrefetchTrackKey != trackKey ||
                 learningSubtitleSelectionUrl != null ||
                 selectedExternalSubtitleMimeType != null
@@ -726,6 +750,7 @@ private fun ExoPlayerSurface(
             }
             if (extraction.cues.isNotEmpty()) {
                 if (extraction.isComplete) {
+                    PlayerEmbeddedSubtitleCache.write(cacheKey, extraction.cues)
                     PlayerLearningSubtitleState.update(extraction.cues)
                 } else {
                     // An incomplete range scan must not stop Media3's live fallback.
