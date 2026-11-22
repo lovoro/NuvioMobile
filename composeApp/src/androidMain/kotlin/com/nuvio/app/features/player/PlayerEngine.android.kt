@@ -928,6 +928,14 @@ private fun ExoPlayerSurface(
                             PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         }
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedEmbeddedFormat) { exoPlayer.currentPosition }
+                        learningSubtitleLoadJob?.cancel()
+                        val selectedTrackNumber = selectedEmbeddedFormat.id?.toIntOrNull()
+                        learningSubtitleLoadJob = coroutineScope.launch {
+                            val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
+                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber, exoPlayer.currentPosition,
+                            )
+                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.mergePrefetched(prefetched)
+                        }
                     } else {
                         learningInternalSubtitleSelected.set(false)
                         PlayerEmbeddedSubtitleCapture.selectTrack(null)
@@ -1170,6 +1178,14 @@ private fun ExoPlayerSurface(
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
+                        learningSubtitleLoadJob?.cancel()
+                        val selectedTrackNumber = selectedFormat?.id?.toIntOrNull()
+                        learningSubtitleLoadJob = coroutineScope.launch {
+                            val prefetched = MatroskaEmbeddedSubtitlePrefetcher.load(
+                                sourceUrl, sanitizedSourceHeaders, selectedTrackNumber,
+                            )
+                            if (prefetched.isNotEmpty()) PlayerLearningSubtitleState.mergePrefetched(prefetched)
+                        }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                         .buildUpon()

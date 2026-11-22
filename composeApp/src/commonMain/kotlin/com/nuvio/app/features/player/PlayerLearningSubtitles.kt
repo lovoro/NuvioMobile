@@ -28,11 +28,29 @@ object PlayerLearningSubtitleState {
         private set
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
     private val activeLiveCues = linkedMapOf<String, Long>()
+    private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
+
+    private fun publishCombined(live: List<LearningSubtitleCue>) {
+        cues = (live + prefetchedCues)
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+    }
+
+    fun mergePrefetched(newCues: List<LearningSubtitleCue>) {
+        prefetchedCues = (prefetchedCues + newCues)
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+        publishCombined(cues)
+        if (cues.isNotEmpty()) mutableStatus = LearningSubtitleStatus.PARTIAL
+    }
 
     /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
     fun beginLiveCapture(subtitleName: String? = null) {
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
+        prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
         mutableStatus = LearningSubtitleStatus.LOADING
@@ -53,9 +71,7 @@ object PlayerLearningSubtitleState {
         val activeSnapshot = activeLiveCues.map { (text, startMs) ->
             LearningSubtitleCue(startMs, maxOf(timeMs + 1_500L, startMs + 1_500L), text)
         }
-        cues = (completedLiveCues + activeSnapshot)
-            .distinctBy { it.startTimeMs to it.text }
-            .sortedBy { it.startTimeMs }
+        publishCombined(completedLiveCues + activeSnapshot)
         if (cues.isNotEmpty()) {
             mutableStatus = LearningSubtitleStatus.PARTIAL
             loadingSubtitleName = null
@@ -82,17 +98,18 @@ object PlayerLearningSubtitleState {
 
     /** Updates the visible list with cues discovered by embedded-track extraction. */
     fun updatePartial(newCues: List<LearningSubtitleCue>) {
-        cues = newCues
+        publishCombined(newCues
             .asSequence()
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
             .distinctBy { it.startTimeMs to it.text }
             .sortedBy { it.startTimeMs }
-            .toList()
+            .toList())
         mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.LOADING else LearningSubtitleStatus.PARTIAL
         if (cues.isNotEmpty()) loadingSubtitleName = null
     }
 
     fun update(newCues: List<LearningSubtitleCue>) {
+        prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
         cues = newCues
@@ -105,6 +122,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun clear() {
+        prefetchedCues = emptyList()
         cues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
