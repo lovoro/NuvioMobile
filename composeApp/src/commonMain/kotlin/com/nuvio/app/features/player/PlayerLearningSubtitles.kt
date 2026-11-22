@@ -284,6 +284,7 @@ private fun estimatedLearningWordWeight(token: String): Float {
 private data class LearningSubtitleWord(
     val highlightRange: IntRange,
     val weightToken: String,
+    val pauseAfterWeight: Float = 0f,
 )
 
 /** Conservative vocabulary cues for bracketed sound-effect captions. */
@@ -327,7 +328,8 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     } else {
         emptyList()
     }
-    Regex("\\S+").findAll(text).forEach { tokenMatch ->
+    val tokenMatches = Regex("\\S+").findAll(text).toList()
+    tokenMatches.forEachIndexed { tokenIndex, tokenMatch ->
         val token = tokenMatch.value
         val tokenStart = tokenMatch.range.first
         var index = 0
@@ -401,6 +403,12 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
                 result += LearningSubtitleWord(
                     highlightRange = (tokenStart + wordStart)..(tokenStart + wordEnd - 1),
                     weightToken = token.substring(wordStart),
+                    // A real subtitle line break often marks a spoken phrase boundary.
+                    // Reserve a short pause so later lines do not get highlighted too early.
+                    pauseAfterWeight = if (
+                        tokenIndex < tokenMatches.lastIndex &&
+                        text.substring(tokenMatch.range.last + 1, tokenMatches[tokenIndex + 1].range.first).contains('\n')
+                    ) 1.15f else 0f,
                 )
             }
             index = wordEnd
@@ -425,7 +433,9 @@ internal fun findLearningSubtitleWordRange(
     val words = learningSubtitleWords(text)
     if (words.isEmpty()) return null
 
-    val weights = words.map { estimatedLearningWordWeight(it.weightToken) }
+    val weights = words.map {
+        estimatedLearningWordWeight(it.weightToken) + it.pauseAfterWeight
+    }
     val totalWeight = weights.sum()
     if (totalWeight <= 0f) return null
     val progress = ((positionMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs).toFloat())

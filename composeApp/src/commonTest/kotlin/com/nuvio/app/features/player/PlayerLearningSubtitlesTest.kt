@@ -261,6 +261,24 @@ class PlayerLearningSubtitlesTest {
         assertEquals(5..9, findLearningSubtitleWordRange(text, 0L, 2_000L, 0L))
         assertEquals(25..29, findLearningSubtitleWordRange(text, 0L, 2_000L, 1_900L))
     }
-\n    private fun cue(start: Long, end: Long, text: String) =
+\n
+    @Test
+    fun multilineSubtitleLineBreakDelaysHighlightingOfTheFollowingLine() {
+        val text = "We made some\\ngreat progress today."
+
+        // The break between spoken phrases reserves a brief pause. At this point
+        // the highlight should still be on the second line's first word, not jump
+        // prematurely to the final word.
+        assertEquals(
+            text.indexOf("great")..text.indexOf("great") + "great".length - 1,
+            findLearningSubtitleWordRange(text, 0L, 4_000L, 2_500L),
+        )
+        assertEquals(
+            text.indexOf("progress")..text.indexOf("progress") + "progress".length - 1,
+            findLearningSubtitleWordRange(text, 0L, 4_000L, 3_000L),
+        )
+    }
+
+    private fun cue(start: Long, end: Long, text: String) =
         LearningSubtitleCue(startTimeMs = start, endTimeMs = end, text = text)
 }
