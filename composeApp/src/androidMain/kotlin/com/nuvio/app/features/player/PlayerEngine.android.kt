@@ -230,9 +230,6 @@ private fun ExoPlayerSurface(
 ) {
     val context = LocalContext.current
     PlayerEmbeddedSubtitleCache.initialize(context)
-    PlayerEmbeddedSubtitleCapture.configureSource(
-        PlayerEmbeddedSubtitleCache.videoIdentity(sourceUrl, sanitizedSourceHeaders),
-    )
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestOnSnapshot = rememberUpdatedState(onSnapshot)
     val latestOnError = rememberUpdatedState(onError)
@@ -248,6 +245,9 @@ private fun ExoPlayerSurface(
     val sanitizedSourceHeaders = remember(sourceHeaders) {
         sanitizePlaybackHeaders(sourceHeaders)
     }
+    PlayerEmbeddedSubtitleCapture.configureSource(
+        PlayerEmbeddedSubtitleCache.videoIdentity(sourceUrl, sanitizedSourceHeaders),
+    )
     val sanitizedSourceResponseHeaders = remember(sourceResponseHeaders) {
         sanitizePlaybackResponseHeaders(sourceResponseHeaders)
     }
