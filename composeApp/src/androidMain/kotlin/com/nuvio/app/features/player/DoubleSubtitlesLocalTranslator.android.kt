@@ -400,7 +400,7 @@ internal object DoubleSubtitlesLocalTranslator {
         return configuredCode == subtitleCode
     }
 
-    /** Normalizes ISO-639-1 and ISO-639-2 track tags (en/eng, zh/zho/chi, etc.). */
+    /** Normalizes ISO-639 tags and human-readable language names from subtitle providers. */
     private fun normalizeLanguageCode(value: String): String? {
         val tag = value.trim().replace('_', '-')
         if (tag.isBlank()) return null
@@ -417,6 +417,20 @@ internal object DoubleSubtitlesLocalTranslator {
                 ?.lowercase()
                 ?: primary
         }
+
+        // Subtitle providers may expose "English" instead of ISO tags such as "en" or "eng".
+        // Locale.forLanguageTag("English") returns the literal language "english", which will
+        // never match the add-on's configured ISO source code. Resolve display names explicitly.
+        val displayName = tag.substringBefore('(').trim()
+        Locale.getAvailableLocales()
+            .firstOrNull { locale ->
+                locale.language.isNotBlank() &&
+                    locale.getDisplayLanguage(Locale.ENGLISH).equals(displayName, ignoreCase = true)
+            }
+            ?.language
+            ?.lowercase()
+            ?.let { return it }
+
         return Locale.forLanguageTag(tag).language
             .takeIf { it.isNotBlank() && it != "und" }
             ?.lowercase()
