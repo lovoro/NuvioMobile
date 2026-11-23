@@ -73,12 +73,15 @@ internal object DoubleSubtitlesLocalTranslator {
         // movie cannot create another copy merely because its stream URL changed.
         val cacheFile = cacheFile(context, endpoint)
         val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val legacyTranslations = readCache(legacyFile)
         val translations = readCache(cacheFile).toMutableMap().apply {
-            readCache(legacyFile).forEach { (id, value) -> putIfAbsent(id, value) }
+            legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
         if (legacyFile.isFile && translations.isNotEmpty()) {
             writeCache(cacheFile, translations)
-            if (readCache(cacheFile).keys.containsAll(translations.keys)) legacyFile.delete()
+            if (readCache(cacheFile).keys.containsAll(translations.keys)) {
+                removeExactDuplicateLegacyCaches(context, legacyTranslations)
+            }
         }
         // Upgrade legacy translation-only entries with the original cue data whenever available.
         var upgradedLegacyEntries = false
@@ -223,13 +226,16 @@ internal object DoubleSubtitlesLocalTranslator {
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
         val cacheFile = cacheFile(context, endpoint)
         val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val legacyTranslations = readCache(legacyFile)
         val cache = readCache(cacheFile).toMutableMap().apply {
-            readCache(legacyFile).forEach { (id, value) -> putIfAbsent(id, value) }
+            legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
         if (cache.isEmpty()) return@withContext cues
         if (legacyFile.isFile) {
             writeCache(cacheFile, cache)
-            if (readCache(cacheFile).keys.containsAll(cache.keys)) legacyFile.delete()
+            if (readCache(cacheFile).keys.containsAll(cache.keys)) {
+                removeExactDuplicateLegacyCaches(context, legacyTranslations)
+            }
         }
 
         var upgradedLegacyEntries = false
@@ -270,6 +276,25 @@ internal object DoubleSubtitlesLocalTranslator {
         if (!directory.exists()) directory.mkdirs()
         return File(directory, "translation_${sha256("$trackCacheKey|$endpoint")}.json")
     }
+    private fun removeExactDuplicateLegacyCaches(
+        context: Context,
+        migratedEntries: Map<String, CachedSubtitle>,
+    ) {
+        if (migratedEntries.isEmpty()) return
+        val directory = File(context.filesDir, CACHE_DIRECTORY)
+        directory.listFiles { file ->
+            file.isFile &&
+                file.name.startsWith("translation_") &&
+                !file.name.startsWith("translation_endpoint_") &&
+                file.extension == "json"
+        }.orEmpty().forEach { candidate ->
+            if (readCache(candidate) == migratedEntries) {
+                candidate.delete()
+                Log.i(TAG, "Removed duplicate legacy translation cache: ${candidate.name}")
+            }
+        }
+    }
+
     private fun readCache(file: File): Map<String, CachedSubtitle> = runCatching {
         if (!file.isFile) return@runCatching emptyMap()
         val json = JSONObject(file.readText(Charsets.UTF_8))

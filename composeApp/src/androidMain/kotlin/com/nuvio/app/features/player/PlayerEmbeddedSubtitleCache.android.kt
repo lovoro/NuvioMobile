@@ -86,7 +86,13 @@ internal object PlayerEmbeddedSubtitleCache {
             ?.takeIf { it.startsWith("content_") && it.endsWith(".bin") && !it.contains('/') && !it.contains('\\') }
             ?.let { File(directory, it) }
         val file = referencedFile?.takeIf { it.isFile } ?: File(directory, "$key.bin")
-        readCueFile(file)
+        val cues = readCueFile(file) ?: return@withContext null
+        // Migrate a legacy identity-named BIN on first read. This also collapses any
+        // other byte-equivalent subtitle files left by earlier app versions.
+        if (referencedFile == null && file.name == "$key.bin") {
+            write(key, cues)
+        }
+        cues
     }
 
     suspend fun write(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
