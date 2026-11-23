@@ -79,9 +79,80 @@ internal object PlayerEmbeddedSubtitleCache {
         sha256(videoIdentity(url, headers) + "|" + trackKey)
 
     suspend fun read(key: String): List<LearningSubtitleCue>? = withContext(Dispatchers.IO) {
-        val file = cacheFile(key) ?: return@withContext null
-        if (!file.isFile || file.length() <= 0L) return@withContext null
+        val directory = cacheDirectory() ?: return@withContext null
+        val reference = File(directory, "$key.ref")
+        val referencedName = runCatching { reference.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+        val referencedFile = referencedName
+            ?.takeIf { it.startsWith("content_") && it.endsWith(".bin") && !it.contains('/') && !it.contains('\\') }
+            ?.let { File(directory, it) }
+        val file = referencedFile?.takeIf { it.isFile } ?: File(directory, "$key.bin")
+        readCueFile(file)
+    }
+
+    suspend fun write(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
+        if (cues.isEmpty() || cues.size > MAX_CUES) return@withContext
+        val directory = cacheDirectory() ?: return@withContext
         runCatching {
+            synchronized(directory.absolutePath.intern()) {
+                val contentKey = sha256(buildString {
+                    cues.forEach { cue ->
+                        append(cue.startTimeMs).append('|')
+                            .append(cue.endTimeMs).append('|')
+                            .append(cue.text.length).append(':').append(cue.text).append('\n')
+                    }
+                })
+                val canonical = File(directory, "content_$contentKey.bin")
+                if (!canonical.isFile || canonical.length() <= 0L) {
+                    val temporary = File(directory, canonical.name + ".tmp")
+                    DataOutputStream(BufferedOutputStream(temporary.outputStream())).use { output ->
+                        output.writeInt(MAGIC)
+                        output.writeInt(VERSION)
+                        output.writeInt(cues.size)
+                        cues.forEach { cue ->
+                            val bytes = cue.text.toByteArray(Charsets.UTF_8)
+                            require(bytes.size in 1..MAX_TEXT_BYTES)
+                            output.writeLong(cue.startTimeMs)
+                            output.writeLong(cue.endTimeMs)
+                            output.writeInt(bytes.size)
+                            output.write(bytes)
+                        }
+                    }
+                    if (!temporary.renameTo(canonical)) {
+                        temporary.delete()
+                        if (!canonical.isFile) error("Unable to finalize canonical subtitle cache")
+                    }
+                }
+
+                // Keep an identity-to-content pointer so the next playback can find the
+                // content-addressed file without extracting the track again.
+                writeReference(File(directory, "$key.ref"), canonical.name)
+
+                // Collapse older identity-named BIN files with identical cue content.
+                directory.listFiles { file -> file.isFile && file.extension == "bin" && file.name != canonical.name }
+                    .orEmpty()
+                    .forEach { duplicate ->
+                        val existing = readCueFile(duplicate)
+                        if (sameCues(existing, cues)) {
+                            val duplicateKey = duplicate.nameWithoutExtension
+                            writeReference(File(directory, "$duplicateKey.ref"), canonical.name)
+                            duplicate.delete()
+                        }
+                    }
+                Log.i(TAG, "Saved/reused embedded subtitle content cache: cues=${cues.size} bytes=${canonical.length()}")
+            }
+        }.onFailure { Log.w(TAG, "Unable to save embedded subtitle cache", it) }
+    }
+
+    private fun cacheDirectory(): File? {
+        val context = appContext ?: return null
+        val directory = File(context.filesDir, DIRECTORY)
+        if (!directory.exists() && !directory.mkdirs()) return null
+        return directory
+    }
+
+    private fun readCueFile(file: File): List<LearningSubtitleCue>? {
+        if (!file.isFile || file.length() <= 0L) return null
+        return runCatching {
             DataInputStream(BufferedInputStream(file.inputStream())).use { input ->
                 if (input.readInt() != MAGIC || input.readInt() != VERSION) return@use null
                 val count = input.readInt()
@@ -99,41 +170,21 @@ internal object PlayerEmbeddedSubtitleCache {
                 }
                 cues.takeIf { it.isNotEmpty() }
             }
-        }.onFailure { Log.w(TAG, "Unable to read embedded subtitle cache", it) }.getOrNull()
+        }.onFailure { Log.w(TAG, "Unable to read embedded subtitle cache: ${file.name}", it) }.getOrNull()
     }
 
-    suspend fun write(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
-        if (cues.isEmpty() || cues.size > MAX_CUES) return@withContext
-        val target = cacheFile(key) ?: return@withContext
-        val temporary = File(target.parentFile, target.name + ".tmp")
-        runCatching {
-            DataOutputStream(BufferedOutputStream(temporary.outputStream())).use { output ->
-                output.writeInt(MAGIC)
-                output.writeInt(VERSION)
-                output.writeInt(cues.size)
-                cues.forEach { cue ->
-                    val bytes = cue.text.toByteArray(Charsets.UTF_8)
-                    require(bytes.size in 1..MAX_TEXT_BYTES)
-                    output.writeLong(cue.startTimeMs)
-                    output.writeLong(cue.endTimeMs)
-                    output.writeInt(bytes.size)
-                    output.write(bytes)
-                }
-            }
-            if (target.exists() && !target.delete()) error("Unable to replace cache")
-            if (!temporary.renameTo(target)) error("Unable to finalize cache")
-            Log.i(TAG, "Saved embedded subtitle cache: cues=${cues.size} bytes=${target.length()}")
-        }.onFailure {
-            temporary.delete()
-            Log.w(TAG, "Unable to save embedded subtitle cache", it)
+    private fun sameCues(first: List<LearningSubtitleCue>?, second: List<LearningSubtitleCue>): Boolean =
+        first != null && first.size == second.size && first.indices.all { index ->
+            first[index].startTimeMs == second[index].startTimeMs &&
+                first[index].endTimeMs == second[index].endTimeMs &&
+                first[index].text == second[index].text
         }
-    }
 
-    private fun cacheFile(key: String): File? {
-        val context = appContext ?: return null
-        val directory = File(context.filesDir, DIRECTORY)
-        if (!directory.exists() && !directory.mkdirs()) return null
-        return File(directory, "$key.bin")
+    private fun writeReference(file: File, targetName: String) {
+        val temporary = File(file.parentFile, file.name + ".tmp")
+        temporary.writeText(targetName, Charsets.UTF_8)
+        if (file.exists() && !file.delete()) error("Unable to replace subtitle cache reference")
+        if (!temporary.renameTo(file)) error("Unable to finalize subtitle cache reference")
     }
 
     private fun sha256(value: String): String =

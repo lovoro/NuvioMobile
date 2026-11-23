@@ -68,8 +68,18 @@ internal object DoubleSubtitlesLocalTranslator {
         if (baseUrl.isBlank()) return@withContext cues
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
-        val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
-        val translations = readCache(cacheFile).toMutableMap()
+        // Translation pairs are shared by endpoint, not by playback URL/track identity.
+        // Cue identity already includes timestamps and source text, so reopening the same
+        // movie cannot create another copy merely because its stream URL changed.
+        val cacheFile = cacheFile(context, endpoint)
+        val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val translations = readCache(cacheFile).toMutableMap().apply {
+            readCache(legacyFile).forEach { (id, value) -> putIfAbsent(id, value) }
+        }
+        if (legacyFile.isFile && translations.isNotEmpty()) {
+            writeCache(cacheFile, translations)
+            if (readCache(cacheFile).keys.containsAll(translations.keys)) legacyFile.delete()
+        }
         // Upgrade legacy translation-only entries with the original cue data whenever available.
         var upgradedLegacyEntries = false
         cues.forEach { cue ->
@@ -211,9 +221,16 @@ internal object DoubleSubtitlesLocalTranslator {
         if (baseUrl.isBlank()) return@withContext cues
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
-        val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
-        val cache = readCache(cacheFile)
+        val cacheFile = cacheFile(context, endpoint)
+        val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val cache = readCache(cacheFile).toMutableMap().apply {
+            readCache(legacyFile).forEach { (id, value) -> putIfAbsent(id, value) }
+        }
         if (cache.isEmpty()) return@withContext cues
+        if (legacyFile.isFile) {
+            writeCache(cacheFile, cache)
+            if (readCache(cacheFile).keys.containsAll(cache.keys)) legacyFile.delete()
+        }
 
         var upgradedLegacyEntries = false
         val restored = cues.map { cue ->
@@ -242,10 +259,16 @@ internal object DoubleSubtitlesLocalTranslator {
         restored
     }
 
-    private fun cacheFile(context: Context, key: String): File {
+    private fun cacheFile(context: Context, endpoint: String): File {
         val directory = File(context.filesDir, CACHE_DIRECTORY)
         if (!directory.exists()) directory.mkdirs()
-        return File(directory, "translation_$key.json")
+        return File(directory, "translation_endpoint_${sha256(endpoint)}.json")
+    }
+
+    private fun legacyCacheFile(context: Context, trackCacheKey: String, endpoint: String): File {
+        val directory = File(context.filesDir, CACHE_DIRECTORY)
+        if (!directory.exists()) directory.mkdirs()
+        return File(directory, "translation_${sha256("$trackCacheKey|$endpoint")}.json")
     }
     private fun readCache(file: File): Map<String, CachedSubtitle> = runCatching {
         if (!file.isFile) return@runCatching emptyMap()
