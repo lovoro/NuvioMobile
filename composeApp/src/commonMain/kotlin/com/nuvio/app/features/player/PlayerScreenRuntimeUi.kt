@@ -1358,26 +1358,24 @@ private fun LearningSubtitlePanel(
             }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (PlayerLearningSubtitleState.isTranslating) Color(0xFFDCE7F5) else Color(0xFFE7E9ED))
+                    .size(40.dp)
+                    .clip(CircleShape)
                     .clickable(enabled = cues.isNotEmpty() && !PlayerLearningSubtitleState.isTranslating) {
                         controlScope.launch { PlayerLearningSubtitleState.translateManually(positionMs) }
-                    }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (PlayerLearningSubtitleState.isTranslating) {
-                        CircularProgressIndicator(modifier = Modifier.size(13.dp), strokeWidth = 1.8.dp, color = Color(0xFF3978C5))
-                    }
-                    Text(
-                        text = when {
-                            PlayerLearningSubtitleState.isTranslating -> "翻译中"
-                            cues.isNotEmpty() && cues.all { !it.translationText.isNullOrBlank() } -> "已翻译"
-                            else -> "翻译"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (PlayerLearningSubtitleState.isTranslating) Color(0xFF3978C5) else Color(0xFF505762),
+                if (PlayerLearningSubtitleState.isTranslating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(19.dp),
+                        strokeWidth = 1.8.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    TranslationGlyph(
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        surface = MaterialTheme.colorScheme.surface,
                     )
                 }
             }
@@ -1388,6 +1386,70 @@ private fun LearningSubtitlePanel(
         }
         Spacer(Modifier.height(2.dp))
         toolbarContent()
+    }
+}
+
+@Composable
+private fun TranslationGlyph(
+    modifier: Modifier = Modifier,
+    tint: Color,
+    surface: Color,
+) {
+    Canvas(modifier = modifier) {
+        val sx = size.width / 24f
+        val sy = size.height / 24f
+        fun point(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * sx, y * sy)
+        val stroke = 1.65.dp.toPx()
+
+        // Rear language card.
+        drawRoundRect(
+            color = tint,
+            topLeft = point(8.5f, 4.5f),
+            size = androidx.compose.ui.geometry.Size(13f * sx, 16f * sy),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.2f * sx, 2.2f * sy),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+        )
+
+        // Front card with the characteristic angled lower-right edge.
+        val front = Path().apply {
+            moveTo(4.1f * sx, 2.2f * sy)
+            lineTo(12.1f * sx, 2.2f * sy)
+            quadraticTo(13.2f * sx, 2.2f * sy, 13.5f * sx, 3.3f * sy)
+            lineTo(16.2f * sx, 17.3f * sy)
+            lineTo(13.8f * sx, 20.1f * sy)
+            lineTo(12.9f * sx, 17.8f * sy)
+            lineTo(4.1f * sx, 17.8f * sy)
+            quadraticTo(2.2f * sx, 17.8f * sy, 2.2f * sx, 15.9f * sy)
+            lineTo(2.2f * sx, 4.1f * sy)
+            quadraticTo(2.2f * sx, 2.2f * sy, 4.1f * sx, 2.2f * sy)
+            close()
+        }
+        drawPath(front, color = tint)
+
+        // A on the front card.
+        val letterA = Path().apply {
+            moveTo(4.9f * sx, 14.1f * sy)
+            lineTo(7.8f * sx, 6.2f * sy)
+            lineTo(10.7f * sx, 14.1f * sy)
+            moveTo(6.0f * sx, 11.2f * sy)
+            lineTo(9.6f * sx, 11.2f * sy)
+        }
+        drawPath(
+            letterA,
+            color = surface,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.55f * stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round,
+            ),
+        )
+
+        // 文 on the rear card, kept simple so it remains legible at 24dp.
+        drawLine(tint, point(14.2f, 8.7f), point(19.2f, 8.7f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, point(16.7f, 7.5f), point(16.7f, 15.5f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, point(14.4f, 10.4f), point(19.0f, 10.4f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, point(14.6f, 12.0f), point(18.8f, 15.0f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, point(18.8f, 12.0f), point(14.6f, 15.0f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 
