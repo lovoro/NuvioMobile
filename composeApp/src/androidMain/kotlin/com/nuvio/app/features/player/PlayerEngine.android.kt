@@ -763,21 +763,26 @@ private fun ExoPlayerSurface(
                         ) {
                             PlayerLearningSubtitleState.mergePrefetched(partialCues)
                             translationJobs += translationScope.launch {
-                                translationSemaphore.withPermit {
-                                    if (
-                                        learningSubtitleSelectionGeneration == selectionGeneration &&
-                                        learningSubtitlePrefetchTrackKey == trackKey &&
-                                        learningSubtitleSelectionUrl == null &&
-                                        selectedExternalSubtitleMimeType == null
-                                    ) {
-                                        val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                                PlayerLearningSubtitleState.beginAutomaticTranslation()
+                                try {
+                                    translationSemaphore.withPermit {
                                         if (
                                             learningSubtitleSelectionGeneration == selectionGeneration &&
                                             learningSubtitlePrefetchTrackKey == trackKey &&
                                             learningSubtitleSelectionUrl == null &&
                                             selectedExternalSubtitleMimeType == null
-                                        ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                        ) {
+                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                                            if (
+                                                learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                learningSubtitlePrefetchTrackKey == trackKey &&
+                                                learningSubtitleSelectionUrl == null &&
+                                                selectedExternalSubtitleMimeType == null
+                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                        }
                                     }
+                                } finally {
+                                    PlayerLearningSubtitleState.endAutomaticTranslation()
                                 }
                             }
                             Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
