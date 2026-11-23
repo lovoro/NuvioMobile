@@ -187,6 +187,61 @@ internal object DoubleSubtitlesLocalTranslator {
         }
     }
 
+    /** Restores only previously translated subtitle pairs; never persists raw subtitle cues. */
+    suspend fun restoreCachedTranslations(
+        context: Context,
+        trackCacheKey: String,
+        cues: List<LearningSubtitleCue>,
+    ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
+        if (cues.isEmpty()) return@withContext cues
+        AddonRepository.initialize()
+        val addonsState = AddonRepository.uiState.first { state ->
+            state.addons.any { it.manifest?.id == ADDON_ID } ||
+                state.addons.none { it.isRefreshing }
+        }
+        val addon = addonsState.addons.firstOrNull { managed ->
+            managed.enabled && managed.manifest?.id == ADDON_ID
+        } ?: return@withContext cues
+        val manifestUrl = addon.manifestUrl
+        val cleanManifestUrl = manifestUrl.substringBefore("?")
+        if (!cleanManifestUrl.startsWith("http://", true) &&
+            !cleanManifestUrl.startsWith("https://", true)
+        ) return@withContext cues
+        val baseUrl = addonTransportBaseUrl(cleanManifestUrl)
+        if (baseUrl.isBlank()) return@withContext cues
+        val query = manifestUrl.substringAfter("?", "")
+        val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
+        val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
+        val cache = readCache(cacheFile)
+        if (cache.isEmpty()) return@withContext cues
+
+        var upgradedLegacyEntries = false
+        val restored = cues.map { cue ->
+            if (!cue.translationText.isNullOrBlank()) return@map cue
+            val cached = cache[cueIdentity(cue)] ?: return@map cue
+            if (cached.originalText.isBlank()) upgradedLegacyEntries = true
+            cue.copy(translationText = cached.translatedText)
+        }
+        if (upgradedLegacyEntries) {
+            val upgraded = cache.toMutableMap()
+            cues.forEach { cue ->
+                val id = cueIdentity(cue)
+                val cached = upgraded[id] ?: return@forEach
+                if (cached.originalText.isBlank()) {
+                    upgraded[id] = cached.copy(
+                        startTimeMs = cue.startTimeMs,
+                        endTimeMs = cue.endTimeMs,
+                        originalText = cue.text,
+                    )
+                }
+            }
+            writeCache(cacheFile, upgraded)
+        }
+        val restoredCount = restored.count { !it.translationText.isNullOrBlank() }
+        if (restoredCount > 0) Log.i(TAG, "Restored $restoredCount translated external subtitle cues from cache")
+        restored
+    }
+
     private fun cacheFile(context: Context, key: String): File {
         val directory = File(context.filesDir, CACHE_DIRECTORY)
         if (!directory.exists()) directory.mkdirs()
