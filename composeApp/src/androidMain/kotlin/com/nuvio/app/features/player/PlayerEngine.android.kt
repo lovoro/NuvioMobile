@@ -1389,8 +1389,6 @@ private fun ExoPlayerSurface(
                                 }
                             }
                             Log.d(TAG, "Registered manual translation for ExoPlayer external subtitle track")
-                        } else {
-                            Log.d(TAG, "Skipping Matroska extraction: selected subtitle is external")
                         }
                     }
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
