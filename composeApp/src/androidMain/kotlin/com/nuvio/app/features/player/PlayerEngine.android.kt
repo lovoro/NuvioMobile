@@ -734,14 +734,14 @@ private fun ExoPlayerSurface(
                 selectedExternalSubtitleMimeType != null
             ) return@launch
             if (!cachedCues.isNullOrEmpty()) {
-                PlayerLearningSubtitleState.beginAutomaticTranslation()
+                PlayerLearningSubtitleState.isTranslating = true
                 try {
                     val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
                         PlayerLearningSubtitleState.update(translatedCues)
                     }
                 } finally {
-                    PlayerLearningSubtitleState.endAutomaticTranslation()
+                    PlayerLearningSubtitleState.isTranslating = false
                 }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
                 return@launch
@@ -767,35 +767,35 @@ private fun ExoPlayerSurface(
                             selectedExternalSubtitleMimeType == null
                         ) {
                             PlayerLearningSubtitleState.mergePrefetched(partialCues)
+                            PlayerLearningSubtitleState.isTranslating = true
                             translationJobs += translationScope.launch {
-                                PlayerLearningSubtitleState.beginAutomaticTranslation()
-                                try {
-                                    translationSemaphore.withPermit {
+                                translationSemaphore.withPermit {
+                                    if (
+                                        learningSubtitleSelectionGeneration == selectionGeneration &&
+                                        learningSubtitlePrefetchTrackKey == trackKey &&
+                                        learningSubtitleSelectionUrl == null &&
+                                        selectedExternalSubtitleMimeType == null
+                                    ) {
+                                        val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
                                         if (
                                             learningSubtitleSelectionGeneration == selectionGeneration &&
                                             learningSubtitlePrefetchTrackKey == trackKey &&
                                             learningSubtitleSelectionUrl == null &&
                                             selectedExternalSubtitleMimeType == null
-                                        ) {
-                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
-                                            if (
-                                                learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                learningSubtitlePrefetchTrackKey == trackKey &&
-                                                learningSubtitleSelectionUrl == null &&
-                                                selectedExternalSubtitleMimeType == null
-                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
-                                        }
+                                        ) PlayerLearningSubtitleState.mergePrefetched(translated)
                                     }
-                                } finally {
-                                    PlayerLearningSubtitleState.endAutomaticTranslation()
                                 }
                             }
                             Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
                         }
                     },
                 )
-                translationJobs.joinAll()
-                result
+                try {
+                    translationJobs.joinAll()
+                    result
+                } finally {
+                    if (translationJobs.isNotEmpty()) PlayerLearningSubtitleState.isTranslating = false
+                }
             }
             // A cancelled or superseded scan must never overwrite the currently selected track.
             if (

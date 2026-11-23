@@ -33,24 +33,6 @@ object PlayerLearningSubtitleState {
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
     var isTranslating by mutableStateOf(false)
-        private set
-    private var manualTranslationActive = false
-    private var activeAutomaticTranslationCount = 0
-
-    private fun refreshTranslationActivity() {
-        isTranslating = manualTranslationActive || activeAutomaticTranslationCount > 0
-    }
-
-    /** Tracks background translation batches for embedded subtitle extraction. */
-    fun beginAutomaticTranslation() {
-        activeAutomaticTranslationCount += 1
-        refreshTranslationActivity()
-    }
-
-    fun endAutomaticTranslation() {
-        activeAutomaticTranslationCount = (activeAutomaticTranslationCount - 1).coerceAtLeast(0)
-        refreshTranslationActivity()
-    }
     var translationMessage by mutableStateOf<String?>(null)
         private set
     private var manualTranslationAction: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)? = null
@@ -84,8 +66,7 @@ object PlayerLearningSubtitleState {
     fun setManualTranslationAction(action: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)?) {
         manualTranslationAction = action
         translationGeneration += 1L
-        manualTranslationActive = false
-        refreshTranslationActivity()
+        isTranslating = false
         translationMessage = null
     }
 
@@ -102,8 +83,7 @@ object PlayerLearningSubtitleState {
             return
         }
         val requestGeneration = translationGeneration
-        manualTranslationActive = true
-        refreshTranslationActivity()
+        isTranslating = true
         translationMessage = null
         try {
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
@@ -119,10 +99,7 @@ object PlayerLearningSubtitleState {
                 translationMessage = error.message?.takeIf(String::isNotBlank) ?: "翻译失败，请稍后重试。"
             }
         } finally {
-            if (requestGeneration == translationGeneration) {
-                manualTranslationActive = false
-                refreshTranslationActivity()
-            }
+            if (requestGeneration == translationGeneration) isTranslating = false
         }
     }
 
@@ -220,9 +197,7 @@ object PlayerLearningSubtitleState {
     fun clear() {
         setManualTranslationAction(null)
         translationMessage = null
-        manualTranslationActive = false
-        activeAutomaticTranslationCount = 0
-        refreshTranslationActivity()
+        isTranslating = false
         completeExtractionLoaded = false
         prefetchedCues = emptyList()
         cues = emptyList()
