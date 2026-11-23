@@ -36,7 +36,7 @@ object PlayerLearningSubtitleState {
         private set
     var translationMessage by mutableStateOf<String?>(null)
         private set
-    private var manualTranslationAction: (suspend (List<LearningSubtitleCue>) -> List<LearningSubtitleCue>)? = null
+    private var manualTranslationAction: (suspend (List<LearningSubtitleCue>, Long) -> List<LearningSubtitleCue>)? = null
     private var translationGeneration = 0L
     val hasManualTranslationAction: Boolean get() = manualTranslationAction != null
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
@@ -64,14 +64,14 @@ object PlayerLearningSubtitleState {
         cues = mergeCueLists(live, prefetchedCues)
     }
 
-    fun setManualTranslationAction(action: (suspend (List<LearningSubtitleCue>) -> List<LearningSubtitleCue>)?) {
+    fun setManualTranslationAction(action: (suspend (List<LearningSubtitleCue>, Long) -> List<LearningSubtitleCue>)?) {
         manualTranslationAction = action
         translationGeneration += 1L
         isTranslating = false
         translationMessage = null
     }
 
-    suspend fun translateManually() {
+    suspend fun translateManually(currentPositionMs: Long) {
         if (isTranslating) return
         val action = manualTranslationAction
         if (action == null) {
@@ -87,7 +87,7 @@ object PlayerLearningSubtitleState {
         isTranslating = true
         translationMessage = null
         try {
-            val translated = action(source)
+            val translated = action(source, currentPositionMs.coerceAtLeast(0L))
             if (requestGeneration != translationGeneration) return
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
             applyTranslations(translated)

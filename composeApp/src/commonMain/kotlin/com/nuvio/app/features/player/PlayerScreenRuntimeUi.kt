@@ -1361,7 +1361,7 @@ private fun LearningSubtitlePanel(
                     .clip(RoundedCornerShape(14.dp))
                     .background(if (PlayerLearningSubtitleState.isTranslating) Color(0xFFDCE7F5) else Color(0xFFE7E9ED))
                     .clickable(enabled = cues.isNotEmpty() && !PlayerLearningSubtitleState.isTranslating) {
-                        controlScope.launch { PlayerLearningSubtitleState.translateManually() }
+                        controlScope.launch { PlayerLearningSubtitleState.translateManually(positionMs) }
                     }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,

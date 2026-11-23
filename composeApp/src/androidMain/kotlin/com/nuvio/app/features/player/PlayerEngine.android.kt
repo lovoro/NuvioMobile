@@ -702,10 +702,10 @@ private fun ExoPlayerSurface(
         val selectionGeneration = learningSubtitleSelectionGeneration
         val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, trackKey)
         if (!sameTrack || !PlayerLearningSubtitleState.hasManualTranslationAction) {
-            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues ->
+            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
                 if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
                 else {
-                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues)
+                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs)
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) translated else emptyList()
                 }
             }
@@ -1340,10 +1340,10 @@ private fun ExoPlayerSurface(
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
-                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues ->
+                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
                         if (learningSubtitleSelectionUrl != url) emptyList()
                         else {
-                            val translated = DoubleSubtitlesLocalTranslator.translate(context, "external|$url", selectedCues)
+                            val translated = DoubleSubtitlesLocalTranslator.translate(context, "external|$url", selectedCues, priorityPositionMs = priorityPositionMs)
                             if (learningSubtitleSelectionUrl == url) translated else emptyList()
                         }
                     }

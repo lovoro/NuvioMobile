@@ -30,7 +30,12 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    suspend fun translate(context: Context, trackCacheKey: String, cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
+    suspend fun translate(
+        context: Context,
+        trackCacheKey: String,
+        cues: List<LearningSubtitleCue>,
+        priorityPositionMs: Long? = null,
+    ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
         // Ensure the persisted addon list and its manifests have had a chance to load
         // before deciding that the user has not installed/enabled Double Subtitles.
@@ -59,10 +64,22 @@ internal object DoubleSubtitlesLocalTranslator {
         val translations = readCache(cacheFile).toMutableMap()
         Log.i(TAG, "Translation endpoint prepared; cached translations=${translations.size}")
         val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)].isNullOrBlank() && cue.translationText.isNullOrBlank() }
+        // Manual translation starts at the cue currently on screen, then moves forward
+        // through the remaining timeline. Earlier untranslated cues are backfilled last.
+        // Automatic/background translation keeps its existing source order when no priority is supplied.
+        val prioritizedMissing = priorityPositionMs?.let { positionMs ->
+            val active = missing.filter { it.startTimeMs <= positionMs && it.endTimeMs > positionMs }
+                .sortedByDescending { it.startTimeMs }
+            val upcoming = missing.filter { it.startTimeMs > positionMs }
+                .sortedBy { it.startTimeMs }
+            val earlier = missing.filter { it.endTimeMs <= positionMs }
+                .sortedByDescending { it.startTimeMs }
+            active + upcoming + earlier
+        } ?: missing
         val chunks = mutableListOf<List<LearningSubtitleCue>>()
         var current = mutableListOf<LearningSubtitleCue>()
         var currentChars = 0
-        missing.forEach { cue ->
+        prioritizedMissing.forEach { cue ->
             val length = cue.text.length
             if (length > MAX_BATCH_CHARS) {
                 Log.w(TAG, "Skipping oversized embedded subtitle cue")
