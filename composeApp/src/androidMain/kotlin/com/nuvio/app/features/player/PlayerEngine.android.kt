@@ -737,7 +737,7 @@ private fun ExoPlayerSurface(
             learningSubtitleSelectionGeneration += 1L
         }
         val selectionGeneration = learningSubtitleSelectionGeneration
-        if (!sameTrack) PlayerLearningSubtitleState.setManualTranslationEnabled(false)
+        if (!sameTrack) PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
         // Matroska TrackNumber is stable across player recreation; Format label/language/codecs
         // are presentation metadata and must not fragment the persistent cache identity.
         val cacheTrackKey = format.id?.toIntOrNull()
@@ -767,7 +767,7 @@ private fun ExoPlayerSurface(
                 if (
                     learningSubtitleSelectionGeneration == selectionGeneration &&
                     learningSubtitlePrefetchTrackKey == trackKey
-                ) PlayerLearningSubtitleState.setManualTranslationEnabled(allowed)
+                ) PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
             }
             return
         }
@@ -786,7 +786,7 @@ private fun ExoPlayerSurface(
             if (
                 learningSubtitleSelectionGeneration == selectionGeneration &&
                 learningSubtitlePrefetchTrackKey == trackKey
-            ) PlayerLearningSubtitleState.setManualTranslationEnabled(sourceLanguageMatches)
+            ) PlayerLearningSubtitleState.updateManualTranslationEnabled(sourceLanguageMatches)
             val cachedCues = try {
                 PlayerEmbeddedSubtitleCache.read(cacheKey)
             } catch (error: Throwable) {

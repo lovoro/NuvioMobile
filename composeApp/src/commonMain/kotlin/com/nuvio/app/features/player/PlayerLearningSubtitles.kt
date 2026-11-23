@@ -64,7 +64,7 @@ object PlayerLearningSubtitleState {
         cues = mergeCueLists(live, prefetchedCues)
     }
 
-    fun setManualTranslationEnabled(enabled: Boolean) {
+    fun updateManualTranslationEnabled(enabled: Boolean) {
         manualTranslationEnabled = enabled
         if (!enabled) {
             isTranslating = false
