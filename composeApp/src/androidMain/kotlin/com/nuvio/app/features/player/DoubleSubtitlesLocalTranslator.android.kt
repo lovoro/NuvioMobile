@@ -71,6 +71,7 @@ internal object DoubleSubtitlesLocalTranslator {
         val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
         val translations = readCache(cacheFile).toMutableMap()
         // Upgrade legacy translation-only entries with the original cue data whenever available.
+        var upgradedLegacyEntries = false
         cues.forEach { cue ->
             val id = cueIdentity(cue)
             val cached = translations[id]
@@ -80,8 +81,10 @@ internal object DoubleSubtitlesLocalTranslator {
                     endTimeMs = cue.endTimeMs,
                     originalText = cue.text,
                 )
+                upgradedLegacyEntries = true
             }
         }
+        if (upgradedLegacyEntries) writeCache(cacheFile, translations)
         Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
         val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() && cue.translationText.isNullOrBlank() }
         // Manual translation starts at the cue currently on screen, then moves forward
