@@ -829,7 +829,6 @@ private fun ExoPlayerSurface(
                                 learningSubtitleSelectionUrl == null &&
                                 selectedExternalSubtitleMimeType == null
                             ) {
-                                PlayerLearningSubtitleState.mergePrefetched(partialCues)
                                 PlayerLearningSubtitleState.isTranslating = true
                                 translationJobs += translationScope.launch {
                                     translationSemaphore.withPermit {
@@ -845,7 +844,11 @@ private fun ExoPlayerSurface(
                                                 learningSubtitlePrefetchTrackKey == trackKey &&
                                                 learningSubtitleSelectionUrl == null &&
                                                 selectedExternalSubtitleMimeType == null
-                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                            ) {
+                                                // Publish this batch only after its translation attempt finishes,
+                                                // keeping original text and translation in sync.
+                                                PlayerLearningSubtitleState.mergePrefetched(translated)
+                                            }
                                         }
                                     }
                                 }
