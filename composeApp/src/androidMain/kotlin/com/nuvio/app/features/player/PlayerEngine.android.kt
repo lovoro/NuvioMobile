@@ -810,7 +810,7 @@ private fun ExoPlayerSurface(
                 }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
                 return@launch
-            } }
+            }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             val extraction = coroutineScope {
