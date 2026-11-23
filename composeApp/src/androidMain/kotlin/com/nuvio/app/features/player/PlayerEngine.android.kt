@@ -38,8 +38,8 @@ import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import androidx.lifecycle.LifecycleEventObserver
@@ -730,7 +730,9 @@ private fun ExoPlayerSurface(
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             val extraction = coroutineScope {
                 val translationScope = this
-                val translationMutex = Mutex()
+                // Preserve extraction priority while allowing two network batches at once.
+                // Semaphore acquisition is FIFO, so the near-playback batches stay ahead.
+                val translationSemaphore = Semaphore(2)
                 val translationJobs = mutableListOf<Job>()
                 val result = MatroskaEmbeddedSubtitlePrefetcher.load(
                     url = sourceUrl,
@@ -747,7 +749,7 @@ private fun ExoPlayerSurface(
                         ) {
                             PlayerLearningSubtitleState.mergePrefetched(partialCues)
                             translationJobs += translationScope.launch {
-                                translationMutex.withLock {
+                                translationSemaphore.withPermit {
                                     if (
                                         learningSubtitleSelectionGeneration == selectionGeneration &&
                                         learningSubtitlePrefetchTrackKey == trackKey &&

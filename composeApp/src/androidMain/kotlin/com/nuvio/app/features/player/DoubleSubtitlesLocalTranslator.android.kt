@@ -138,12 +138,17 @@ internal object DoubleSubtitlesLocalTranslator {
     }.getOrDefault(emptyMap())
     private fun writeCache(file: File, values: Map<String, String>) {
         runCatching {
-            val json = JSONObject()
-            values.forEach { (key, value) -> json.put(key, value) }
-            val temporary = File(file.parentFile, file.name + ".tmp")
-            temporary.writeText(json.toString(), Charsets.UTF_8)
-            if (file.exists() && !file.delete()) error("Unable to replace translation cache")
-            if (!temporary.renameTo(file)) error("Unable to finalize translation cache")
+            // Parallel batches can finish in either order. Merge against the latest on-disk
+            // cache under a per-file lock so one response never erases another batch.
+            synchronized(file.absolutePath.intern()) {
+                val merged = readCache(file).toMutableMap().apply { putAll(values) }
+                val json = JSONObject()
+                merged.forEach { (key, value) -> json.put(key, value) }
+                val temporary = File(file.parentFile, file.name + ".tmp")
+                temporary.writeText(json.toString(), Charsets.UTF_8)
+                if (file.exists() && !file.delete()) error("Unable to replace translation cache")
+                if (!temporary.renameTo(file)) error("Unable to finalize translation cache")
+            }
         }.onFailure { Log.w(TAG, "Unable to persist embedded translation cache", it) }
     }
     private fun cueIdentity(cue: LearningSubtitleCue): String = sha256("${cue.startTimeMs}|${cue.endTimeMs}|${cue.text}")
