@@ -1335,6 +1335,48 @@ private fun ExoPlayerSurface(
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
                         if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) {
                             startEmbeddedSubtitlePrefetch(selectedFormat)
+                        } else if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType != null && selectedFormat != null) {
+                            // ExoPlayer external subtitle files also emit live cues, but they are
+                            // not Matroska tracks. Register a translation action for those cues
+                            // instead of leaving the action cleared by beginLiveCapture().
+                            val externalTrackKey = listOf(
+                                selectedFormat.id.orEmpty(),
+                                selectedFormat.sampleMimeType.orEmpty(),
+                                selectedFormat.language.orEmpty(),
+                                selectedFormat.label?.toString().orEmpty(),
+                                selectedExternalSubtitleMimeType.orEmpty(),
+                            ).joinToString("|")
+                            learningSubtitleSelectionGeneration += 1L
+                            val selectionGeneration = learningSubtitleSelectionGeneration
+                            val cacheKey = "external|$sourceUrl|$externalTrackKey"
+                            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
+                                if (
+                                    learningSubtitleSelectionGeneration != selectionGeneration ||
+                                    learningSubtitleSelectionUrl != null ||
+                                    selectedExternalSubtitleMimeType == null
+                                ) emptyList()
+                                else {
+                                    val translated = DoubleSubtitlesLocalTranslator.translate(
+                                        context,
+                                        cacheKey,
+                                        selectedCues,
+                                        priorityPositionMs = priorityPositionMs,
+                                        onBatchTranslated = { batch ->
+                                            if (
+                                                learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                learningSubtitleSelectionUrl == null &&
+                                                selectedExternalSubtitleMimeType != null
+                                            ) onBatchTranslated(batch)
+                                        },
+                                    )
+                                    if (
+                                        learningSubtitleSelectionGeneration == selectionGeneration &&
+                                        learningSubtitleSelectionUrl == null &&
+                                        selectedExternalSubtitleMimeType != null
+                                    ) translated else emptyList()
+                                }
+                            }
+                            Log.d(TAG, "Registered manual translation for ExoPlayer external subtitle track")
                         } else {
                             Log.d(TAG, "Skipping Matroska extraction: selected subtitle is external")
                         }
