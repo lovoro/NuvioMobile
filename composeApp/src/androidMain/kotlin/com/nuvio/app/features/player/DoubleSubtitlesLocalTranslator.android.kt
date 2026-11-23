@@ -24,6 +24,13 @@ internal object DoubleSubtitlesLocalTranslator {
     private const val MAX_BATCH_CUES = 50
     private const val MAX_BATCH_CHARS = 9_000
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
+    private data class CachedSubtitle(
+        val startTimeMs: Long,
+        val endTimeMs: Long,
+        val originalText: String,
+        val translatedText: String,
+    )
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -63,8 +70,20 @@ internal object DoubleSubtitlesLocalTranslator {
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
         val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
         val translations = readCache(cacheFile).toMutableMap()
-        Log.i(TAG, "Translation endpoint prepared; cached translations=${translations.size}")
-        val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)].isNullOrBlank() && cue.translationText.isNullOrBlank() }
+        // Upgrade legacy translation-only entries with the original cue data whenever available.
+        cues.forEach { cue ->
+            val id = cueIdentity(cue)
+            val cached = translations[id]
+            if (cached != null && cached.originalText.isBlank()) {
+                translations[id] = cached.copy(
+                    startTimeMs = cue.startTimeMs,
+                    endTimeMs = cue.endTimeMs,
+                    originalText = cue.text,
+                )
+            }
+        }
+        Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
+        val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() && cue.translationText.isNullOrBlank() }
         // Manual translation starts at the cue currently on screen, then moves forward
         // through the remaining timeline. Earlier untranslated cues are backfilled last.
         // Automatic/background translation keeps its existing source order when no priority is supplied.
@@ -117,8 +136,16 @@ internal object DoubleSubtitlesLocalTranslator {
                         val id = item.optString("id")
                         val translatedText = item.optString("text").trim()
                         if (id.isNotBlank() && translatedText.isNotBlank()) {
-                            translations[id] = translatedText
-                            translatedInResponse++
+                            val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
+                            if (sourceCue != null) {
+                                translations[id] = CachedSubtitle(
+                                    startTimeMs = sourceCue.startTimeMs,
+                                    endTimeMs = sourceCue.endTimeMs,
+                                    originalText = sourceCue.text,
+                                    translatedText = translatedText,
+                                )
+                                translatedInResponse++
+                            }
                         }
                     }
                     if (translatedInResponse == 0) {
@@ -128,7 +155,7 @@ internal object DoubleSubtitlesLocalTranslator {
                 }
                 writeCache(cacheFile, translations)
                 val translatedBatch = chunk.mapNotNull { cue ->
-                    translations[cueIdentity(cue)]?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
+                    translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
                 }
                 if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
                 Log.i(TAG, "Translated embedded batch: cues=${chunk.size}")
@@ -137,7 +164,7 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }
         cues.map { cue ->
-            val translated = translations[cueIdentity(cue)] ?: cue.translationText
+            val translated = translations[cueIdentity(cue)]?.translatedText ?: cue.translationText
             cue.copy(translationText = translated?.takeIf(String::isNotBlank))
         }
     }
@@ -147,31 +174,60 @@ internal object DoubleSubtitlesLocalTranslator {
         if (!directory.exists()) directory.mkdirs()
         return File(directory, "translation_$key.json")
     }
-    private fun readCache(file: File): Map<String, String> = runCatching {
+    private fun readCache(file: File): Map<String, CachedSubtitle> = runCatching {
         if (!file.isFile) return@runCatching emptyMap()
         val json = JSONObject(file.readText(Charsets.UTF_8))
-        buildMap {
-            val keys = json.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                json.optString(key).takeIf(String::isNotBlank)?.let { put(key, it) }
+        val entries = json.optJSONObject("cues")
+        if (entries != null) {
+            buildMap {
+                val keys = entries.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val item = entries.optJSONObject(key) ?: continue
+                    val translated = item.optString("translatedText").takeIf(String::isNotBlank) ?: continue
+                    put(key, CachedSubtitle(
+                        startTimeMs = item.optLong("startTimeMs"),
+                        endTimeMs = item.optLong("endTimeMs"),
+                        originalText = item.optString("originalText"),
+                        translatedText = translated,
+                    ))
+                }
+            }
+        } else {
+            // Backward compatibility with the previous format, which stored translation strings only.
+            buildMap {
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    json.optString(key).takeIf(String::isNotBlank)?.let { translated ->
+                        put(key, CachedSubtitle(0L, 0L, "", translated))
+                    }
+                }
             }
         }
     }.getOrDefault(emptyMap())
-    private fun writeCache(file: File, values: Map<String, String>) {
+
+    private fun writeCache(file: File, values: Map<String, CachedSubtitle>) {
         runCatching {
-            // Parallel batches can finish in either order. Merge against the latest on-disk
-            // cache under a per-file lock so one response never erases another batch.
             synchronized(file.absolutePath.intern()) {
                 val merged = readCache(file).toMutableMap().apply { putAll(values) }
+                val entries = JSONObject()
+                merged.forEach { (key, value) ->
+                    entries.put(key, JSONObject()
+                        .put("startTimeMs", value.startTimeMs)
+                        .put("endTimeMs", value.endTimeMs)
+                        .put("originalText", value.originalText)
+                        .put("translatedText", value.translatedText))
+                }
                 val json = JSONObject()
-                merged.forEach { (key, value) -> json.put(key, value) }
+                    .put("version", 2)
+                    .put("cues", entries)
                 val temporary = File(file.parentFile, file.name + ".tmp")
                 temporary.writeText(json.toString(), Charsets.UTF_8)
                 if (file.exists() && !file.delete()) error("Unable to replace translation cache")
                 if (!temporary.renameTo(file)) error("Unable to finalize translation cache")
             }
-        }.onFailure { Log.w(TAG, "Unable to persist embedded translation cache", it) }
+        }.onFailure { Log.w(TAG, "Unable to persist embedded subtitle cache", it) }
     }
     private fun cueIdentity(cue: LearningSubtitleCue): String = sha256("${cue.startTimeMs}|${cue.endTimeMs}|${cue.text}")
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
