@@ -117,9 +117,7 @@ object PlayerLearningSubtitleState {
 
     /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
     fun beginLiveCapture(subtitleName: String? = null) {
-        // Keep the current action until the newly selected embedded track installs its
-        // generation-guarded action. Clearing it here can leave visible cues without a
-        // translation action when Media3 re-enters live capture for the same selection.
+        setManualTranslationAction(null)
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
         prefetchedCues = emptyList()
