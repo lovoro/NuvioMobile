@@ -753,44 +753,44 @@ private fun ExoPlayerSurface(
                 // Semaphore acquisition is FIFO, so the near-playback batches stay ahead.
                 val translationSemaphore = Semaphore(2)
                 val translationJobs = mutableListOf<Job>()
-                val result = MatroskaEmbeddedSubtitlePrefetcher.load(
-                    url = sourceUrl,
-                    headers = sanitizedSourceHeaders,
-                    selectedTrackNumber = selectedTrackNumber,
-                    currentPositionMs = { exoPlayer.currentPosition },
-                    onPartialCues = { partialCues ->
-                        if (
-                            partialCues.isNotEmpty() &&
-                            learningSubtitleSelectionGeneration == selectionGeneration &&
-                            learningSubtitlePrefetchTrackKey == trackKey &&
-                            learningSubtitleSelectionUrl == null &&
-                            selectedExternalSubtitleMimeType == null
-                        ) {
-                            PlayerLearningSubtitleState.mergePrefetched(partialCues)
-                            PlayerLearningSubtitleState.isTranslating = true
-                            translationJobs += translationScope.launch {
-                                translationSemaphore.withPermit {
-                                    if (
-                                        learningSubtitleSelectionGeneration == selectionGeneration &&
-                                        learningSubtitlePrefetchTrackKey == trackKey &&
-                                        learningSubtitleSelectionUrl == null &&
-                                        selectedExternalSubtitleMimeType == null
-                                    ) {
-                                        val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                try {
+                    val result = MatroskaEmbeddedSubtitlePrefetcher.load(
+                        url = sourceUrl,
+                        headers = sanitizedSourceHeaders,
+                        selectedTrackNumber = selectedTrackNumber,
+                        currentPositionMs = { exoPlayer.currentPosition },
+                        onPartialCues = { partialCues ->
+                            if (
+                                partialCues.isNotEmpty() &&
+                                learningSubtitleSelectionGeneration == selectionGeneration &&
+                                learningSubtitlePrefetchTrackKey == trackKey &&
+                                learningSubtitleSelectionUrl == null &&
+                                selectedExternalSubtitleMimeType == null
+                            ) {
+                                PlayerLearningSubtitleState.mergePrefetched(partialCues)
+                                PlayerLearningSubtitleState.isTranslating = true
+                                translationJobs += translationScope.launch {
+                                    translationSemaphore.withPermit {
                                         if (
                                             learningSubtitleSelectionGeneration == selectionGeneration &&
                                             learningSubtitlePrefetchTrackKey == trackKey &&
                                             learningSubtitleSelectionUrl == null &&
                                             selectedExternalSubtitleMimeType == null
-                                        ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                        ) {
+                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                                            if (
+                                                learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                learningSubtitlePrefetchTrackKey == trackKey &&
+                                                learningSubtitleSelectionUrl == null &&
+                                                selectedExternalSubtitleMimeType == null
+                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                        }
                                     }
                                 }
+                                Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
                             }
-                            Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
-                        }
-                    },
-                )
-                try {
+                        },
+                    )
                     translationJobs.joinAll()
                     result
                 } finally {
