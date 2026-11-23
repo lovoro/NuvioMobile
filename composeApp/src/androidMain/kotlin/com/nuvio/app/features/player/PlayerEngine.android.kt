@@ -93,6 +93,7 @@ import `is`.xyz.mpv.Utils
 import com.nuvio.tv.libass.media.widget.AssSubtitleSurfaceView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -1776,7 +1777,7 @@ private fun LibmpvPlayerSurface(
                     MPV.mpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                         if (eventId == MPV.mpvEvent.MPV_EVENT_FILE_LOADED) {
                             view.onFileLoaded()
-                            view.attachStartupSubtitles()
+                            view.attachStartupSubtitles(context, coroutineScope)
                         }
                         coroutineScope.launch(Dispatchers.Main.immediate) {
                             latestOnError.value(null)
@@ -1924,7 +1925,7 @@ private fun LibmpvPlayerSurface(
         val view = playerViewRef ?: return@LaunchedEffect
         onControllerReady(
             autoSyncCoordinator.wrap( // AutoSync hook
-                view.controller(context, nowPlayingController),
+                view.controller(context, nowPlayingController, coroutineScope),
                 view::replaceExternalSubtitle,
             ),
         )
@@ -2125,13 +2126,73 @@ private class NuvioLibmpvView(
         fileLoaded = true
     }
 
-    fun attachStartupSubtitles() {
+    fun attachStartupSubtitles(context: Context, scope: CoroutineScope) {
+        currentExternalSubtitles.firstOrNull()?.let { subtitle ->
+            prepareLearningSubtitle(subtitle.url, context, scope)
+        }
         executeMpv {
             currentExternalSubtitles.forEachIndexed { index, subtitle ->
                 val flag = if (index == 0) "auto" else "cached"
                 mpv.command("sub-add", subtitle.url.toMpvSource(), flag, subtitle.name ?: subtitle.language, subtitle.language)
             }
         }
+    }
+
+    private var learningSubtitleLoadJob: Job? = null
+    private var learningSubtitleSelectionUrl: String? = null
+    private var learningSubtitleGeneration = 0L
+
+    private fun prepareLearningSubtitle(url: String, context: Context, scope: CoroutineScope) {
+        if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
+        learningSubtitleLoadJob?.cancel()
+        learningSubtitleGeneration += 1L
+        val generation = learningSubtitleGeneration
+        learningSubtitleSelectionUrl = url
+        PlayerLearningSubtitleState.beginLoading()
+        val headers = currentExternalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
+        PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
+            if (learningSubtitleGeneration != generation || learningSubtitleSelectionUrl != url) emptyList()
+            else {
+                val translated = DoubleSubtitlesLocalTranslator.translate(
+                    context,
+                    "external|$url",
+                    selectedCues,
+                    priorityPositionMs = priorityPositionMs,
+                )
+                if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) translated else emptyList()
+            }
+        }
+        learningSubtitleLoadJob = scope.launch {
+            try {
+                val rawText = withContext(Dispatchers.IO) {
+                    httpGetTextWithHeaders(url = url, headers = headers)
+                }
+                val parsed = withContext(Dispatchers.Default) {
+                    PlayerSubtitleCueParser.parse(rawText, url).map { cue ->
+                        LearningSubtitleCue(cue.startTimeMs, cue.endTimeMs, cue.text)
+                    }
+                }
+                if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
+                    if (parsed.isEmpty()) PlayerLearningSubtitleState.markUnsupported()
+                    else PlayerLearningSubtitleState.update(parsed)
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
+                    PlayerLearningSubtitleState.markError()
+                }
+                Log.w(TAG, "libmpv learning subtitle parse failed: ${error.message}", error)
+            }
+        }
+    }
+
+    private fun clearLearningSubtitleSelection() {
+        learningSubtitleLoadJob?.cancel()
+        learningSubtitleLoadJob = null
+        learningSubtitleSelectionUrl = null
+        learningSubtitleGeneration += 1L
+        PlayerLearningSubtitleState.clear()
     }
 
     private fun String.toMpvSource(): String =
@@ -2263,6 +2324,7 @@ private class NuvioLibmpvView(
     fun controller(
         context: Context,
         nowPlayingController: AndroidPlayerNowPlayingController?,
+        coroutineScope: CoroutineScope,
     ): PlayerEngineController =
         object : PlayerEngineController {
             override val playbackEngine = AndroidPlaybackEngine.Libmpv
@@ -2355,10 +2417,12 @@ private class NuvioLibmpvView(
             }
 
             override fun setSubtitleUri(url: String) {
+                prepareLearningSubtitle(url, context, coroutineScope)
                 executeMpv { mpv.command("sub-add", url, "select") }
             }
 
             override fun clearExternalSubtitle() {
+                clearLearningSubtitleSelection()
                 executeMpv { mpv.setPropertyString("sid", "no") }
             }
 
