@@ -5,6 +5,7 @@ import android.util.Log
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -31,10 +32,23 @@ internal object DoubleSubtitlesLocalTranslator {
 
     suspend fun translate(context: Context, trackCacheKey: String, cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
-        val addon = AddonRepository.uiState.value.addons.firstOrNull { managed ->
+        // Ensure the persisted addon list and its manifests have had a chance to load
+        // before deciding that the user has not installed/enabled Double Subtitles.
+        AddonRepository.initialize()
+        val addonsState = AddonRepository.uiState.first { state ->
+            state.addons.any { it.manifest?.id == ADDON_ID } ||
+                state.addons.none { it.isRefreshing }
+        }
+        val addon = addonsState.addons.firstOrNull { managed ->
             managed.enabled && managed.manifest?.id == ADDON_ID
-        } ?: return@withContext cues
+        }
+        if (addon == null) {
+            val installed = addonsState.addons.any { it.manifest?.id == ADDON_ID }
+            Log.w(TAG, "Translation skipped: Double Subtitles addon ${if (installed) "is disabled" else "is not installed or its manifest failed to load"}")
+            return@withContext cues
+        }
         val manifestUrl = addon.manifestUrl
+        Log.i(TAG, "Double Subtitles addon is enabled; starting embedded translation batch (${cues.size} cues)")
         val cleanManifestUrl = manifestUrl.substringBefore("?")
         if (!cleanManifestUrl.startsWith("http://", true) && !cleanManifestUrl.startsWith("https://", true)) return@withContext cues
         val baseUrl = addonTransportBaseUrl(cleanManifestUrl)
@@ -43,6 +57,7 @@ internal object DoubleSubtitlesLocalTranslator {
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
         val cacheFile = cacheFile(context, sha256("$trackCacheKey|$endpoint"))
         val translations = readCache(cacheFile).toMutableMap()
+        Log.i(TAG, "Translation endpoint prepared; cached translations=${translations.size}")
         val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)].isNullOrBlank() && cue.translationText.isNullOrBlank() }
         val chunks = mutableListOf<List<LearningSubtitleCue>>()
         var current = mutableListOf<LearningSubtitleCue>()
@@ -78,16 +93,26 @@ internal object DoubleSubtitlesLocalTranslator {
                     val payload = JSONObject(responseText)
                     if (!payload.optBoolean("success", false)) error(payload.optString("error").ifBlank { "Translation request failed" })
                     val result = payload.optJSONArray("translations") ?: JSONArray()
+                    var translatedInResponse = 0
                     for (index in 0 until result.length()) {
                         val item = result.optJSONObject(index) ?: continue
                         val id = item.optString("id")
                         val translatedText = item.optString("text").trim()
-                        if (id.isNotBlank() && translatedText.isNotBlank()) translations[id] = translatedText
+                        if (id.isNotBlank() && translatedText.isNotBlank()) {
+                            translations[id] = translatedText
+                            translatedInResponse++
+                        }
                     }
+                    if (translatedInResponse == 0) {
+                        error("Translation API returned success but no usable translated cues")
+                    }
+                    Log.i(TAG, "Translation API returned $translatedInResponse translated cues")
                 }
                 writeCache(cacheFile, translations)
                 Log.i(TAG, "Translated embedded batch: cues=${chunk.size}")
-            }.onFailure { error -> Log.w(TAG, "Embedded subtitle batch translation failed: ${error.message}") }
+            }.onFailure { error ->
+                Log.e(TAG, "Embedded subtitle batch translation failed: ${error.message}", error)
+            }
         }
         cues.map { cue ->
             val translated = translations[cueIdentity(cue)] ?: cue.translationText
