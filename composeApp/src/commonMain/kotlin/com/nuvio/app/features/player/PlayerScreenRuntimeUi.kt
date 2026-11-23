@@ -1159,7 +1159,7 @@ private fun LearningSubtitlePanel(
                     items = cues,
                     key = { _, cue -> "${cue.startTimeMs}-${cue.endTimeMs}-${cue.text}" },
                 ) { index, cue ->
-                    val subtitleLines = cue.text.lines().filter { it.isNotBlank() }
+                    val subtitleLines = cue.displayText.lines().filter { it.isNotBlank() }
                     val highlightableLines = remember(subtitleLines) {
                         learningSubtitleHighlightableLines(subtitleLines)
                     }

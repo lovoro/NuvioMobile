@@ -36,6 +36,10 @@ import androidx.lifecycle.Lifecycle
 import com.nuvio.app.features.streams.redactedForLogs
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import androidx.lifecycle.LifecycleEventObserver
@@ -716,29 +720,57 @@ private fun ExoPlayerSurface(
                 selectedExternalSubtitleMimeType != null
             ) return@launch
             if (!cachedCues.isNullOrEmpty()) {
-                PlayerLearningSubtitleState.update(cachedCues)
+                val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
+                if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
+                    PlayerLearningSubtitleState.update(translatedCues)
+                }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
                 return@launch
             }
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
-            val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
-                url = sourceUrl,
-                headers = sanitizedSourceHeaders,
-                selectedTrackNumber = selectedTrackNumber,
-                currentPositionMs = { exoPlayer.currentPosition },
-                onPartialCues = { partialCues ->
-                    if (
-                        partialCues.isNotEmpty() &&
-                        learningSubtitleSelectionGeneration == selectionGeneration &&
-                        learningSubtitlePrefetchTrackKey == trackKey &&
-                        learningSubtitleSelectionUrl == null &&
-                        selectedExternalSubtitleMimeType == null
-                    ) {
-                        PlayerLearningSubtitleState.mergePrefetched(partialCues)
-                        Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
-                    }
-                },
-            )
+            val extraction = coroutineScope {
+                val translationScope = this
+                val translationMutex = Mutex()
+                val translationJobs = mutableListOf<Job>()
+                val result = MatroskaEmbeddedSubtitlePrefetcher.load(
+                    url = sourceUrl,
+                    headers = sanitizedSourceHeaders,
+                    selectedTrackNumber = selectedTrackNumber,
+                    currentPositionMs = { exoPlayer.currentPosition },
+                    onPartialCues = { partialCues ->
+                        if (
+                            partialCues.isNotEmpty() &&
+                            learningSubtitleSelectionGeneration == selectionGeneration &&
+                            learningSubtitlePrefetchTrackKey == trackKey &&
+                            learningSubtitleSelectionUrl == null &&
+                            selectedExternalSubtitleMimeType == null
+                        ) {
+                            PlayerLearningSubtitleState.mergePrefetched(partialCues)
+                            translationJobs += translationScope.launch {
+                                translationMutex.withLock {
+                                    if (
+                                        learningSubtitleSelectionGeneration == selectionGeneration &&
+                                        learningSubtitlePrefetchTrackKey == trackKey &&
+                                        learningSubtitleSelectionUrl == null &&
+                                        selectedExternalSubtitleMimeType == null
+                                    ) {
+                                        val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                                        if (
+                                            learningSubtitleSelectionGeneration == selectionGeneration &&
+                                            learningSubtitlePrefetchTrackKey == trackKey &&
+                                            learningSubtitleSelectionUrl == null &&
+                                            selectedExternalSubtitleMimeType == null
+                                        ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                    }
+                                }
+                            }
+                            Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
+                        }
+                    },
+                )
+                translationJobs.joinAll()
+                result
+            }
             // A cancelled or superseded scan must never overwrite the currently selected track.
             if (
                 learningSubtitleSelectionGeneration != selectionGeneration ||

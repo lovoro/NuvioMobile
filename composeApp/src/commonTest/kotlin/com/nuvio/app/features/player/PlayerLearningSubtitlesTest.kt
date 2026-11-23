@@ -114,6 +114,21 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun preservesPartialBatchTranslationsWhenFullEmbeddedExtractionFinishes() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading()
+        val original = cue(1_000L, 3_000L, "Hello there")
+        PlayerLearningSubtitleState.mergePrefetched(listOf(original))
+        PlayerLearningSubtitleState.mergePrefetched(listOf(original.copy(translationText = "你好")))
+
+        PlayerLearningSubtitleState.update(listOf(original))
+
+        assertEquals("你好", PlayerLearningSubtitleState.cues.single().translationText)
+        assertEquals("Hello there\n你好", PlayerLearningSubtitleState.cues.single().displayText)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun capturesEmbeddedCueGroupsAsExplicitlyPartialPlaybackSamples() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()

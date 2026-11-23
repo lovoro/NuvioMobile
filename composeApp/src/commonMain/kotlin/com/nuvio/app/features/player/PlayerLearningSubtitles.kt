@@ -8,7 +8,12 @@ data class LearningSubtitleCue(
     val startTimeMs: Long,
     val endTimeMs: Long,
     val text: String,
-)
+    val translationText: String? = null,
+) {
+    val displayText: String
+        get() = listOfNotNull(text.takeIf(String::isNotBlank), translationText?.takeIf(String::isNotBlank))
+            .joinToString("\n")
+}
 
 enum class LearningSubtitleStatus {
     NONE,
@@ -31,18 +36,28 @@ object PlayerLearningSubtitleState {
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
     private var completeExtractionLoaded = false
 
+    private fun mergeCueLists(vararg lists: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
+        val merged = linkedMapOf<Pair<Long, String>, LearningSubtitleCue>()
+        lists.forEach { list ->
+            list.forEach cueLoop@{ cue ->
+                if (cue.text.isBlank() || cue.endTimeMs <= cue.startTimeMs) return@cueLoop
+                val key = cue.startTimeMs to cue.text
+                val previous = merged[key]
+                merged[key] = if (previous == null) cue else previous.copy(
+                    endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
+                    translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
+                )
+            }
+        }
+        return merged.values.sortedBy { it.startTimeMs }
+    }
+
     private fun publishCombined(live: List<LearningSubtitleCue>) {
-        cues = (live + prefetchedCues)
-            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
-            .distinctBy { it.startTimeMs to it.text }
-            .sortedBy { it.startTimeMs }
+        cues = mergeCueLists(live, prefetchedCues)
     }
 
     fun mergePrefetched(newCues: List<LearningSubtitleCue>) {
-        prefetchedCues = (prefetchedCues + newCues)
-            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
-            .distinctBy { it.startTimeMs to it.text }
-            .sortedBy { it.startTimeMs }
+        prefetchedCues = mergeCueLists(prefetchedCues, newCues)
         publishCombined(cues)
         if (cues.isNotEmpty()) mutableStatus = LearningSubtitleStatus.PARTIAL
     }
@@ -114,14 +129,11 @@ object PlayerLearningSubtitleState {
 
     fun update(newCues: List<LearningSubtitleCue>) {
         completeExtractionLoaded = true
+        val translatedPartialCues = prefetchedCues
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
-        cues = newCues
-            .asSequence()
-            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
-            .sortedBy { it.startTimeMs }
-            .toList()
+        cues = mergeCueLists(newCues, translatedPartialCues)
         mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.UNSUPPORTED else LearningSubtitleStatus.READY
         loadingSubtitleName = null
     }
