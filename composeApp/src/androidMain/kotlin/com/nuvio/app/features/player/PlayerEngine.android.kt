@@ -419,6 +419,7 @@ private fun ExoPlayerSurface(
     // Hold live subtitle callbacks while checking the complete local cache. A cache hit
     // replaces the live stream with one complete list; a miss replays the buffered callbacks.
     val embeddedSubtitleCacheLookupPending = remember(playerSourceKey) { AtomicBoolean(false) }
+    val embeddedSubtitleCacheRestored = remember(playerSourceKey) { AtomicBoolean(false) }
     val embeddedSubtitleLiveCueBuffer = remember(playerSourceKey) {
         mutableListOf<Pair<Long, List<String>>>()
     }
@@ -476,6 +477,7 @@ private fun ExoPlayerSurface(
                 if (PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
                     learningInternalSubtitleSelected.get() &&
                     !PlayerEmbeddedSubtitleCapture.hasSelectedTrackCues() &&
+                    !embeddedSubtitleCacheRestored.get() &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
                     val cuePositionMs = if (presentationTimeUs == C.TIME_UNSET || presentationTimeUs < 0L) {
@@ -700,10 +702,11 @@ private fun ExoPlayerSurface(
 
     fun finishEmbeddedSubtitleCacheLookup(useCachedTrack: Boolean) {
         synchronized(embeddedSubtitleLiveCueBufferLock) {
-            embeddedSubtitleCacheLookupPending.set(false)
             if (useCachedTrack) {
+                embeddedSubtitleCacheRestored.set(true)
                 embeddedSubtitleLiveCueBuffer.clear()
             } else {
+                embeddedSubtitleCacheRestored.set(false)
                 embeddedSubtitleLiveCueBuffer.forEach { (positionMs, texts) ->
                     PlayerLearningSubtitleState.captureLiveCueGroup(
                         texts = texts,
@@ -712,6 +715,7 @@ private fun ExoPlayerSurface(
                 }
                 embeddedSubtitleLiveCueBuffer.clear()
             }
+            embeddedSubtitleCacheLookupPending.set(false)
         }
     }
 
@@ -757,6 +761,7 @@ private fun ExoPlayerSurface(
 
         synchronized(embeddedSubtitleLiveCueBufferLock) {
             embeddedSubtitleLiveCueBuffer.clear()
+            embeddedSubtitleCacheRestored.set(false)
             embeddedSubtitleCacheLookupPending.set(true)
         }
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
@@ -782,14 +787,16 @@ private fun ExoPlayerSurface(
                 return@launch
             }
             if (!cachedCues.isNullOrEmpty()) {
-                finishEmbeddedSubtitleCacheLookup(useCachedTrack = true)
                 PlayerLearningSubtitleState.isTranslating = true
+                var cacheRestored = false
                 try {
                     val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
                         PlayerLearningSubtitleState.update(translatedCues)
+                        cacheRestored = true
                     }
                 } finally {
+                    finishEmbeddedSubtitleCacheLookup(useCachedTrack = cacheRestored)
                     PlayerLearningSubtitleState.isTranslating = false
                 }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
