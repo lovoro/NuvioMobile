@@ -737,6 +737,7 @@ private fun ExoPlayerSurface(
             learningSubtitleSelectionGeneration += 1L
         }
         val selectionGeneration = learningSubtitleSelectionGeneration
+        if (!sameTrack) PlayerLearningSubtitleState.setManualTranslationEnabled(false)
         // Matroska TrackNumber is stable across player recreation; Format label/language/codecs
         // are presentation metadata and must not fragment the persistent cache identity.
         val cacheTrackKey = format.id?.toIntOrNull()
@@ -778,6 +779,14 @@ private fun ExoPlayerSurface(
         }
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
         learningSubtitleLoadJob = coroutineScope.launch {
+            val sourceLanguageMatches = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                context,
+                format.language.orEmpty(),
+            )
+            if (
+                learningSubtitleSelectionGeneration == selectionGeneration &&
+                learningSubtitlePrefetchTrackKey == trackKey
+            ) PlayerLearningSubtitleState.setManualTranslationEnabled(sourceLanguageMatches)
             val cachedCues = try {
                 PlayerEmbeddedSubtitleCache.read(cacheKey)
             } catch (error: Throwable) {
@@ -842,9 +851,10 @@ private fun ExoPlayerSurface(
                                 selectedExternalSubtitleMimeType == null
                             ) {
                                 PlayerLearningSubtitleState.mergePrefetched(partialCues)
-                                PlayerLearningSubtitleState.isTranslating = true
-                                translationJobs += translationScope.launch {
-                                    translationSemaphore.withPermit {
+                                if (sourceLanguageMatches) {
+                                    PlayerLearningSubtitleState.isTranslating = true
+                                    translationJobs += translationScope.launch {
+                                        translationSemaphore.withPermit {
                                         if (
                                             learningSubtitleSelectionGeneration == selectionGeneration &&
                                             learningSubtitlePrefetchTrackKey == trackKey &&
@@ -858,6 +868,7 @@ private fun ExoPlayerSurface(
                                                 learningSubtitleSelectionUrl == null &&
                                                 selectedExternalSubtitleMimeType == null
                                             ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                        }
                                         }
                                     }
                                 }
