@@ -734,9 +734,14 @@ private fun ExoPlayerSurface(
                 selectedExternalSubtitleMimeType != null
             ) return@launch
             if (!cachedCues.isNullOrEmpty()) {
-                val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
-                if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
-                    PlayerLearningSubtitleState.update(translatedCues)
+                PlayerLearningSubtitleState.beginAutomaticTranslation()
+                try {
+                    val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
+                    if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
+                        PlayerLearningSubtitleState.update(translatedCues)
+                    }
+                } finally {
+                    PlayerLearningSubtitleState.endAutomaticTranslation()
                 }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
                 return@launch
