@@ -703,10 +703,12 @@ private fun ExoPlayerSurface(
         val selectionGeneration = learningSubtitleSelectionGeneration
         val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, trackKey)
         if (!sameTrack || !PlayerLearningSubtitleState.hasManualTranslationAction) {
-            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
+            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                 if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
                 else {
-                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs)
+                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs, onBatchTranslated = { batch ->
+                        if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) onBatchTranslated(batch)
+                    })
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) translated else emptyList()
                 }
             }
@@ -1358,10 +1360,12 @@ private fun ExoPlayerSurface(
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
-                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
+                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                         if (learningSubtitleSelectionUrl != url) emptyList()
                         else {
-                            val translated = DoubleSubtitlesLocalTranslator.translate(context, "external|$url", selectedCues, priorityPositionMs = priorityPositionMs)
+                            val translated = DoubleSubtitlesLocalTranslator.translate(context, "external|$url", selectedCues, priorityPositionMs = priorityPositionMs, onBatchTranslated = { batch ->
+                                if (learningSubtitleSelectionUrl == url) onBatchTranslated(batch)
+                            })
                             if (learningSubtitleSelectionUrl == url) translated else emptyList()
                         }
                     }
@@ -2167,7 +2171,7 @@ private class NuvioLibmpvView(
         learningSubtitleSelectionUrl = url
         PlayerLearningSubtitleState.beginLoading()
         val headers = currentExternalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
-        PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs ->
+        PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
             if (learningSubtitleGeneration != generation || learningSubtitleSelectionUrl != url) emptyList()
             else {
                 val translated = DoubleSubtitlesLocalTranslator.translate(
@@ -2175,6 +2179,9 @@ private class NuvioLibmpvView(
                     "external|$url",
                     selectedCues,
                     priorityPositionMs = priorityPositionMs,
+                    onBatchTranslated = { batch ->
+                        if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) onBatchTranslated(batch)
+                    },
                 )
                 if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) translated else emptyList()
             }

@@ -35,6 +35,7 @@ internal object DoubleSubtitlesLocalTranslator {
         trackCacheKey: String,
         cues: List<LearningSubtitleCue>,
         priorityPositionMs: Long? = null,
+        onBatchTranslated: suspend (List<LearningSubtitleCue>) -> Unit = {},
     ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
         // Ensure the persisted addon list and its manifests have had a chance to load
@@ -126,6 +127,10 @@ internal object DoubleSubtitlesLocalTranslator {
                     Log.i(TAG, "Translation API returned $translatedInResponse translated cues")
                 }
                 writeCache(cacheFile, translations)
+                val translatedBatch = chunk.mapNotNull { cue ->
+                    translations[cueIdentity(cue)]?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
+                }
+                if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
                 Log.i(TAG, "Translated embedded batch: cues=${chunk.size}")
             }.onFailure { error ->
                 Log.e(TAG, "Embedded subtitle batch translation failed: ${error.message}", error)
