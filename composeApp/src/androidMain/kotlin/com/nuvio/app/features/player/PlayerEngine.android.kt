@@ -747,7 +747,7 @@ private fun ExoPlayerSurface(
             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                 if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
                 else {
-                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs, onBatchTranslated = { batch ->
+                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs, requiredSourceLanguage = format.language.orEmpty(), onBatchTranslated = { batch ->
                         if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) onBatchTranslated(batch)
                     })
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) translated else emptyList()
@@ -800,6 +800,7 @@ private fun ExoPlayerSurface(
                         context,
                         cacheKey,
                         cachedCues,
+                        requiredSourceLanguage = format.language.orEmpty(),
                     )
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
                         PlayerLearningSubtitleState.update(restoredCues)
@@ -843,7 +844,7 @@ private fun ExoPlayerSurface(
                                             learningSubtitleSelectionUrl == null &&
                                             selectedExternalSubtitleMimeType == null
                                         ) {
-                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues)
+                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues, requiredSourceLanguage = format.language.orEmpty())
                                             if (
                                                 learningSubtitleSelectionGeneration == selectionGeneration &&
                                                 learningSubtitlePrefetchTrackKey == trackKey &&

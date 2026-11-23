@@ -14,6 +14,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.URI
+import java.util.Locale
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -43,6 +45,7 @@ internal object DoubleSubtitlesLocalTranslator {
         cues: List<LearningSubtitleCue>,
         priorityPositionMs: Long? = null,
         onBatchTranslated: suspend (List<LearningSubtitleCue>) -> Unit = {},
+        requiredSourceLanguage: String? = null,
     ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
         // Ensure the persisted addon list and its manifests have had a chance to load
@@ -58,6 +61,12 @@ internal object DoubleSubtitlesLocalTranslator {
         if (addon == null) {
             val installed = addonsState.addons.any { it.manifest?.id == ADDON_ID }
             Log.w(TAG, "Translation skipped: Double Subtitles addon ${if (installed) "is disabled" else "is not installed or its manifest failed to load"}")
+            return@withContext cues
+        }
+        if (requiredSourceLanguage != null &&
+            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
+        ) {
+            Log.i(TAG, "Translation skipped: selected embedded subtitle language does not match the addon's configured source language")
             return@withContext cues
         }
         val manifestUrl = addon.manifestUrl
@@ -210,6 +219,7 @@ internal object DoubleSubtitlesLocalTranslator {
         context: Context,
         trackCacheKey: String,
         cues: List<LearningSubtitleCue>,
+        requiredSourceLanguage: String? = null,
     ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
         AddonRepository.initialize()
@@ -220,6 +230,12 @@ internal object DoubleSubtitlesLocalTranslator {
         val addon = addonsState.addons.firstOrNull { managed ->
             managed.enabled && managed.manifest?.id == ADDON_ID
         } ?: return@withContext cues
+        if (requiredSourceLanguage != null &&
+            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
+        ) {
+            Log.i(TAG, "Translation cache restore skipped: selected embedded subtitle language does not match the addon's configured source language")
+            return@withContext cues
+        }
         val manifestUrl = addon.manifestUrl
         val cleanManifestUrl = manifestUrl.substringBefore("?")
         if (!cleanManifestUrl.startsWith("http://", true) &&
@@ -354,6 +370,45 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }.onFailure { Log.w(TAG, "Unable to persist embedded subtitle cache", it) }
     }
+
+    /**
+     * Double Subtitles encodes its source/target language pair in the configured manifest path,
+     * for example /configure/en/zh-CN/manifest.json. Embedded tracks are translated only when
+     * their declared language matches that configured source language.
+     */
+    private fun matchesConfiguredSourceLanguage(manifestUrl: String, subtitleLanguage: String): Boolean {
+        val pathSegments = runCatching {
+            URI(manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank)
+        }.getOrDefault(emptyList())
+        val configureIndex = pathSegments.indexOfLast { it.equals("configure", ignoreCase = true) }
+        val configuredSource = pathSegments.getOrNull(configureIndex + 1) ?: return false
+        val configuredCode = normalizeLanguageCode(configuredSource) ?: return false
+        val subtitleCode = normalizeLanguageCode(subtitleLanguage) ?: return false
+        return configuredCode == subtitleCode
+    }
+
+    /** Normalizes ISO-639-1 and ISO-639-2 track tags (en/eng, zh/zho/chi, etc.). */
+    private fun normalizeLanguageCode(value: String): String? {
+        val tag = value.trim().replace('_', '-')
+        if (tag.isBlank()) return null
+        val primary = tag.substringBefore('-').lowercase()
+        if (primary.isBlank() || primary == "und") return null
+        if (primary.length == 2) return primary
+        if (primary.length == 3) {
+            return Locale.getAvailableLocales()
+                .firstOrNull { locale ->
+                    runCatching { locale.isO3Language.equals(primary, ignoreCase = true) }
+                        .getOrDefault(false)
+                }
+                ?.language
+                ?.lowercase()
+                ?: primary
+        }
+        return Locale.forLanguageTag(tag).language
+            .takeIf { it.isNotBlank() && it != "und" }
+            ?.lowercase()
+    }
+
     private fun cueIdentity(cue: LearningSubtitleCue): String = sha256("${cue.startTimeMs}|${cue.endTimeMs}|${cue.text}")
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { byte -> "%02x".format(byte) }
