@@ -792,21 +792,25 @@ private fun ExoPlayerSurface(
                 return@launch
             }
             if (!cachedCues.isNullOrEmpty()) {
-                PlayerLearningSubtitleState.isTranslating = true
                 var cacheRestored = false
                 try {
-                    val translatedCues = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, cachedCues)
+                    // Restore persisted translation pairs locally; do not let cache misses
+                    // trigger network translation before the cached track is published.
+                    val restoredCues = DoubleSubtitlesLocalTranslator.restoreCachedTranslations(
+                        context,
+                        cacheKey,
+                        cachedCues,
+                    )
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
-                        PlayerLearningSubtitleState.update(translatedCues)
+                        PlayerLearningSubtitleState.update(restoredCues)
                         cacheRestored = true
                     }
                 } finally {
                     finishEmbeddedSubtitleCacheLookup(useCachedTrack = cacheRestored)
-                    PlayerLearningSubtitleState.isTranslating = false
                 }
                 Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
                 return@launch
-            }
+            } }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             val extraction = coroutineScope {
@@ -829,6 +833,7 @@ private fun ExoPlayerSurface(
                                 learningSubtitleSelectionUrl == null &&
                                 selectedExternalSubtitleMimeType == null
                             ) {
+                                PlayerLearningSubtitleState.mergePrefetched(partialCues)
                                 PlayerLearningSubtitleState.isTranslating = true
                                 translationJobs += translationScope.launch {
                                     translationSemaphore.withPermit {
@@ -844,11 +849,7 @@ private fun ExoPlayerSurface(
                                                 learningSubtitlePrefetchTrackKey == trackKey &&
                                                 learningSubtitleSelectionUrl == null &&
                                                 selectedExternalSubtitleMimeType == null
-                                            ) {
-                                                // Publish this batch only after its translation attempt finishes,
-                                                // keeping original text and translation in sync.
-                                                PlayerLearningSubtitleState.mergePrefetched(translated)
-                                            }
+                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
                                         }
                                     }
                                 }
