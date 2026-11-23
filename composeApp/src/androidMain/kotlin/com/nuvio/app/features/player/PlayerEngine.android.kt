@@ -1436,7 +1436,14 @@ private fun ExoPlayerSurface(
                                 if (parsed.isEmpty()) {
                                     PlayerLearningSubtitleState.markUnsupported()
                                 } else {
-                                    PlayerLearningSubtitleState.update(parsed)
+                                    val restored = DoubleSubtitlesLocalTranslator.restoreCachedTranslations(
+                                        context,
+                                        "external|$url",
+                                        parsed,
+                                    )
+                                    if (learningSubtitleSelectionUrl == url) {
+                                        PlayerLearningSubtitleState.update(restored)
+                                    }
                                 }
                             }
                         }.onFailure { error ->
@@ -2247,7 +2254,16 @@ private class NuvioLibmpvView(
                 }
                 if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
                     if (parsed.isEmpty()) PlayerLearningSubtitleState.markUnsupported()
-                    else PlayerLearningSubtitleState.update(parsed)
+                    else {
+                        val restored = DoubleSubtitlesLocalTranslator.restoreCachedTranslations(
+                            context,
+                            "external|$url",
+                            parsed,
+                        )
+                        if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
+                            PlayerLearningSubtitleState.update(restored)
+                        }
+                    }
                 }
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
