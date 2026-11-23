@@ -23,14 +23,56 @@ internal object PlayerEmbeddedSubtitleCache {
 
     fun initialize(context: Context) { appContext = context.applicationContext }
 
+    /**
+     * Builds a playback identity that survives refreshed signed URLs and auth headers.
+     * Keep content-identifying query parameters, but exclude short-lived credentials.
+     */
     fun videoIdentity(url: String, headers: Map<String, String>): String {
+        val stableUrl = stablePlaybackUrl(url)
+        val stableHeaders = headers
+            .filterNot { (name, _) -> isVolatileCredentialName(name) }
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
         val source = buildString {
-            append(url)
-            headers.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach { (name, value) ->
-                append('\n').append(name.lowercase()).append(':').append(value)
+            append(stableUrl)
+            stableHeaders.forEach { (name, value) ->
+                append('\n').append(name.lowercase()).append(':').append(value.trim())
             }
         }
         return sha256(source)
+    }
+
+    /**
+     * Signed CDN URLs commonly rotate only their authentication query parameters.
+     * Preserve all other parameters because they may identify the actual media item.
+     */
+    private fun stablePlaybackUrl(url: String): String {
+        val withoutFragment = url.substringBefore('#')
+        val queryIndex = withoutFragment.indexOf('?')
+        if (queryIndex < 0) return withoutFragment
+        val base = withoutFragment.substring(0, queryIndex)
+        val query = withoutFragment.substring(queryIndex + 1)
+        val stableParameters = query.split('&')
+            .filter(String::isNotBlank)
+            .filterNot { parameter ->
+                val rawName = parameter.substringBefore('=')
+                isVolatileCredentialName(rawName.lowercase())
+            }
+            .sorted()
+        return if (stableParameters.isEmpty()) base else "$base?${stableParameters.joinToString("&")}"
+    }
+
+    private fun isVolatileCredentialName(name: String): Boolean {
+        val normalized = name.trim().lowercase()
+        return normalized in setOf(
+            "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "token", "access_token", "auth", "authorization_token", "auth_token",
+            "access-token", "auth-token", "api_key", "apikey", "x-api-key",
+            "session", "sessionid", "session_id", "jwt", "signature", "sig",
+            "expires", "expiry", "policy", "key-pair-id", "hdnts", "hdnea",
+            "se", "sp", "sv", "sr",
+        ) || normalized.startsWith("x-amz-") ||
+            normalized.startsWith("x-goog-") ||
+            normalized.startsWith("x-ms-")
     }
 
     fun cacheKey(url: String, headers: Map<String, String>, trackKey: String): String =
