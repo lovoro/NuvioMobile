@@ -68,20 +68,25 @@ internal object DoubleSubtitlesLocalTranslator {
         if (baseUrl.isBlank()) return@withContext cues
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
-        // Translation pairs are shared by endpoint, not by playback URL/track identity.
-        // Cue identity already includes timestamps and source text, so reopening the same
-        // movie cannot create another copy merely because its stream URL changed.
-        val cacheFile = cacheFile(context, endpoint)
-        val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
-        val legacyTranslations = readCache(legacyFile)
-        val translations = readCache(cacheFile).toMutableMap().apply {
+        // One track identity owns one JSON file beside its original ID.bin.
+        // Endpoint hashes are buckets inside that JSON, keeping addon configurations isolated.
+        val configId = sha256(endpoint)
+        val cacheFile = cacheFile(context, trackCacheKey)
+        val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
+        val currentCueIds = cues.mapTo(hashSetOf()) { cueIdentity(it) }
+        val legacyTrackTranslations = readCache(legacyTrackFile, configId)
+        val legacyEndpointTranslations = readCache(legacyEndpointFile, configId)
+            .filterKeys { it in currentCueIds }
+        val legacyTranslations = legacyTrackTranslations + legacyEndpointTranslations
+        val translations = readCache(cacheFile, configId).toMutableMap().apply {
             legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
-        if (legacyFile.isFile && translations.isNotEmpty()) {
-            writeCache(cacheFile, translations)
-            if (readCache(cacheFile).keys.containsAll(translations.keys)) {
-                removeExactDuplicateLegacyCaches(context, legacyTranslations)
-            }
+        if (legacyTranslations.isNotEmpty()) {
+            writeCache(cacheFile, translations, configId)
+            if (legacyTrackFile.isFile &&
+                readCache(cacheFile, configId).keys.containsAll(legacyTrackTranslations.keys)
+            ) legacyTrackFile.delete()
         }
         // Upgrade legacy translation-only entries with the original cue data whenever available.
         var upgradedLegacyEntries = false
@@ -97,7 +102,7 @@ internal object DoubleSubtitlesLocalTranslator {
                 upgradedLegacyEntries = true
             }
         }
-        if (upgradedLegacyEntries) writeCache(cacheFile, translations)
+        if (upgradedLegacyEntries) writeCache(cacheFile, translations, configId)
         Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
 
         // Restore cache hits immediately, before constructing or sending any translation
@@ -184,7 +189,7 @@ internal object DoubleSubtitlesLocalTranslator {
                     }
                     Log.i(TAG, "Translation API returned $translatedInResponse translated cues")
                 }
-                writeCache(cacheFile, translations)
+                writeCache(cacheFile, translations, configId)
                 val translatedBatch = chunk.mapNotNull { cue ->
                     translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
                 }
@@ -224,18 +229,21 @@ internal object DoubleSubtitlesLocalTranslator {
         if (baseUrl.isBlank()) return@withContext cues
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
-        val cacheFile = cacheFile(context, endpoint)
-        val legacyFile = legacyCacheFile(context, trackCacheKey, endpoint)
-        val legacyTranslations = readCache(legacyFile)
-        val cache = readCache(cacheFile).toMutableMap().apply {
+        val configId = sha256(endpoint)
+        val cacheFile = cacheFile(context, trackCacheKey)
+        val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
+        val currentCueIds = cues.mapTo(hashSetOf()) { cueIdentity(it) }
+        val legacyTranslations = (readCache(legacyTrackFile, configId) +
+            readCache(legacyEndpointFile, configId))
+            .filterKeys { it in currentCueIds }
+        val cache = readCache(cacheFile, configId).toMutableMap().apply {
             legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
         if (cache.isEmpty()) return@withContext cues
-        if (legacyFile.isFile) {
-            writeCache(cacheFile, cache)
-            if (readCache(cacheFile).keys.containsAll(cache.keys)) {
-                removeExactDuplicateLegacyCaches(context, legacyTranslations)
-            }
+        if (legacyTranslations.isNotEmpty()) {
+            writeCache(cacheFile, cache, configId)
+            if (legacyTrackFile.isFile) legacyTrackFile.delete()
         }
 
         var upgradedLegacyEntries = false
@@ -258,17 +266,18 @@ internal object DoubleSubtitlesLocalTranslator {
                     )
                 }
             }
-            writeCache(cacheFile, upgraded)
+            writeCache(cacheFile, upgraded, configId)
         }
         val restoredCount = restored.count { !it.translationText.isNullOrBlank() }
         if (restoredCount > 0) Log.i(TAG, "Restored $restoredCount translated external subtitle cues from cache")
         restored
     }
 
-    private fun cacheFile(context: Context, endpoint: String): File {
+    private fun cacheFile(context: Context, trackCacheKey: String): File {
         val directory = File(context.filesDir, CACHE_DIRECTORY)
         if (!directory.exists()) directory.mkdirs()
-        return File(directory, "translation_endpoint_${sha256(endpoint)}.json")
+        val id = trackCacheKey.takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) } ?: sha256(trackCacheKey)
+        return File(directory, "$id.json")
     }
 
     private fun legacyCacheFile(context: Context, trackCacheKey: String, endpoint: String): File {
@@ -276,29 +285,20 @@ internal object DoubleSubtitlesLocalTranslator {
         if (!directory.exists()) directory.mkdirs()
         return File(directory, "translation_${sha256("$trackCacheKey|$endpoint")}.json")
     }
-    private fun removeExactDuplicateLegacyCaches(
-        context: Context,
-        migratedEntries: Map<String, CachedSubtitle>,
-    ) {
-        if (migratedEntries.isEmpty()) return
+
+    private fun legacyEndpointCacheFile(context: Context, endpoint: String): File {
         val directory = File(context.filesDir, CACHE_DIRECTORY)
-        directory.listFiles { file ->
-            file.isFile &&
-                file.name.startsWith("translation_") &&
-                !file.name.startsWith("translation_endpoint_") &&
-                file.extension == "json"
-        }.orEmpty().forEach { candidate ->
-            if (readCache(candidate) == migratedEntries) {
-                candidate.delete()
-                Log.i(TAG, "Removed duplicate legacy translation cache: ${candidate.name}")
-            }
-        }
+        if (!directory.exists()) directory.mkdirs()
+        return File(directory, "translation_endpoint_${sha256(endpoint)}.json")
     }
 
-    private fun readCache(file: File): Map<String, CachedSubtitle> = runCatching {
+    private fun readCache(file: File, configId: String): Map<String, CachedSubtitle> = runCatching {
         if (!file.isFile) return@runCatching emptyMap()
         val json = JSONObject(file.readText(Charsets.UTF_8))
-        val entries = json.optJSONObject("cues")
+        val buckets = json.optJSONObject("translations")
+        if (buckets != null && !buckets.has(configId)) return@runCatching emptyMap()
+        val entries = buckets?.optJSONObject(configId)?.optJSONObject("cues")
+            ?: json.optJSONObject("cues")
         if (entries != null) {
             buildMap {
                 val keys = entries.keys()
@@ -315,7 +315,6 @@ internal object DoubleSubtitlesLocalTranslator {
                 }
             }
         } else {
-            // Backward compatibility with the previous format, which stored translation strings only.
             buildMap {
                 val keys = json.keys()
                 while (keys.hasNext()) {
@@ -328,10 +327,14 @@ internal object DoubleSubtitlesLocalTranslator {
         }
     }.getOrDefault(emptyMap())
 
-    private fun writeCache(file: File, values: Map<String, CachedSubtitle>) {
+    private fun writeCache(file: File, values: Map<String, CachedSubtitle>, configId: String) {
         runCatching {
             synchronized(file.absolutePath.intern()) {
-                val merged = readCache(file).toMutableMap().apply { putAll(values) }
+                val root = if (file.isFile) runCatching {
+                    JSONObject(file.readText(Charsets.UTF_8))
+                }.getOrDefault(JSONObject()) else JSONObject()
+                val buckets = root.optJSONObject("translations") ?: JSONObject()
+                val merged = readCache(file, configId).toMutableMap().apply { putAll(values) }
                 val entries = JSONObject()
                 merged.forEach { (key, value) ->
                     entries.put(key, JSONObject()
@@ -340,9 +343,10 @@ internal object DoubleSubtitlesLocalTranslator {
                         .put("originalText", value.originalText)
                         .put("translatedText", value.translatedText))
                 }
+                buckets.put(configId, JSONObject().put("cues", entries))
                 val json = JSONObject()
-                    .put("version", 2)
-                    .put("cues", entries)
+                    .put("version", 3)
+                    .put("translations", buckets)
                 val temporary = File(file.parentFile, file.name + ".tmp")
                 temporary.writeText(json.toString(), Charsets.UTF_8)
                 if (file.exists() && !file.delete()) error("Unable to replace translation cache")

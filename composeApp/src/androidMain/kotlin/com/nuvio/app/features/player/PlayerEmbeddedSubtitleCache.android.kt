@@ -80,18 +80,18 @@ internal object PlayerEmbeddedSubtitleCache {
 
     suspend fun read(key: String): List<LearningSubtitleCue>? = withContext(Dispatchers.IO) {
         val directory = cacheDirectory() ?: return@withContext null
+        val directFile = File(directory, "$key.bin")
+        val directCues = readCueFile(directFile)
+        if (directCues != null) return@withContext directCues
+        // Backward compatibility: promote old content-addressed BIN files via .ref.
         val reference = File(directory, "$key.ref")
         val referencedName = runCatching { reference.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
         val referencedFile = referencedName
             ?.takeIf { it.startsWith("content_") && it.endsWith(".bin") && !it.contains('/') && !it.contains('\\') }
             ?.let { File(directory, it) }
-        val file = referencedFile?.takeIf { it.isFile } ?: File(directory, "$key.bin")
-        val cues = readCueFile(file) ?: return@withContext null
-        // Migrate a legacy identity-named BIN on first read. This also collapses any
-        // other byte-equivalent subtitle files left by earlier app versions.
-        if (referencedFile == null && file.name == "$key.bin") {
-            write(key, cues)
-        }
+        val legacyFile = referencedFile?.takeIf { it.isFile } ?: return@withContext null
+        val cues = readCueFile(legacyFile) ?: return@withContext null
+        write(key, cues)
         cues
     }
 
@@ -100,16 +100,9 @@ internal object PlayerEmbeddedSubtitleCache {
         val directory = cacheDirectory() ?: return@withContext
         runCatching {
             synchronized(directory.absolutePath.intern()) {
-                val contentKey = sha256(buildString {
-                    cues.forEach { cue ->
-                        append(cue.startTimeMs).append('|')
-                            .append(cue.endTimeMs).append('|')
-                            .append(cue.text.length).append(':').append(cue.text).append('\n')
-                    }
-                })
-                val canonical = File(directory, "content_$contentKey.bin")
-                if (!canonical.isFile || canonical.length() <= 0L) {
-                    val temporary = File(directory, canonical.name + ".tmp")
+                val target = File(directory, "$key.bin")
+                if (!sameCues(readCueFile(target), cues)) {
+                    val temporary = File(directory, target.name + ".tmp")
                     DataOutputStream(BufferedOutputStream(temporary.outputStream())).use { output ->
                         output.writeInt(MAGIC)
                         output.writeInt(VERSION)
@@ -123,30 +116,28 @@ internal object PlayerEmbeddedSubtitleCache {
                             output.write(bytes)
                         }
                     }
-                    if (!temporary.renameTo(canonical)) {
+                    if (target.exists() && !target.delete()) error("Unable to replace subtitle cache")
+                    if (!temporary.renameTo(target)) {
                         temporary.delete()
-                        if (!canonical.isFile) error("Unable to finalize canonical subtitle cache")
+                        error("Unable to finalize subtitle cache")
                     }
                 }
-
-                // Keep an identity-to-content pointer so the next playback can find the
-                // content-addressed file without extracting the track again.
-                writeReference(File(directory, "$key.ref"), canonical.name)
-
-                // Collapse older identity-named BIN files with identical cue content.
-                directory.listFiles { file -> file.isFile && file.extension == "bin" && file.name != canonical.name }
-                    .orEmpty()
-                    .forEach { duplicate ->
-                        val existing = readCueFile(duplicate)
-                        if (sameCues(existing, cues)) {
-                            val duplicateKey = duplicate.nameWithoutExtension
-                            writeReference(File(directory, "$duplicateKey.ref"), canonical.name)
-                            duplicate.delete()
-                        }
-                    }
-                Log.i(TAG, "Saved/reused embedded subtitle content cache: cues=${cues.size} bytes=${canonical.length()}")
+                File(directory, "$key.ref").delete()
+                cleanupUnreferencedLegacyContent(directory)
+                Log.i(TAG, "Saved embedded subtitle cache: id=$key cues=${cues.size} bytes=${target.length()}")
             }
         }.onFailure { Log.w(TAG, "Unable to save embedded subtitle cache", it) }
+    }
+
+    private fun cleanupUnreferencedLegacyContent(directory: File) {
+        val referencedNames = directory.listFiles { file -> file.isFile && file.extension == "ref" }
+            .orEmpty()
+            .mapNotNull { reference -> runCatching { reference.readText().trim() }.getOrNull() }
+            .toSet()
+        directory.listFiles { file -> file.isFile && file.name.startsWith("content_") && file.extension == "bin" }
+            .orEmpty()
+            .filterNot { it.name in referencedNames }
+            .forEach { it.delete() }
     }
 
     private fun cacheDirectory(): File? {
