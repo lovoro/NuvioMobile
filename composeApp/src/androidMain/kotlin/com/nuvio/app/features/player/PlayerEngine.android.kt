@@ -1335,15 +1335,18 @@ private fun ExoPlayerSurface(
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
                         if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) {
                             startEmbeddedSubtitlePrefetch(selectedFormat)
-                        } else if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType != null && selectedFormat != null) {
-                            // ExoPlayer external subtitle files also emit live cues, but they are
-                            // not Matroska tracks. Register a translation action for those cues
-                            // instead of leaving the action cleared by beginLiveCapture().
+                        } else if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType != null) {
+                            // ExoPlayer external subtitle tracks do not always expose a Format
+                            // at the selector callback boundary. Their live cues are still valid;
+                            // register the action from the selected index and MIME type instead
+                            // of requiring embedded-track metadata.
                             val externalTrackKey = listOf(
-                                selectedFormat.id.orEmpty(),
-                                selectedFormat.sampleMimeType.orEmpty(),
-                                selectedFormat.language.orEmpty(),
-                                selectedFormat.label?.toString().orEmpty(),
+                                "exo-external",
+                                index.toString(),
+                                selectedFormat?.id.orEmpty(),
+                                selectedFormat?.sampleMimeType.orEmpty(),
+                                selectedFormat?.language.orEmpty(),
+                                selectedFormat?.label?.toString().orEmpty(),
                                 selectedExternalSubtitleMimeType.orEmpty(),
                             ).joinToString("|")
                             learningSubtitleSelectionGeneration += 1L
