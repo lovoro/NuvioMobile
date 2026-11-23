@@ -1289,7 +1289,12 @@ private fun ExoPlayerSurface(
                 }
 
                 override fun selectSubtitleTrack(index: Int) {
-                    Log.d(TAG, "selectSubtitleTrack: index=$index")
+                    // The subtitle picker reports the selected external MIME type immediately
+                    // before this callback. Preserve it across the selection reset below; otherwise
+                    // the external track is misclassified as an embedded track and its translation
+                    // action is never registered.
+                    val requestedExternalMimeType = selectedExternalSubtitleMimeType
+                    Log.d(TAG, "selectSubtitleTrack: index=$index externalMime=$requestedExternalMimeType")
                     // Addon/sidecar subtitles are selected through setSubtitleUri(), not through
                     // ExoPlayer's embedded-track index. ExoPlayer can report index=-1 while the
                     // sidecar is active (its native text track is intentionally disabled). Do not
@@ -1311,8 +1316,12 @@ private fun ExoPlayerSurface(
                     learningSubtitleLoadJob = null
                     learningSubtitlePrefetchTrackKey = null
                     learningSubtitleSelectionUrl = null
-                    selectedExternalSubtitleMimeType = null
-                    learningInternalSubtitleSelected.set(index >= 0 && PlayerSettingsRepository.uiState.value.englishLearningEnabled)
+                    selectedExternalSubtitleMimeType = requestedExternalMimeType
+                    learningInternalSubtitleSelected.set(
+                        index >= 0 &&
+                            requestedExternalMimeType == null &&
+                            PlayerSettingsRepository.uiState.value.englishLearningEnabled
+                    )
                     PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     if (index < 0) {
@@ -1333,9 +1342,9 @@ private fun ExoPlayerSurface(
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
-                        if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) {
+                        if (requestedExternalMimeType == null) {
                             startEmbeddedSubtitlePrefetch(selectedFormat)
-                        } else if (learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType != null) {
+                        } else {
                             // ExoPlayer external subtitle tracks do not always expose a Format
                             // at the selector callback boundary. Their live cues are still valid;
                             // register the action from the selected index and MIME type instead
