@@ -45,7 +45,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         headers: Map<String, String>,
         selectedTrackNumber: Int?,
         currentPositionMs: () -> Long,
-        onPartialCues: (List<LearningSubtitleCue>) -> Unit,
+        onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
         if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
             !(url.startsWith("http://", true) || url.startsWith("https://", true))
@@ -66,7 +66,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         headers: Map<String, String>,
         selectedTrack: Int,
         currentPositionMs: () -> Long,
-        onPartialCues: (List<LearningSubtitleCue>) -> Unit,
+        onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
         val budget = Budget()
         val initial = range(url, headers, 0L, PROBE, budget) ?: return LoadResult(emptyList(), false)
@@ -106,8 +106,10 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             .toMutableList()
         if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
         val result = mutableListOf<LearningSubtitleCue>()
-        val partialBatch = mutableListOf<LearningSubtitleCue>()
-        var clustersSinceCallback = 0
+        // Playback-window cues are emitted one at a time for immediate translation.
+        // All other clusters retain the efficient eight-cluster background batches.
+        val backgroundBatch = mutableListOf<LearningSubtitleCue>()
+        var backgroundClustersSinceCallback = 0
         var complete = true
         while (pendingPositions.isNotEmpty()) {
             if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
@@ -124,7 +126,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 val cueTimeMs = ticksToMs(cueTime, scale)
                 cueTimeMs in windowStart..windowEnd
             }
-            val selectedIndex = if (priorityIndex >= 0) priorityIndex else 0
+            val isPlaybackPriorityCluster = priorityIndex >= 0
+            val selectedIndex = if (isPlaybackPriorityCluster) priorityIndex else 0
             val (_, clusterPosition) = pendingPositions.removeAt(selectedIndex)
 
             val absolute = segmentData + clusterPosition
@@ -157,23 +160,29 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             )[selectedTrack].orEmpty()
             val decodedCues = decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
             result += decodedCues
-            partialBatch += decodedCues
-            clustersSinceCallback++
 
-            val hasPriorityRemaining = pendingPositions.any { (cueTime, _) ->
-                val cueTimeMs = ticksToMs(cueTime, scale)
-                cueTimeMs in windowStart..windowEnd
-            }
-            if (partialBatch.isNotEmpty() && (clustersSinceCallback >= 8 || !hasPriorityRemaining)) {
-                val batch = partialBatch.distinctBy { it.startTimeMs to it.text }
-                withContext(Dispatchers.Main.immediate) { onPartialCues(batch) }
-                partialBatch.clear()
-                clustersSinceCallback = 0
+            if (isPlaybackPriorityCluster) {
+                // Do not wait for another cue or another Cluster: every newly decoded
+                // playback-window cue gets its own translation request immediately.
+                decodedCues.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }.forEach { cue ->
+                    withContext(Dispatchers.Main.immediate) { onPartialCues(listOf(cue), true) }
+                }
+            } else {
+                backgroundBatch += decodedCues
+                backgroundClustersSinceCallback++
+                if (backgroundClustersSinceCallback >= 8) {
+                    val batch = backgroundBatch.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+                    if (batch.isNotEmpty()) {
+                        withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
+                    }
+                    backgroundBatch.clear()
+                    backgroundClustersSinceCallback = 0
+                }
             }
         }
-        if (partialBatch.isNotEmpty()) {
-            val batch = partialBatch.distinctBy { it.startTimeMs to it.text }
-            withContext(Dispatchers.Main.immediate) { onPartialCues(batch) }
+        if (backgroundBatch.isNotEmpty()) {
+            val batch = backgroundBatch.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+            withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
         }
         return LoadResult(
             cues = result.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },

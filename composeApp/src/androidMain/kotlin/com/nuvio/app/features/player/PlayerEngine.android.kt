@@ -836,13 +836,14 @@ private fun ExoPlayerSurface(
                 // Semaphore acquisition is FIFO, so the near-playback batches stay ahead.
                 val translationSemaphore = Semaphore(2)
                 val translationJobs = mutableListOf<Job>()
+                val scheduledTranslationCueKeys = mutableSetOf<Triple<Long, Long, String>>()
                 try {
                     val result = MatroskaEmbeddedSubtitlePrefetcher.load(
                         url = sourceUrl,
                         headers = sanitizedSourceHeaders,
                         selectedTrackNumber = selectedTrackNumber,
                         currentPositionMs = { exoPlayer.currentPosition },
-                        onPartialCues = { partialCues ->
+                        onPartialCues = { partialCues, isPlaybackPriority ->
                             if (
                                 partialCues.isNotEmpty() &&
                                 learningSubtitleSelectionGeneration == selectionGeneration &&
@@ -850,29 +851,48 @@ private fun ExoPlayerSurface(
                                 learningSubtitleSelectionUrl == null &&
                                 selectedExternalSubtitleMimeType == null
                             ) {
-                                PlayerLearningSubtitleState.mergePrefetched(partialCues)
-                                if (sourceLanguageMatches) {
-                                    PlayerLearningSubtitleState.isTranslating = true
-                                    translationJobs += translationScope.launch {
-                                        translationSemaphore.withPermit {
-                                        if (
-                                            learningSubtitleSelectionGeneration == selectionGeneration &&
-                                            learningSubtitlePrefetchTrackKey == trackKey &&
-                                            learningSubtitleSelectionUrl == null &&
-                                            selectedExternalSubtitleMimeType == null
-                                        ) {
-                                            val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, partialCues, requiredSourceLanguage = format.language.orEmpty())
-                                            if (
-                                                learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                learningSubtitlePrefetchTrackKey == trackKey &&
-                                                learningSubtitleSelectionUrl == null &&
-                                                selectedExternalSubtitleMimeType == null
-                                            ) PlayerLearningSubtitleState.mergePrefetched(translated)
-                                        }
-                                        }
+                                // Reserve identities before launching work so overlapping Cluster
+                                // indexes cannot schedule the same cue more than once.
+                                val uniqueCues = synchronized(scheduledTranslationCueKeys) {
+                                    partialCues.filter { cue ->
+                                        scheduledTranslationCueKeys.add(
+                                            Triple(cue.startTimeMs, cue.endTimeMs, cue.text)
+                                        )
                                     }
                                 }
-                                Log.d(TAG, "Embedded subtitle priority batch ready: ${partialCues.size} cues")
+                                if (uniqueCues.isNotEmpty()) {
+                                    PlayerLearningSubtitleState.mergePrefetched(uniqueCues)
+                                    if (sourceLanguageMatches) {
+                                        PlayerLearningSubtitleState.isTranslating = true
+                                        translationJobs += translationScope.launch {
+                                            translationSemaphore.withPermit {
+                                                if (
+                                                    learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                    learningSubtitlePrefetchTrackKey == trackKey &&
+                                                    learningSubtitleSelectionUrl == null &&
+                                                    selectedExternalSubtitleMimeType == null
+                                                ) {
+                                                    val translated = DoubleSubtitlesLocalTranslator.translate(
+                                                        context,
+                                                        cacheKey,
+                                                        uniqueCues,
+                                                        requiredSourceLanguage = format.language.orEmpty(),
+                                                    )
+                                                    if (
+                                                        learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                        learningSubtitlePrefetchTrackKey == trackKey &&
+                                                        learningSubtitleSelectionUrl == null &&
+                                                        selectedExternalSubtitleMimeType == null
+                                                    ) PlayerLearningSubtitleState.mergePrefetched(translated)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Log.d(
+                                        TAG,
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size}",
+                                    )
+                                }
                             }
                         },
                     )
