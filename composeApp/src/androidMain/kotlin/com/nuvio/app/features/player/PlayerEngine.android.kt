@@ -1288,6 +1288,18 @@ private fun ExoPlayerSurface(
 
                 override fun selectSubtitleTrack(index: Int) {
                     Log.d(TAG, "selectSubtitleTrack: index=$index")
+                    // Addon/sidecar subtitles are selected through setSubtitleUri(), not through
+                    // ExoPlayer's embedded-track index. ExoPlayer can report index=-1 while the
+                    // sidecar is active (its native text track is intentionally disabled). Do not
+                    // let that callback cancel the sidecar's learning parse or translation action.
+                    if (index < 0 && learningSubtitleSelectionUrl != null) {
+                        Log.d(TAG, "selectSubtitleTrack: preserving active external subtitle learning state")
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .build()
+                        return
+                    }
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleLoadJob = null
                     learningSubtitlePrefetchTrackKey = null
