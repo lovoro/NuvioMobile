@@ -39,6 +39,24 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
+    /** External subtitles are manually translatable only when the addon's configured source is English. */
+    suspend fun isConfiguredSourceLanguageEnglish(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            AddonRepository.initialize()
+            val state = AddonRepository.uiState.first { current ->
+                current.addons.any { it.manifest?.id == ADDON_ID } ||
+                    current.addons.none { it.isRefreshing }
+            }
+            val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
+                ?: return@withContext false
+            val segments = runCatching {
+                URI(addon.manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank)
+            }.getOrDefault(emptyList())
+            val configureIndex = segments.indexOfLast { it.equals("configure", ignoreCase = true) }
+            val configuredSource = segments.getOrNull(configureIndex + 1) ?: return@withContext false
+            normalizeLanguageCode(configuredSource) == "en"
+        }
+
     suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
         withContext(Dispatchers.IO) {
             val normalizedLanguage = normalizeLanguageCode(sourceLanguage) ?: return@withContext false

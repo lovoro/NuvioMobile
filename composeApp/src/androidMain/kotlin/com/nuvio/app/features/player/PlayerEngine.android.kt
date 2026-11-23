@@ -1476,6 +1476,13 @@ private fun ExoPlayerSurface(
                             learningSubtitleSelectionGeneration += 1L
                             val selectionGeneration = learningSubtitleSelectionGeneration
                             val cacheKey = "external|$sourceUrl|$externalTrackKey"
+                            PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
+                            coroutineScope.launch {
+                                val allowed = DoubleSubtitlesLocalTranslator.isConfiguredSourceLanguageEnglish(context)
+                                if (learningSubtitleSelectionGeneration == selectionGeneration) {
+                                    PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                                }
+                            }
                             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                                 if (
                                     learningSubtitleSelectionGeneration != selectionGeneration ||
@@ -1523,6 +1530,11 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.beginLoading()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
+                    PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
+                    coroutineScope.launch {
+                        val allowed = DoubleSubtitlesLocalTranslator.isConfiguredSourceLanguageEnglish(context)
+                        if (learningSubtitleSelectionUrl == url) PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                    }
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
                     PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                         if (learningSubtitleSelectionUrl != url) emptyList()
@@ -2341,6 +2353,13 @@ private class NuvioLibmpvView(
         val generation = learningSubtitleGeneration
         learningSubtitleSelectionUrl = url
         PlayerLearningSubtitleState.beginLoading()
+        PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
+        scope.launch {
+            val allowed = DoubleSubtitlesLocalTranslator.isConfiguredSourceLanguageEnglish(context)
+            if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
+                PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+            }
+        }
         val headers = currentExternalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
         PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
             if (learningSubtitleGeneration != generation || learningSubtitleSelectionUrl != url) emptyList()
