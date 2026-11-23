@@ -1401,57 +1401,74 @@ private fun TranslationGlyph(
         val sx = size.width / 24f
         val sy = size.height / 24f
         fun p(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * sx, y * sy)
-        val outline = 1.45.dp.toPx()
+        val outline = 1.35.dp.toPx()
+        val roundCap = androidx.compose.ui.graphics.StrokeCap.Round
 
-        // Rear outlined card and 文 character.
+        // Rear translation card: a thin rounded outline, partially hidden by the
+        // foreground language card, matching the supplied two-card mark.
         drawRoundRect(
             color = tint,
-            topLeft = p(8.0f, 4.0f),
-            size = androidx.compose.ui.geometry.Size(13.5f * sx, 17.0f * sy),
+            topLeft = p(8.9f, 5.0f),
+            size = androidx.compose.ui.geometry.Size(12.8f * sx, 16.0f * sy),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.0f * sx, 2.0f * sy),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = outline),
         )
-        drawLine(tint, p(14.0f, 8.2f), p(19.0f, 8.2f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(16.5f, 7.0f), p(16.5f, 15.4f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(14.3f, 10.2f), p(18.8f, 10.2f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(14.5f, 11.8f), p(18.6f, 14.8f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(18.6f, 11.8f), p(14.5f, 14.8f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
 
-        // Solid front card with the distinctive angled lower-right corner.
-        val front = Path().apply {
-            moveTo(4.0f * sx, 2.0f * sy)
-            lineTo(11.2f * sx, 2.0f * sy)
-            quadraticTo(12.7f * sx, 2.0f * sy, 13.0f * sx, 3.5f * sy)
-            lineTo(15.8f * sx, 17.0f * sy)
-            lineTo(13.0f * sx, 20.0f * sy)
-            lineTo(12.2f * sx, 17.8f * sy)
-            lineTo(4.0f * sx, 17.8f * sy)
-            quadraticTo(2.0f * sx, 17.8f * sy, 2.0f * sx, 15.8f * sy)
-            lineTo(2.0f * sx, 4.0f * sy)
-            quadraticTo(2.0f * sx, 2.0f * sy, 4.0f * sx, 2.0f * sy)
+        // 文: the short top stroke, long crossbar and two descending strokes.
+        drawLine(tint, p(16.1f, 6.9f), p(16.1f, 8.7f), outline, cap = roundCap)
+        drawLine(tint, p(13.0f, 9.1f), p(19.4f, 9.1f), outline, cap = roundCap)
+        val leftTextStroke = Path().apply {
+            moveTo(14.0f * sx, 10.5f * sy)
+            cubicTo(14.7f * sx, 12.7f * sy, 16.0f * sx, 14.8f * sy, 18.6f * sx, 16.0f * sy)
+        }
+        drawPath(leftTextStroke, color = tint, style = androidx.compose.ui.graphics.drawscope.Stroke(width = outline, cap = roundCap))
+        val rightTextStroke = Path().apply {
+            moveTo(18.6f * sx, 10.5f * sy)
+            cubicTo(17.8f * sx, 12.8f * sy, 16.2f * sx, 14.8f * sy, 14.5f * sx, 16.0f * sy)
+        }
+        drawPath(rightTextStroke, color = tint, style = androidx.compose.ui.graphics.drawscope.Stroke(width = outline, cap = roundCap))
+
+        // Foreground solid speech card, with the characteristic slanted right
+        // edge and pointed lower-right tail from the supplied reference.
+        val frontCard = Path().apply {
+            moveTo(4.0f * sx, 1.4f * sy)
+            lineTo(9.9f * sx, 1.4f * sy)
+            cubicTo(10.8f * sx, 1.4f * sy, 11.3f * sx, 1.9f * sy, 11.6f * sx, 2.8f * sy)
+            lineTo(14.2f * sx, 15.7f * sy)
+            cubicTo(14.4f * sx, 16.5f * sy, 14.2f * sx, 17.1f * sy, 13.6f * sx, 17.8f * sy)
+            lineTo(11.5f * sx, 20.1f * sy)
+            lineTo(10.6f * sx, 16.9f * sy)
+            lineTo(4.0f * sx, 16.9f * sy)
+            cubicTo(2.4f * sx, 16.9f * sy, 1.5f * sx, 16.0f * sy, 1.5f * sx, 14.4f * sy)
+            lineTo(1.5f * sx, 4.0f * sy)
+            cubicTo(1.5f * sx, 2.4f * sy, 2.4f * sx, 1.4f * sy, 4.0f * sx, 1.4f * sy)
             close()
         }
-        drawPath(front, color = tint)
+        drawPath(frontCard, color = tint)
 
-        // A-shaped negative space cut out of the solid front card.
+        // Cut the capital A out of the solid foreground card.
         val letterA = Path().apply {
-            moveTo(4.9f * sx, 14.2f * sy)
-            lineTo(7.8f * sx, 6.0f * sy)
-            lineTo(10.8f * sx, 14.2f * sy)
-            lineTo(9.0f * sx, 14.2f * sy)
-            lineTo(8.3f * sx, 12.2f * sy)
-            lineTo(7.0f * sx, 12.2f * sy)
-            lineTo(6.3f * sx, 14.2f * sy)
+            moveTo(3.0f * sx, 13.9f * sy)
+            lineTo(5.9f * sx, 5.2f * sy)
+            cubicTo(6.1f * sx, 4.7f * sy, 6.4f * sx, 4.5f * sy, 6.9f * sx, 4.5f * sy)
+            lineTo(7.9f * sx, 4.5f * sy)
+            cubicTo(8.3f * sx, 4.5f * sy, 8.6f * sx, 4.8f * sy, 8.8f * sx, 5.3f * sy)
+            lineTo(11.8f * sx, 13.9f * sy)
+            lineTo(9.7f * sx, 13.9f * sy)
+            lineTo(9.0f * sx, 11.8f * sy)
+            lineTo(5.6f * sx, 11.8f * sy)
+            lineTo(4.9f * sx, 13.9f * sy)
             close()
         }
         drawPath(letterA, color = surface)
-        drawLine(
-            color = surface,
-            start = p(6.7f, 11.0f),
-            end = p(9.0f, 11.0f),
-            strokeWidth = 1.35.dp.toPx(),
-            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-        )
+        // Counter of the A remains the foreground card color.
+        val letterCounter = Path().apply {
+            moveTo(6.1f * sx, 10.0f * sy)
+            lineTo(7.3f * sx, 6.4f * sy)
+            lineTo(8.5f * sx, 10.0f * sy)
+            close()
+        }
+        drawPath(letterCounter, color = tint)
     }
 }
 
