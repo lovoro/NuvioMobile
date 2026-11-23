@@ -1401,60 +1401,66 @@ private fun TranslationGlyph(
         val sx = size.width / 24f
         val sy = size.height / 24f
         fun p(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * sx, y * sy)
-        val outline = 1.45.dp.toPx()
+        val stroke = 1.35.dp.toPx()
 
-        // Back translation sheet: a quiet outline visible on the right and bottom.
+        // Rear card and its character are drawn first, so the front card naturally overlaps them.
+        drawRoundRect(
+            color = surface,
+            topLeft = p(8.0f, 4.0f),
+            size = androidx.compose.ui.geometry.Size(13.5f * sx, 17.0f * sy),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.0f * sx, 2.0f * sy),
+        )
         drawRoundRect(
             color = tint,
             topLeft = p(8.0f, 4.0f),
             size = androidx.compose.ui.geometry.Size(13.5f * sx, 17.0f * sy),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.0f * sx, 2.0f * sy),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = outline),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
         )
 
-        // Front sheet, with the angled lower-right corner from the reference icon.
-        val sheet = Path().apply {
+        // Simple 文 mark on the exposed part of the rear card.
+        drawLine(tint, p(14.0f, 8.2f), p(19.0f, 8.2f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, p(16.5f, 7.0f), p(16.5f, 15.4f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, p(14.3f, 10.2f), p(18.8f, 10.2f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, p(14.5f, 11.8f), p(18.6f, 14.8f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(tint, p(18.6f, 11.8f), p(14.5f, 14.8f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+
+        // Front translation sheet: solid, overlapping, with the slanted lower-right edge.
+        val front = Path().apply {
             moveTo(4.0f * sx, 2.0f * sy)
             lineTo(11.2f * sx, 2.0f * sy)
-            quadraticTo(12.6f * sx, 2.0f * sy, 13.0f * sx, 3.4f * sy)
-            lineTo(15.7f * sx, 16.8f * sy)
-            lineTo(13.0f * sx, 19.8f * sy)
-            lineTo(12.2f * sx, 17.7f * sy)
-            lineTo(4.0f * sx, 17.7f * sy)
-            quadraticTo(2.0f * sx, 17.7f * sy, 2.0f * sx, 15.7f * sy)
+            quadraticTo(12.7f * sx, 2.0f * sy, 13.0f * sx, 3.5f * sy)
+            lineTo(15.8f * sx, 17.0f * sy)
+            lineTo(13.0f * sx, 20.0f * sy)
+            lineTo(12.2f * sx, 17.8f * sy)
+            lineTo(4.0f * sx, 17.8f * sy)
+            quadraticTo(2.0f * sx, 17.8f * sy, 2.0f * sx, 15.8f * sy)
             lineTo(2.0f * sx, 4.0f * sy)
             quadraticTo(2.0f * sx, 2.0f * sy, 4.0f * sx, 2.0f * sy)
             close()
         }
-        drawPath(sheet, color = tint)
+        drawPath(front, color = tint)
 
-        // G: a compact arc and crossbar, rather than the previous angular A shape.
+        // G cutout on the front sheet.
         drawArc(
             color = surface,
-            startAngle = 42f,
+            startAngle = 38f,
             sweepAngle = 300f,
             useCenter = false,
-            topLeft = p(4.0f, 5.8f),
-            size = androidx.compose.ui.geometry.Size(7.2f * sx, 7.2f * sy),
+            topLeft = p(4.0f, 5.7f),
+            size = androidx.compose.ui.geometry.Size(7.5f * sx, 7.5f * sy),
             style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = 1.55.dp.toPx(),
+                width = 1.7.dp.toPx(),
                 cap = androidx.compose.ui.graphics.StrokeCap.Round,
             ),
         )
         drawLine(
             color = surface,
-            start = p(7.7f, 9.5f),
-            end = p(11.2f, 9.5f),
-            strokeWidth = 1.55.dp.toPx(),
+            start = p(7.7f, 9.6f),
+            end = p(11.3f, 9.6f),
+            strokeWidth = 1.7.dp.toPx(),
             cap = androidx.compose.ui.graphics.StrokeCap.Round,
         )
-
-        // Simplified 文 mark on the rear sheet.
-        drawLine(tint, p(14.1f, 8.2f), p(19.0f, 8.2f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(16.55f, 7.0f), p(16.55f, 15.5f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(14.4f, 10.2f), p(18.8f, 10.2f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(14.5f, 11.8f), p(18.7f, 14.9f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(tint, p(18.7f, 11.8f), p(14.5f, 14.9f), outline, cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 
