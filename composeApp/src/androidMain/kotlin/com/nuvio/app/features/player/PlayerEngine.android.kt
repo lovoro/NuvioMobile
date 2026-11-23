@@ -1342,13 +1342,13 @@ private fun ExoPlayerSurface(
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
                         PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
-                        if (requestedExternalMimeType == null) {
+                        if (requestedExternalMimeType == null && selectedFormat != null) {
                             startEmbeddedSubtitlePrefetch(selectedFormat)
                         } else {
                             // ExoPlayer external subtitle tracks do not always expose a Format
-                            // at the selector callback boundary. Their live cues are still valid;
-                            // register the action from the selected index and MIME type instead
-                            // of requiring embedded-track metadata.
+                            // or deliver the MIME callback before the selector callback. Their
+                            // live cues are still valid; register the action using the selected
+                            // track index, even when both metadata values are unavailable.
                             val externalTrackKey = listOf(
                                 "exo-external",
                                 index.toString(),
@@ -1364,8 +1364,7 @@ private fun ExoPlayerSurface(
                             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                                 if (
                                     learningSubtitleSelectionGeneration != selectionGeneration ||
-                                    learningSubtitleSelectionUrl != null ||
-                                    selectedExternalSubtitleMimeType == null
+                                    learningSubtitleSelectionUrl != null
                                 ) emptyList()
                                 else {
                                     val translated = DoubleSubtitlesLocalTranslator.translate(
@@ -1376,15 +1375,13 @@ private fun ExoPlayerSurface(
                                         onBatchTranslated = { batch ->
                                             if (
                                                 learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                learningSubtitleSelectionUrl == null &&
-                                                selectedExternalSubtitleMimeType != null
+                                                learningSubtitleSelectionUrl == null
                                             ) onBatchTranslated(batch)
                                         },
                                     )
                                     if (
                                         learningSubtitleSelectionGeneration == selectionGeneration &&
-                                        learningSubtitleSelectionUrl == null &&
-                                        selectedExternalSubtitleMimeType != null
+                                        learningSubtitleSelectionUrl == null
                                     ) translated else emptyList()
                                 }
                             }
