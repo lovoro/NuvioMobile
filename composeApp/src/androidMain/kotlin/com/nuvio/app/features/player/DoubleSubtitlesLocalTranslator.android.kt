@@ -86,6 +86,21 @@ internal object DoubleSubtitlesLocalTranslator {
         }
         if (upgradedLegacyEntries) writeCache(cacheFile, translations)
         Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
+
+        // Restore cache hits immediately, before constructing or sending any translation
+        // requests. Cached cues are excluded from the missing list below, so they are never
+        // sent to the translation API again.
+        val cachedBatch = cues.mapNotNull { cue ->
+            if (!cue.translationText.isNullOrBlank()) return@mapNotNull null
+            translations[cueIdentity(cue)]?.translatedText
+                ?.takeIf(String::isNotBlank)
+                ?.let { cue.copy(translationText = it) }
+        }
+        if (cachedBatch.isNotEmpty()) {
+            Log.i(TAG, "Restored ${cachedBatch.size} subtitle translations from local cache")
+            onBatchTranslated(cachedBatch)
+        }
+
         val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() && cue.translationText.isNullOrBlank() }
         // Manual translation starts at the cue currently on screen, then moves forward
         // through the remaining timeline. Earlier untranslated cues are backfilled last.
