@@ -41,6 +41,8 @@ internal class SidecarSubtitleController(
     private val presentCues: (List<Cue>) -> List<Cue> = { it },
     private val onLearningCues: (List<LearningSubtitleCue>) -> Unit = {},
     private val onLearningStatus: (LearningSubtitleStatus) -> Unit = {},
+    private val onLearningSubtitleSelected: (String) -> Unit = {},
+    private val onLearningSubtitleCleared: () -> Unit = {},
 ) {
     private var sidecarSubtitleJob: Job? = null
     private var sidecarGenerationCounter = 0L
@@ -94,6 +96,7 @@ internal class SidecarSubtitleController(
         activeSidecarSubtitleKey = null
         subtitleMimeType = null
         activeSidecarGeneration = 0L
+        onLearningSubtitleCleared()
         AutoSyncSyncedSubtitle.clear() // AutoSync hook
         sidecarTimedCues = emptyList()
         onLearningCues(emptyList())
@@ -124,6 +127,7 @@ internal class SidecarSubtitleController(
         activeSidecarGeneration = generation
         AutoSyncSyncedSubtitle.clear() // AutoSync hook
         activeSidecarSubtitleKey = subtitleKey
+        onLearningSubtitleSelected(subtitleKey)
         sidecarTimedCues = emptyList()
         onLearningCues(emptyList())
         onLearningStatus(LearningSubtitleStatus.LOADING)
@@ -156,6 +160,7 @@ internal class SidecarSubtitleController(
                     activeSidecarSubtitleKey = null
                     activeSidecarGeneration = 0L
                     sidecarTimedCues = emptyList()
+                    onLearningSubtitleCleared()
                     onLearningStatus(LearningSubtitleStatus.UNSUPPORTED)
                     postToSubtitleView { view ->
                         view.setTag(R.id.player_view_sidecar_generation_tag, null)
@@ -187,6 +192,7 @@ internal class SidecarSubtitleController(
                 activeSidecarSubtitleKey = null
                 activeSidecarGeneration = 0L
                 sidecarTimedCues = emptyList()
+                onLearningSubtitleCleared()
                 onLearningStatus(LearningSubtitleStatus.ERROR)
                 postToSubtitleView { view ->
                     view.setTag(R.id.player_view_sidecar_generation_tag, null)
@@ -316,6 +322,7 @@ internal class SidecarSubtitleController(
             sidecarSubtitleJob?.cancel()
             activeSidecarSubtitleKey = newUrl
             activeSidecarGeneration = ++sidecarGenerationCounter
+            onLearningSubtitleSelected(newUrl)
         }
 
         val committedGeneration = activeSidecarGeneration

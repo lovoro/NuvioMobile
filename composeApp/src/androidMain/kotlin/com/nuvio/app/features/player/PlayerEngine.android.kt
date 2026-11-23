@@ -933,6 +933,7 @@ private fun ExoPlayerSurface(
     )
 
     val sidecarController = remember(exoPlayer, coroutineScope) {
+        var sidecarLearningSelectionGeneration = 0L
         SidecarSubtitleController(
             scope = coroutineScope,
             getPlayer = { exoPlayer },
@@ -947,6 +948,59 @@ private fun ExoPlayerSurface(
             },
             onLearningCues = PlayerLearningSubtitleState::update,
             onLearningStatus = PlayerLearningSubtitleState::setStatus,
+            onLearningSubtitleSelected = { url ->
+                val generation = ++sidecarLearningSelectionGeneration
+                if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
+                    PlayerLearningSubtitleState.clear()
+                } else {
+                    val selectedSubtitleLanguage =
+                        externalSubtitles.firstOrNull { it.url == url }?.language.orEmpty()
+                    PlayerLearningSubtitleState.beginLoading()
+                    PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
+                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
+                        if (
+                            sidecarLearningSelectionGeneration != generation ||
+                            sidecarControllerRef?.activeSidecarSubtitleKey != url
+                        ) {
+                            emptyList()
+                        } else {
+                            val translated = DoubleSubtitlesLocalTranslator.translate(
+                                context,
+                                "external|$url",
+                                selectedCues,
+                                priorityPositionMs = priorityPositionMs,
+                                onBatchTranslated = { batch ->
+                                    if (
+                                        sidecarLearningSelectionGeneration == generation &&
+                                        sidecarControllerRef?.activeSidecarSubtitleKey == url
+                                    ) onBatchTranslated(batch)
+                                },
+                                requiredSourceLanguage = selectedSubtitleLanguage,
+                            )
+                            if (
+                                sidecarLearningSelectionGeneration == generation &&
+                                sidecarControllerRef?.activeSidecarSubtitleKey == url
+                            ) translated else emptyList()
+                        }
+                    }
+                    coroutineScope.launch {
+                        val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                            context,
+                            selectedSubtitleLanguage,
+                        )
+                        if (
+                            sidecarLearningSelectionGeneration == generation &&
+                            sidecarControllerRef?.activeSidecarSubtitleKey == url
+                        ) {
+                            PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                        }
+                    }
+                }
+            },
+            onLearningSubtitleCleared = {
+                sidecarLearningSelectionGeneration += 1L
+                PlayerLearningSubtitleState.clear()
+            },
         ).also { sidecarControllerRef = it }
     }
 
