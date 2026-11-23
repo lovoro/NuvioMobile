@@ -693,22 +693,33 @@ private fun ExoPlayerSurface(
             format.label?.toString().orEmpty(),
             format.codecs.orEmpty(),
         ).joinToString("|")
-        if (learningSubtitlePrefetchTrackKey == trackKey) {
-            Log.d(TAG, "Embedded subtitle prefetch already started for track=${format.id}; keeping current job")
+        val sameTrack = learningSubtitlePrefetchTrackKey == trackKey
+        if (!sameTrack) {
+            learningSubtitleLoadJob?.cancel()
+            learningSubtitlePrefetchTrackKey = trackKey
+            learningSubtitleSelectionGeneration += 1L
+        }
+        val selectionGeneration = learningSubtitleSelectionGeneration
+        val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, trackKey)
+        if (!sameTrack || !PlayerLearningSubtitleState.hasManualTranslationAction) {
+            PlayerLearningSubtitleState.setManualTranslationAction { selectedCues ->
+                if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
+                else {
+                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues)
+                    if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) translated else emptyList()
+                }
+            }
+        }
+        if (sameTrack) {
+            Log.d(TAG, "Embedded subtitle prefetch already started for track=${format.id}; keeping current job and refreshing manual translation action")
             return
         }
-
-        learningSubtitleLoadJob?.cancel()
-        learningSubtitlePrefetchTrackKey = trackKey
-        learningSubtitleSelectionGeneration += 1L
-        val selectionGeneration = learningSubtitleSelectionGeneration
         val selectedTrackNumber = format.id?.toIntOrNull()
         if (selectedTrackNumber == null) {
-            Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id})")
+            Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id}); manual translation remains available for captured cues")
             return
         }
 
-        val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, trackKey)
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
         learningSubtitleLoadJob = coroutineScope.launch {
             val cachedCues = PlayerEmbeddedSubtitleCache.read(cacheKey)
@@ -1329,20 +1340,11 @@ private fun ExoPlayerSurface(
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
-                    if (sidecarController.canAttachAddonSubtitleViaSidecar(url, useLibass)) {
-                        Log.d(TAG, "setSubtitleUri: using buffer-preserving sidecar for url=${url.redactedForLogs()}")
-                        val attached = sidecarController.startSidecarAddonSubtitle(
-                            url = url,
-                            headers = learningSubtitleHeaders,
-                            useLibass = useLibass,
-                        )
-                        if (attached) {
-                            attachedAddonSubtitleConfig = null
-                            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                .buildUpon()
-                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                .build()
-                            return
+                    PlayerLearningSubtitleState.setManualTranslationAction { selectedCues ->
+                        if (learningSubtitleSelectionUrl != url) emptyList()
+                        else {
+                            val translated = DoubleSubtitlesLocalTranslator.translate(context, "external|$url", selectedCues)
+                            if (learningSubtitleSelectionUrl == url) translated else emptyList()
                         }
                     }
                     learningSubtitleLoadJob = coroutineScope.launch {
@@ -1371,6 +1373,22 @@ private fun ExoPlayerSurface(
                                 PlayerLearningSubtitleState.markError()
                             }
                             Log.w(TAG, "Learning subtitle parse failed: ${error.message}")
+                        }
+                    }
+                    if (sidecarController.canAttachAddonSubtitleViaSidecar(url, useLibass)) {
+                        Log.d(TAG, "setSubtitleUri: using buffer-preserving sidecar for url=${url.redactedForLogs()}")
+                        val attached = sidecarController.startSidecarAddonSubtitle(
+                            url = url,
+                            headers = learningSubtitleHeaders,
+                            useLibass = useLibass,
+                        )
+                        if (attached) {
+                            attachedAddonSubtitleConfig = null
+                            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                .buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .build()
+                            return
                         }
                     }
                     subtitleSelectionJob = coroutineScope.launch {

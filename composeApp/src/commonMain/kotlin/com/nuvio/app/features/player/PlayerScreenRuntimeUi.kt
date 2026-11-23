@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -1358,26 +1359,33 @@ private fun LearningSubtitlePanel(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFE7E9ED))
-                    .clickable {
-                        repeatDelayMs = when (repeatDelayMs) {
-                            500L -> 1_000L
-                            1_000L -> 1_500L
-                            1_500L -> 2_000L
-                            else -> 500L
-                        }
+                    .background(if (PlayerLearningSubtitleState.isTranslating) Color(0xFFDCE7F5) else Color(0xFFE7E9ED))
+                    .clickable(enabled = cues.isNotEmpty() && !PlayerLearningSubtitleState.isTranslating) {
+                        controlScope.launch { PlayerLearningSubtitleState.translateManually() }
                     }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "${repeatDelayMs / 1_000f}s",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF505762),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (PlayerLearningSubtitleState.isTranslating) {
+                        CircularProgressIndicator(modifier = Modifier.size(13.dp), strokeWidth = 1.8.dp, color = Color(0xFF3978C5))
+                    }
+                    Text(
+                        text = when {
+                            PlayerLearningSubtitleState.isTranslating -> "翻译中"
+                            cues.isNotEmpty() && cues.all { !it.translationText.isNullOrBlank() } -> "已翻译"
+                            else -> "翻译"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (PlayerLearningSubtitleState.isTranslating) Color(0xFF3978C5) else Color(0xFF505762),
+                    )
+                }
             }
         }
 
+        PlayerLearningSubtitleState.translationMessage?.let { message ->
+            Text(text = message, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB45309), modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp))
+        }
         Spacer(Modifier.height(2.dp))
         toolbarContent()
     }

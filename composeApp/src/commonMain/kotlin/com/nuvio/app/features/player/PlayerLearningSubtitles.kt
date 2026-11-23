@@ -3,6 +3,7 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 
 data class LearningSubtitleCue(
     val startTimeMs: Long,
@@ -31,6 +32,13 @@ object PlayerLearningSubtitleState {
     val status: LearningSubtitleStatus get() = mutableStatus
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
+    var isTranslating by mutableStateOf(false)
+        private set
+    var translationMessage by mutableStateOf<String?>(null)
+        private set
+    private var manualTranslationAction: (suspend (List<LearningSubtitleCue>) -> List<LearningSubtitleCue>)? = null
+    private var translationGeneration = 0L
+    val hasManualTranslationAction: Boolean get() = manualTranslationAction != null
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
     private val activeLiveCues = linkedMapOf<String, Long>()
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
@@ -56,6 +64,49 @@ object PlayerLearningSubtitleState {
         cues = mergeCueLists(live, prefetchedCues)
     }
 
+    fun setManualTranslationAction(action: (suspend (List<LearningSubtitleCue>) -> List<LearningSubtitleCue>)?) {
+        manualTranslationAction = action
+        translationGeneration += 1L
+        isTranslating = false
+        translationMessage = null
+    }
+
+    suspend fun translateManually() {
+        if (isTranslating) return
+        val action = manualTranslationAction
+        if (action == null) {
+            translationMessage = "当前字幕暂时无法翻译，请重新选择字幕后重试。"
+            return
+        }
+        val source = cues
+        if (source.isEmpty()) {
+            translationMessage = "字幕尚未加载完成，请稍后再试。"
+            return
+        }
+        val requestGeneration = translationGeneration
+        isTranslating = true
+        translationMessage = null
+        try {
+            val translated = action(source)
+            if (requestGeneration != translationGeneration) return
+            if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
+            applyTranslations(translated)
+            translationMessage = null
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            if (requestGeneration == translationGeneration) {
+                translationMessage = error.message?.takeIf(String::isNotBlank) ?: "翻译失败，请稍后重试。"
+            }
+        } finally {
+            if (requestGeneration == translationGeneration) isTranslating = false
+        }
+    }
+
+    private fun applyTranslations(translatedCues: List<LearningSubtitleCue>) {
+        cues = mergeCueLists(cues, translatedCues)
+        prefetchedCues = mergeCueLists(prefetchedCues, translatedCues)
+    }
+
     fun mergePrefetched(newCues: List<LearningSubtitleCue>) {
         prefetchedCues = mergeCueLists(prefetchedCues, newCues)
         publishCombined(cues)
@@ -64,6 +115,7 @@ object PlayerLearningSubtitleState {
 
     /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
     fun beginLiveCapture(subtitleName: String? = null) {
+        setManualTranslationAction(null)
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
         prefetchedCues = emptyList()
@@ -103,10 +155,13 @@ object PlayerLearningSubtitleState {
     }
 
     fun beginLoading(subtitleName: String? = null) {
+        setManualTranslationAction(null)
         subtitleName?.takeIf { it.isNotBlank() }?.let { loadingSubtitleName = it }
         cues = emptyList()
+        prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
+        completeExtractionLoaded = false
         mutableStatus = LearningSubtitleStatus.LOADING
     }
 
@@ -139,6 +194,9 @@ object PlayerLearningSubtitleState {
     }
 
     fun clear() {
+        setManualTranslationAction(null)
+        translationMessage = null
+        isTranslating = false
         completeExtractionLoaded = false
         prefetchedCues = emptyList()
         cues = emptyList()
