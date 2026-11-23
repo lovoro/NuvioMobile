@@ -39,6 +39,19 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
+    suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val normalizedLanguage = normalizeLanguageCode(sourceLanguage) ?: return@withContext false
+            AddonRepository.initialize()
+            val state = AddonRepository.uiState.first { current ->
+                current.addons.any { it.manifest?.id == ADDON_ID } ||
+                    current.addons.none { it.isRefreshing }
+            }
+            val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
+                ?: return@withContext false
+            matchesConfiguredSourceLanguage(addon.manifestUrl, normalizedLanguage)
+        }
+
     suspend fun translate(
         context: Context,
         trackCacheKey: String,

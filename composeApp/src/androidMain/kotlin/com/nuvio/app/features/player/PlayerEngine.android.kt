@@ -761,6 +761,13 @@ private fun ExoPlayerSurface(
         val selectedTrackNumber = format.id?.toIntOrNull()
         if (selectedTrackNumber == null) {
             Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id}); manual translation remains available for captured cues")
+            coroutineScope.launch {
+                val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(context, format.language.orEmpty())
+                if (
+                    learningSubtitleSelectionGeneration == selectionGeneration &&
+                    learningSubtitlePrefetchTrackKey == trackKey
+                ) PlayerLearningSubtitleState.setManualTranslationEnabled(allowed)
+            }
             return
         }
 
