@@ -39,24 +39,6 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    /** External subtitles are manually translatable only when the addon's configured source is English. */
-    suspend fun isConfiguredSourceLanguageEnglish(context: Context): Boolean =
-        withContext(Dispatchers.IO) {
-            AddonRepository.initialize()
-            val state = AddonRepository.uiState.first { current ->
-                current.addons.any { it.manifest?.id == ADDON_ID } ||
-                    current.addons.none { it.isRefreshing }
-            }
-            val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
-                ?: return@withContext false
-            val segments = runCatching {
-                URI(addon.manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank)
-            }.getOrDefault(emptyList())
-            val configureIndex = segments.indexOfLast { it.equals("configure", ignoreCase = true) }
-            val configuredSource = segments.getOrNull(configureIndex + 1) ?: return@withContext false
-            normalizeLanguageCode(configuredSource) == "en"
-        }
-
     suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
         withContext(Dispatchers.IO) {
             val normalizedLanguage = normalizeLanguageCode(sourceLanguage) ?: return@withContext false
@@ -97,7 +79,7 @@ internal object DoubleSubtitlesLocalTranslator {
         if (requiredSourceLanguage != null &&
             !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
         ) {
-            Log.i(TAG, "Translation skipped: selected embedded subtitle language does not match the addon's configured source language")
+            Log.i(TAG, "Translation skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
         }
         val manifestUrl = addon.manifestUrl
@@ -264,7 +246,7 @@ internal object DoubleSubtitlesLocalTranslator {
         if (requiredSourceLanguage != null &&
             !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
         ) {
-            Log.i(TAG, "Translation cache restore skipped: selected embedded subtitle language does not match the addon's configured source language")
+            Log.i(TAG, "Translation cache restore skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
         }
         val manifestUrl = addon.manifestUrl
