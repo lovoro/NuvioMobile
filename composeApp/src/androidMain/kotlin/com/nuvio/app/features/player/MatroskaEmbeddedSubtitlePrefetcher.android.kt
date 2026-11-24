@@ -28,6 +28,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     private const val EXTRACTION_TIMEOUT_MS = 900_000L
     private const val PRIORITY_BEFORE_MS = 5 * 1000L
     private const val PRIORITY_AFTER_MS = 60 * 1000L
+    private const val PAIRING_LOOKBACK_MS = 5 * 1000L
+    private const val PAIRING_LOOKAHEAD_MS = 2 * 1000L
     private val client = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -47,6 +49,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         targetTrackNumber: Int? = null,
         targetLanguage: String? = null,
         currentPositionMs: () -> Long,
+        onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
         if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
             !(url.startsWith("http://", true) || url.startsWith("https://", true))
@@ -54,7 +57,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return withContext(Dispatchers.IO) {
             withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
-                    loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, targetLanguage, currentPositionMs)
+                    loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, targetLanguage, currentPositionMs, onPartialCues)
                 } catch (_: Exception) {
                     LoadResult(emptyList(), false)
                 }
@@ -69,6 +72,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         targetTrack: Int?,
         targetLanguage: String?,
         currentPositionMs: () -> Long,
+        onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
         val budget = Budget()
         val initial = range(url, headers, 0L, PROBE, budget) ?: return LoadResult(emptyList(), false)
@@ -112,9 +116,11 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
         val allSourceCues = mutableListOf<LearningSubtitleCue>()
         val allTargetCues = mutableListOf<LearningSubtitleCue>()
-        // Clusters are read in playback-priority order, not chronological order.
-        // Defer pairing until the scan has collected both tracks to avoid committing a
-        // provisional match before a better overlapping cue is discovered.
+        // Keep both tracks across Cluster boundaries and publish as soon as a counterpart arrives.
+        // A source cue and a target cue can each participate in at most one emitted pair.
+        // Keep the actual intervals so slightly shifted duplicate Cluster reads remain recognized.
+        val emittedSourceCues = mutableListOf<LearningSubtitleCue>()
+        val consumedTargetCues = mutableListOf<LearningSubtitleCue>()
         var complete = true
         while (pendingPositions.isNotEmpty()) {
             if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
@@ -131,6 +137,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 val cueTimeMs = ticksToMs(cueTime, scale)
                 cueTimeMs in windowStart..windowEnd
             }
+            val isPlaybackPriorityCluster = priorityIndex >= 0
             val selectedIndex = if (isPlaybackPriorityCluster) priorityIndex else 0
             val (_, clusterPosition) = pendingPositions.removeAt(selectedIndex)
 
@@ -177,6 +184,37 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             allSourceCues += sourceCues
             allTargetCues += targetCues
 
+            // Re-evaluate the accumulated tracks together. Pairing only the newly decoded
+            // side allowed one target cue to be reused by several source cues.
+            val availableSources = deduplicateOverlappingCues(allSourceCues).filterNot { source ->
+                emittedSourceCues.any { emitted -> sameSubtitleCue(emitted, source) }
+            }
+            val availableTargets = deduplicateOverlappingCues(allTargetCues).filterNot { target ->
+                consumedTargetCues.any { consumed -> sameSubtitleCue(consumed, target) }
+            }
+            val ready = pairSubtitleCuesOneToOne(
+                availableSources,
+                availableTargets,
+                allowNearestFallback = false,
+            ).filter { pair ->
+                // Do not finalize a match while a nearby indexed Cluster is still unread.
+                // This matters because playback-priority extraction intentionally jumps ahead.
+                val settleStartMs = (minOf(pair.sourceCue.startTimeMs, pair.targetCue.startTimeMs) -
+                    PAIRING_LOOKBACK_MS).coerceAtLeast(0L)
+                val settleEndMs = maxOf(pair.sourceCue.endTimeMs, pair.targetCue.endTimeMs) +
+                    PAIRING_LOOKAHEAD_MS
+                pendingPositions.none { (cueTime, _) ->
+                    val pendingTimeMs = ticksToMs(cueTime, scale)
+                    pendingTimeMs in settleStartMs..settleEndMs
+                }
+            }.map { pair ->
+                emittedSourceCues += pair.sourceCue
+                consumedTargetCues += pair.targetCue
+                pair.sourceCue.copy(translationText = pair.targetCue.text.trim())
+            }
+            if (ready.isNotEmpty()) {
+                withContext(Dispatchers.Main.immediate) { onPartialCues(ready, isPlaybackPriorityCluster) }
+            }
         }
         // The same cue can be exposed by neighboring/overlapping Cluster indexes with
         // slightly shifted timestamps. Collapse only same-text cues whose intervals overlap
@@ -198,6 +236,10 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
 
     private fun deduplicateOverlappingCues(cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> =
         mergeLearningSubtitleCueLists(cues)
+
+    private fun sameSubtitleCue(first: LearningSubtitleCue, second: LearningSubtitleCue): Boolean =
+        first.text == second.text &&
+            minOf(first.endTimeMs, second.endTimeMs) > maxOf(first.startTimeMs, second.startTimeMs)
 
     private fun parseTracks(
         bytes: ByteArray,
