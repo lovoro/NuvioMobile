@@ -96,18 +96,23 @@ internal object PlayerEmbeddedSubtitleCache {
     }
 
     suspend fun write(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
-        if (cues.isEmpty() || cues.size > MAX_CUES) return@withContext
+        val uniqueCues = cues.asSequence()
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+            .toList()
+        if (uniqueCues.isEmpty() || uniqueCues.size > MAX_CUES) return@withContext
         val directory = cacheDirectory() ?: return@withContext
         runCatching {
             synchronized(directory.absolutePath.intern()) {
                 val target = File(directory, "$key.bin")
-                if (!sameCues(readCueFile(target), cues)) {
+                if (!sameCues(readCueFile(target), uniqueCues)) {
                     val temporary = File(directory, target.name + ".tmp")
                     DataOutputStream(BufferedOutputStream(temporary.outputStream())).use { output ->
                         output.writeInt(MAGIC)
                         output.writeInt(VERSION)
-                        output.writeInt(cues.size)
-                        cues.forEach { cue ->
+                        output.writeInt(uniqueCues.size)
+                        uniqueCues.forEach { cue ->
                             val bytes = cue.text.toByteArray(Charsets.UTF_8)
                             require(bytes.size in 1..MAX_TEXT_BYTES)
                             output.writeLong(cue.startTimeMs)
@@ -124,7 +129,7 @@ internal object PlayerEmbeddedSubtitleCache {
                 }
                 File(directory, "$key.ref").delete()
                 cleanupUnreferencedLegacyContent(directory)
-                Log.i(TAG, "Saved embedded subtitle cache: id=$key cues=${cues.size} bytes=${target.length()}")
+                Log.i(TAG, "Saved embedded subtitle cache: id=$key cues=${uniqueCues.size} originalCues=${cues.size} bytes=${target.length()}")
             }
         }.onFailure { Log.w(TAG, "Unable to save embedded subtitle cache", it) }
     }
@@ -165,7 +170,11 @@ internal object PlayerEmbeddedSubtitleCache {
                     val text = bytes.toString(Charsets.UTF_8)
                     if (text.isNotBlank() && end > start) cues += LearningSubtitleCue(start, end, text)
                 }
-                cues.takeIf { it.isNotEmpty() }
+                cues.asSequence()
+                    .distinctBy { it.startTimeMs to it.text }
+                    .sortedBy { it.startTimeMs }
+                    .toList()
+                    .takeIf { it.isNotEmpty() }
             }
         }.onFailure { Log.w(TAG, "Unable to read embedded subtitle cache: ${file.name}", it) }.getOrNull()
     }

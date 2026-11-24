@@ -402,11 +402,34 @@ internal object DoubleSubtitlesLocalTranslator {
         }
 
         var upgradedLegacyEntries = false
+        // Prefer the exact identity, but tolerate small timing-end differences after
+        // resuming playback/re-extracting Matroska clusters. Match each cache entry at most once.
+        val usedCacheIds = mutableSetOf<String>()
+        var timingFallbackMatches = 0
         val restored = cues.map { cue ->
             if (!cue.translationText.isNullOrBlank()) return@map cue
-            val cached = cache[cueIdentity(cue)] ?: return@map cue
+            val exactId = cueIdentity(cue)
+            val matched = cache[exactId]?.let { exactId to it }
+                ?: cache.entries.asSequence()
+                    .filter { (id, value) ->
+                        id !in usedCacheIds &&
+                            value.originalText.isNotBlank() &&
+                            value.originalText == cue.text &&
+                            kotlin.math.abs(value.startTimeMs - cue.startTimeMs) <= 1_500L &&
+                            kotlin.math.abs(value.endTimeMs - cue.endTimeMs) <= 3_000L
+                    }
+                    .minByOrNull { (_, value) ->
+                        kotlin.math.abs(value.startTimeMs - cue.startTimeMs) * 2L +
+                            kotlin.math.abs(value.endTimeMs - cue.endTimeMs)
+                    }
+                    ?.also { timingFallbackMatches++ }
+            val cached = matched?.second ?: return@map cue
+            matched.first.let(usedCacheIds::add)
             if (cached.originalText.isBlank()) upgradedLegacyEntries = true
             cue.copy(translationText = cached.translatedText)
+        }
+        if (timingFallbackMatches > 0) {
+            Log.i(TAG, "Cache restore timing fallback: matched=$timingFallbackMatches toleranceStartMs=1500 toleranceEndMs=3000")
         }
         if (upgradedLegacyEntries) {
             val upgraded = cache.toMutableMap()

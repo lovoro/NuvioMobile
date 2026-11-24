@@ -857,7 +857,7 @@ private fun ExoPlayerSurface(
                 // Semaphore acquisition is FIFO, so the near-playback batches stay ahead.
                 val translationSemaphore = Semaphore(2)
                 val translationJobs = mutableListOf<Job>()
-                val scheduledTranslationCueKeys = mutableSetOf<Triple<Long, Long, String>>()
+                val scheduledTranslationCueKeys = mutableSetOf<Pair<Long, String>>()
                 try {
                     val result = MatroskaEmbeddedSubtitlePrefetcher.load(
                         url = sourceUrl,
@@ -876,9 +876,10 @@ private fun ExoPlayerSurface(
                                 // indexes cannot schedule the same cue more than once.
                                 val uniqueCues = synchronized(scheduledTranslationCueKeys) {
                                     partialCues.filter { cue ->
-                                        scheduledTranslationCueKeys.add(
-                                            Triple(cue.startTimeMs, cue.endTimeMs, cue.text)
-                                        )
+                                        // Overlapping Cluster windows may report the same cue with
+                                        // slightly different end timestamps. Use the same identity
+                                        // as the visible subtitle list so it is scheduled only once.
+                                        scheduledTranslationCueKeys.add(cue.startTimeMs to cue.text)
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
