@@ -45,6 +45,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         headers: Map<String, String>,
         selectedTrackNumber: Int?,
         targetTrackNumber: Int? = null,
+        targetLanguage: String? = null,
         currentPositionMs: () -> Long,
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
@@ -54,7 +55,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return withContext(Dispatchers.IO) {
             withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
-                    loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, currentPositionMs, onPartialCues)
+                    loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, targetLanguage, currentPositionMs, onPartialCues)
                 } catch (_: Exception) {
                     LoadResult(emptyList(), false)
                 }
@@ -67,6 +68,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         headers: Map<String, String>,
         selectedTrack: Int,
         targetTrack: Int?,
+        targetLanguage: String?,
         currentPositionMs: () -> Long,
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
@@ -184,8 +186,12 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             val sourceCues = parsedTracks[selectedTrack].orEmpty()
                 .map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
             val targetCues = targetTrack?.let { number ->
-                parsedTracks[number].orEmpty().map {
-                    LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text)
+                parsedTracks[number].orEmpty().map { cue ->
+                    LearningSubtitleCue(
+                        cue.startTimeMs,
+                        cue.endTimeMs,
+                        OpenCcSubtitleTextConverter.convert(cue.text, targetLanguage),
+                    )
                 }
             }.orEmpty()
             allSourceCues += sourceCues

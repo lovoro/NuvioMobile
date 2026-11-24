@@ -816,13 +816,39 @@ private fun ExoPlayerSurface(
                 manualTranslationBlockMessage == null,
                 manualTranslationBlockMessage,
             )
-            val cachedCues = try {
-                PlayerEmbeddedSubtitleCache.read(cacheKey)
-            } catch (error: Throwable) {
-                if (learningSubtitleSelectionGeneration == selectionGeneration) {
-                    finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+            val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
+            if (languagePair == null) {
+                finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+                Log.i(
+                    TAG,
+                    "Skipping embedded bilingual prefetch: plugin pair is unavailable or selected source language does not match",
+                )
+                return@launch
+            }
+            // Inspect every subtitle format in every text group. Media3 can place multiple
+            // language tracks in one TrackGroup; checking only format 0 silently misses them.
+            val availableTextTracks = exoPlayer.currentTracks.groups.asSequence()
+                .filter { it.type == C.TRACK_TYPE_TEXT }
+                .flatMap { group ->
+                    (0 until group.length).asSequence().map(group::getTrackFormat)
                 }
-                throw error
+                .toList()
+            val targetFormat = availableTextTracks.firstOrNull { candidate ->
+                val candidateTrackNumber = candidate.id?.toIntOrNull()
+                    candidateTrackNumber != null &&
+                    candidateTrackNumber != selectedTrackNumber &&
+                    DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
+                        context, candidate.language.orEmpty()
+                    )
+            }
+            val targetTrackNumber = targetFormat?.id?.toIntOrNull()
+            if (targetTrackNumber == null) {
+                finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+                Log.i(
+                    TAG,
+                    "Skipping embedded bilingual prefetch: no embedded target track for configured language=${languagePair.second}; sourceTrack=$selectedTrackNumber",
+                )
+                return@launch
             }
             if (
                 !isActive ||
@@ -836,6 +862,14 @@ private fun ExoPlayerSurface(
                 }
                 return@launch
             }
+            val cachedCues = try {
+                PlayerEmbeddedSubtitleCache.read(cacheKey)
+            } catch (error: Throwable) {
+                if (learningSubtitleSelectionGeneration == selectionGeneration) {
+                    finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+                }
+                throw error
+            }
             // Always rescan Matroska Tracks/Clusters while validating bilingual merging.
             // A previous single-language BIN cache must not short-circuit discovery of the
             // configured target track. Manual translation remains available through the action.
@@ -845,29 +879,9 @@ private fun ExoPlayerSurface(
                 Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-            val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
-            // Inspect every subtitle format in every text group. Media3 can place multiple
-            // language tracks in one TrackGroup; checking only format 0 silently misses them.
-            val availableTextTracks = exoPlayer.currentTracks.groups.asSequence()
-                .filter { it.type == C.TRACK_TYPE_TEXT }
-                .flatMap { group ->
-                    (0 until group.length).asSequence().map(group::getTrackFormat)
-                }
-                .toList()
-            val targetFormat = if (languagePair != null) {
-                availableTextTracks.firstOrNull { candidate ->
-                    val candidateTrackNumber = candidate.id?.toIntOrNull()
-                    candidateTrackNumber != null &&
-                        candidateTrackNumber != selectedTrackNumber &&
-                        DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
-                            context, candidate.language.orEmpty()
-                        )
-                }
-            } else null
-            val targetTrackNumber = targetFormat?.id?.toIntOrNull()
             Log.i(
                 TAG,
-                "Embedded bilingual track selection: configuredSource=${languagePair?.first} configuredTarget=${languagePair?.second} sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1} availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
+                "Embedded bilingual track selection: configuredSource=${languagePair.first} configuredTarget=${languagePair.second} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
             )
             val extraction = coroutineScope {
                 val translationScope = this
@@ -882,6 +896,7 @@ private fun ExoPlayerSurface(
                         headers = sanitizedSourceHeaders,
                         selectedTrackNumber = selectedTrackNumber,
                         targetTrackNumber = targetTrackNumber,
+                        targetLanguage = languagePair.second,
                         currentPositionMs = { exoPlayer.currentPosition },
                         onPartialCues = { partialCues, isPlaybackPriority ->
                             if (
