@@ -98,10 +98,19 @@ internal object PlayerEmbeddedSubtitleCapture {
     }
 
     fun selectTrack(format: Format?, playbackPositionMs: (() -> Long)? = null) {
+        val previousKey = selectedTrackKey
         val generation = ++selectionGeneration
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
         val key = format?.let(::trackKey)
+        if (previousKey != null && previousKey != key) {
+            tracks[previousKey]?.let { previous ->
+                synchronized(previous.lock) {
+                    previous.pendingCues.clear()
+                    previous.cues.clear()
+                }
+            }
+        }
         selectedTrackKey = key
         playbackPositionMsProvider = if (key == null) null else playbackPositionMs
         lastLoggedCueCount = 0
@@ -190,7 +199,10 @@ internal object PlayerEmbeddedSubtitleCapture {
                         outputOptions: SubtitleParser.OutputOptions,
                         output: Consumer<CuesWithTiming>,
                     ) {
-                        if (PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
+                        if (
+                            PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                            selectedTrackKey == key
+                        ) {
                             val captureOptions = if (outputOptions.outputAllCues) {
                                 outputOptions
                             } else {
@@ -218,6 +230,7 @@ internal object PlayerEmbeddedSubtitleCapture {
 
     private fun capture(key: String, parsed: CuesWithTiming) {
         if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
+        if (selectedTrackKey != key) return
         val startUs = parsed.startTimeUs
         val endUs = parsed.endTimeUs
         if (startUs == C.TIME_UNSET || endUs == C.TIME_UNSET || endUs <= startUs) return

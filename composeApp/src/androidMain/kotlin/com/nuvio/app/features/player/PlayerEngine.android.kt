@@ -1543,6 +1543,8 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.clear()
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     if (index < 0) {
+                        PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                        learningInternalSubtitleSelected.set(false)
                         Log.d(TAG, "selectSubtitleTrack: disabling text tracks")
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                             .buildUpon()
@@ -1559,10 +1561,11 @@ private fun ExoPlayerSurface(
                         val subtitleName = selectedFormat?.label?.toString()?.takeIf { it.isNotBlank() }
                             ?: selectedFormat?.language?.takeIf { it.isNotBlank() }
                         PlayerLearningSubtitleState.beginLiveCapture(subtitleName)
-                        PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
                         if (requestedExternalMimeType == null && selectedFormat != null) {
+                            PlayerEmbeddedSubtitleCapture.selectTrack(selectedFormat) { exoPlayer.currentPosition }
                             startEmbeddedSubtitlePrefetch(selectedFormat)
                         } else {
+                            PlayerEmbeddedSubtitleCapture.selectTrack(null)
                             // ExoPlayer external subtitle tracks do not always expose a Format
                             // or deliver the MIME callback before the selector callback. Their
                             // live cues are still valid; register the action using the selected
@@ -1631,6 +1634,8 @@ private fun ExoPlayerSurface(
 
                 override fun setSubtitleUri(url: String) {
                     Log.d(TAG, "setSubtitleUri: url=${url.redactedForLogs()}")
+                    PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                    learningInternalSubtitleSelected.set(false)
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleLoadJob = null
@@ -1765,6 +1770,8 @@ private fun ExoPlayerSurface(
 
                 override fun clearExternalSubtitle() {
                     Log.d(TAG, "clearExternalSubtitle called")
+                    PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                    learningInternalSubtitleSelected.set(false)
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleLoadJob = null
@@ -1794,6 +1801,8 @@ private fun ExoPlayerSurface(
 
                 override fun clearExternalSubtitleAndSelect(trackIndex: Int) {
                     Log.d(TAG, "clearExternalSubtitleAndSelect: trackIndex=$trackIndex")
+                    PlayerEmbeddedSubtitleCapture.selectTrack(null)
+                    learningInternalSubtitleSelected.set(false)
                     subtitleSelectionJob?.cancel()
                     learningSubtitleLoadJob?.cancel()
                     learningSubtitleLoadJob = null
