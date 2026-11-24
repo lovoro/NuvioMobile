@@ -242,20 +242,29 @@ internal object DoubleSubtitlesLocalTranslator {
         }
         val addon = addonsState.addons.firstOrNull { managed ->
             managed.enabled && managed.manifest?.id == ADDON_ID
-        } ?: return@withContext cues
+        } ?: run {
+            Log.w(TAG, "Cache restore stopped: addon missing or disabled; trackKeyHash=${sha256(trackCacheKey)} cues=${cues.size}")
+            return@withContext cues
+        }
         if (requiredSourceLanguage != null &&
             !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
         ) {
-            Log.i(TAG, "Translation cache restore skipped: selected subtitle language does not match the addon's configured first language")
+            Log.w(TAG, "Cache restore stopped: source-language mismatch; selected=${requiredSourceLanguage} trackKeyHash=${sha256(trackCacheKey)}")
             return@withContext cues
         }
         val manifestUrl = addon.manifestUrl
         val cleanManifestUrl = manifestUrl.substringBefore("?")
         if (!cleanManifestUrl.startsWith("http://", true) &&
             !cleanManifestUrl.startsWith("https://", true)
-        ) return@withContext cues
+        ) {
+            Log.w(TAG, "Cache restore stopped: invalid addon manifest URL")
+            return@withContext cues
+        }
         val baseUrl = addonTransportBaseUrl(cleanManifestUrl)
-        if (baseUrl.isBlank()) return@withContext cues
+        if (baseUrl.isBlank()) {
+            Log.w(TAG, "Cache restore stopped: addon transport base URL is blank")
+            return@withContext cues
+        }
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
         val configId = sha256(endpoint)
@@ -263,13 +272,30 @@ internal object DoubleSubtitlesLocalTranslator {
         val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
         val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
         val currentCueIds = cues.mapTo(hashSetOf()) { cueIdentity(it) }
+        val fileSummary = runCatching {
+            if (!cacheFile.isFile) "missing"
+            else {
+                val root = JSONObject(cacheFile.readText(Charsets.UTF_8))
+                val buckets = root.optJSONObject("translations")
+                val bucketExists = buckets?.has(configId) == true
+                val bucketCueCount = buckets?.optJSONObject(configId)
+                    ?.optJSONObject("cues")?.length() ?: 0
+                "exists bytes=${cacheFile.length()} version=${root.optInt("version", -1)} configBucket=$bucketExists bucketCues=$bucketCueCount"
+            }
+        }.getOrElse { "unreadable error=${it.javaClass.simpleName}:${it.message}" }
+        Log.i(TAG, "Cache restore inspect: trackKeyHash=${sha256(trackCacheKey)} file=${cacheFile.name} fileState={$fileSummary} configId=${configId.take(12)} currentCues=${cues.size} uniqueCueIds=${currentCueIds.size}")
         val legacyTranslations = (readCache(legacyTrackFile, configId) +
             readCache(legacyEndpointFile, configId))
             .filterKeys { it in currentCueIds }
         val cache = readCache(cacheFile, configId).toMutableMap().apply {
             legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
-        if (cache.isEmpty()) return@withContext cues
+        val matchedCueCount = currentCueIds.count { it in cache }
+        Log.i(TAG, "Cache restore match: cacheEntries=${cache.size} legacyMatches=${legacyTranslations.size} matchedCueIds=$matchedCueCount unmatchedCueIds=${(currentCueIds.size - matchedCueCount)}")
+        if (cache.isEmpty()) {
+            Log.w(TAG, "Cache restore miss: no entries for current config/track; trackKeyHash=${sha256(trackCacheKey)} configId=${configId.take(12)}")
+            return@withContext cues
+        }
         if (legacyTranslations.isNotEmpty()) {
             writeCache(cacheFile, cache, configId)
             if (legacyTrackFile.isFile) legacyTrackFile.delete()
@@ -298,7 +324,11 @@ internal object DoubleSubtitlesLocalTranslator {
             writeCache(cacheFile, upgraded, configId)
         }
         val restoredCount = restored.count { !it.translationText.isNullOrBlank() }
-        if (restoredCount > 0) Log.i(TAG, "Restored $restoredCount translated external subtitle cues from cache")
+        val alreadyTranslated = cues.count { !it.translationText.isNullOrBlank() }
+        Log.i(TAG, "Cache restore result: restored=$restoredCount alreadyTranslated=$alreadyTranslated total=${cues.size} cacheEntries=${cache.size}")
+        if (restoredCount == 0 && matchedCueCount == 0) {
+            Log.w(TAG, "Cache file exists but no cueIdentity matched; inspect subtitle timing/text identity. trackKeyHash=${sha256(trackCacheKey)}")
+        }
         restored
     }
 
