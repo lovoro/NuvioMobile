@@ -196,11 +196,17 @@ internal object DoubleSubtitlesLocalTranslator {
             return result
         }
 
-        val phaseOneBatches = buildList {
-            activeCue?.let { add(listOf(it)) }
-            addAll(buildChunks(firstMinute))
+        val phaseOneBatches = if (positionMs == null) {
+            // Keep callers without a playback position compatible: translate their full cue list.
+            buildChunks(missing)
+        } else {
+            buildList {
+                activeCue?.let { add(listOf(it)) }
+                addAll(buildChunks(firstMinute))
+            }
         }
         val phaseTwoBatches = buildChunks(backgroundWindow)
+        val resultMutex = Mutex()
         val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
         Log.i(TAG, "Translation schedule: currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
