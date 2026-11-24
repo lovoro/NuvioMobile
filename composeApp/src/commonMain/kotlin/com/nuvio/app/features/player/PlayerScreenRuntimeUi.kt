@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1379,7 +1380,9 @@ private fun LearningSubtitlePanel(
                         )
                         Text(
                             text = "${PlayerLearningSubtitleState.translationProgressPercent}%",
+                            modifier = Modifier.offset(y = 1.dp),
                             fontSize = 7.sp,
+                            lineHeight = 7.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
