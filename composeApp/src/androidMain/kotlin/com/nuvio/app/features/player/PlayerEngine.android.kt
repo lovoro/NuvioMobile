@@ -971,7 +971,7 @@ private fun ExoPlayerSurface(
                                     )
                                     Log.d(
                                         TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background cue"} ready: cues=${pairedCues.size}",
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background cue"} ready: cues=${uniqueCues.size}",
                                     )
                                 }
                             }
