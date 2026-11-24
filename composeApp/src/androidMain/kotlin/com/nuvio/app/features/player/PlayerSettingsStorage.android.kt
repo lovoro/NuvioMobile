@@ -23,6 +23,8 @@ actual object PlayerSettingsStorage {
     private const val playbackBrightnessKey = "playback_brightness"
     private const val useLegacyPlayerLayoutKey = "use_legacy_player_layout"
     private const val englishLearningEnabledKey = "english_learning_enabled"
+    private const val bilingualSubtitleMergeEnabledKey = "bilingual_subtitle_merge_enabled"
+    private const val automaticSubtitleTranslationEnabledKey = "automatic_subtitle_translation_enabled"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
     private const val pauseOverlayEnabledKey = "pause_overlay_enabled"
@@ -310,6 +312,25 @@ actual object PlayerSettingsStorage {
 
     actual fun saveEnglishLearningEnabled(enabled: Boolean) {
         preferences?.edit()?.putBoolean(ProfileScopedKey.of(englishLearningEnabledKey), enabled)?.apply()
+    }
+
+    // These switches are app-wide, not scoped to a playback profile or individual video.
+    actual fun loadBilingualSubtitleMergeEnabled(): Boolean? =
+        preferences?.let { prefs ->
+            if (prefs.contains(bilingualSubtitleMergeEnabledKey)) prefs.getBoolean(bilingualSubtitleMergeEnabledKey, true) else null
+        }
+
+    actual fun saveBilingualSubtitleMergeEnabled(enabled: Boolean) {
+        preferences?.edit()?.putBoolean(bilingualSubtitleMergeEnabledKey, enabled)?.apply()
+    }
+
+    actual fun loadAutomaticSubtitleTranslationEnabled(): Boolean? =
+        preferences?.let { prefs ->
+            if (prefs.contains(automaticSubtitleTranslationEnabledKey)) prefs.getBoolean(automaticSubtitleTranslationEnabledKey, false) else null
+        }
+
+    actual fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean) {
+        preferences?.edit()?.putBoolean(automaticSubtitleTranslationEnabledKey, enabled)?.apply()
     }
 
     actual fun loadShowParentalGuide(): Boolean? =

@@ -35,6 +35,8 @@ fun snapToAllowedTimeout(value: Int): Int {
 data class PlayerSettingsUiState(
     val useLegacyPlayerLayout: Boolean = false,
     val englishLearningEnabled: Boolean = true,
+    val bilingualSubtitleMergeEnabled: Boolean = true,
+    val automaticSubtitleTranslationEnabled: Boolean = false,
     val showLoadingOverlay: Boolean = true,
     val showPlayerLoadingStatus: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
@@ -151,6 +153,8 @@ object PlayerSettingsRepository {
     private var hasLoaded = false
     private var useLegacyPlayerLayout = false
     private var englishLearningEnabled = true
+    private var bilingualSubtitleMergeEnabled = true
+    private var automaticSubtitleTranslationEnabled = false
     private var showLoadingOverlay = true
     private var showPlayerLoadingStatus = true
     private var pauseOverlayEnabled = true
@@ -254,6 +258,8 @@ object PlayerSettingsRepository {
         hasLoaded = false
         useLegacyPlayerLayout = false
         englishLearningEnabled = true
+        bilingualSubtitleMergeEnabled = true
+        automaticSubtitleTranslationEnabled = false
         showLoadingOverlay = true
         showPlayerLoadingStatus = true
         pauseOverlayEnabled = true
@@ -351,6 +357,8 @@ object PlayerSettingsRepository {
         hasLoaded = true
         useLegacyPlayerLayout = PlayerSettingsStorage.loadUseLegacyPlayerLayout() ?: false
         englishLearningEnabled = PlayerSettingsStorage.loadEnglishLearningEnabled() ?: true
+        bilingualSubtitleMergeEnabled = PlayerSettingsStorage.loadBilingualSubtitleMergeEnabled() ?: true
+        automaticSubtitleTranslationEnabled = PlayerSettingsStorage.loadAutomaticSubtitleTranslationEnabled() ?: false
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
         showPlayerLoadingStatus = PlayerSettingsStorage.loadShowPlayerLoadingStatus() ?: true
         pauseOverlayEnabled = PlayerSettingsStorage.loadPauseOverlayEnabled() ?: true
@@ -548,6 +556,22 @@ object PlayerSettingsRepository {
         englishLearningEnabled = enabled
         publish()
         PlayerSettingsStorage.saveEnglishLearningEnabled(enabled)
+    }
+
+    fun setBilingualSubtitleMergeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (bilingualSubtitleMergeEnabled == enabled) return
+        bilingualSubtitleMergeEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveBilingualSubtitleMergeEnabled(enabled)
+    }
+
+    fun setAutomaticSubtitleTranslationEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (automaticSubtitleTranslationEnabled == enabled) return
+        automaticSubtitleTranslationEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAutomaticSubtitleTranslationEnabled(enabled)
     }
 
     fun setShowLoadingOverlay(enabled: Boolean) {
@@ -1384,6 +1408,8 @@ object PlayerSettingsRepository {
         _uiState.value = PlayerSettingsUiState(
             useLegacyPlayerLayout = useLegacyPlayerLayout,
             englishLearningEnabled = englishLearningEnabled,
+            bilingualSubtitleMergeEnabled = bilingualSubtitleMergeEnabled,
+            automaticSubtitleTranslationEnabled = automaticSubtitleTranslationEnabled,
             showLoadingOverlay = showLoadingOverlay,
             showPlayerLoadingStatus = showPlayerLoadingStatus,
             pauseOverlayEnabled = pauseOverlayEnabled,

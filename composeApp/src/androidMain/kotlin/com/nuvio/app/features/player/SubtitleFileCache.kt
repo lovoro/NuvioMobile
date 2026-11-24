@@ -113,11 +113,16 @@ object SubtitleFileCache {
     /**
      * Removes all cached subtitle files.
      */
-    fun clearCache() {
-        try {
-            cacheDir?.listFiles()?.forEach { it.delete() }
+    fun clearCache(): Int {
+        return try {
+            cacheDir?.listFiles()?.sumOf { file ->
+                val count = if (file.isDirectory) file.walkTopDown().count { it.isFile } else if (file.isFile) 1 else 0
+                file.deleteRecursively()
+                count
+            } ?: 0
         } catch (e: Exception) {
             Log.w(TAG, "Failed to clear subtitle cache", e)
+            0
         }
     }
 

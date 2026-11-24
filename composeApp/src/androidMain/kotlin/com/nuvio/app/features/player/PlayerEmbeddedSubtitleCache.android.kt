@@ -28,6 +28,19 @@ internal object PlayerEmbeddedSubtitleCache {
 
     fun initialize(context: Context) { appContext = context.applicationContext }
 
+    /** Deletes extracted subtitle cues, bilingual pairs, and translation JSON files. */
+    suspend fun clearAll(): Int = withContext(Dispatchers.IO) {
+        val directory = appContext?.let { File(it.filesDir, DIRECTORY) } ?: return@withContext 0
+        synchronized(directory.absolutePath.intern()) {
+            if (!directory.exists()) return@synchronized 0
+            val fileCount = directory.walkTopDown().count { it.isFile }
+            if (!directory.deleteRecursively()) {
+                Log.w(TAG, "Unable to completely clear embedded subtitle cache directory")
+            }
+            fileCount
+        }
+    }
+
     /**
      * Builds a playback identity that survives refreshed signed URLs and auth headers.
      * Keep content-identifying query parameters, but exclude short-lived credentials.

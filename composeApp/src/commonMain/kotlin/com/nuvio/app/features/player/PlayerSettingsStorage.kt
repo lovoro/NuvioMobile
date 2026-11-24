@@ -11,6 +11,10 @@ internal expect object PlayerSettingsStorage {
     fun saveUseLegacyPlayerLayout(enabled: Boolean)
     fun loadEnglishLearningEnabled(): Boolean?
     fun saveEnglishLearningEnabled(enabled: Boolean)
+    fun loadBilingualSubtitleMergeEnabled(): Boolean?
+    fun saveBilingualSubtitleMergeEnabled(enabled: Boolean)
+    fun loadAutomaticSubtitleTranslationEnabled(): Boolean?
+    fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean)
     fun loadShowLoadingOverlay(): Boolean?
     fun saveShowLoadingOverlay(enabled: Boolean)
     fun loadAutoSwitchPlaybackEngineOnError(): Boolean?

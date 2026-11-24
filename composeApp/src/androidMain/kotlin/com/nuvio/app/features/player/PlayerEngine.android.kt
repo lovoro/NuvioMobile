@@ -37,6 +37,7 @@ import com.nuvio.app.features.streams.redactedForLogs
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -696,6 +697,8 @@ private fun ExoPlayerSurface(
     val pendingAudioTrackSelection = remember { mutableListOf<TrackSelectionSnapshot>() }
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
     var learningSubtitleLoadJob by remember { mutableStateOf<Job?>(null) }
+    var selectedLearningSubtitleFormat by remember { mutableStateOf<Format?>(null) }
+    var learningSubtitlePrefetchStartedForTrack by remember { mutableStateOf(false) }
     var learningSubtitleSelectionUrl by remember { mutableStateOf<String?>(null) }
     var learningSubtitlePrefetchTrackKey by remember(playerSourceKey) { mutableStateOf<String?>(null) }
     var learningSubtitleSelectionGeneration by remember(playerSourceKey) { mutableStateOf(0L) }
@@ -743,6 +746,7 @@ private fun ExoPlayerSurface(
     // Media3 may report the same selected track repeatedly; do not restart its scan.
     fun startEmbeddedSubtitlePrefetch(format: Format?) {
         if (format == null) return
+        selectedLearningSubtitleFormat = format
         val trackKey = listOf(
             format.id.orEmpty(),
             format.sampleMimeType.orEmpty(),
@@ -754,6 +758,7 @@ private fun ExoPlayerSurface(
         if (!sameTrack) {
             learningSubtitleLoadJob?.cancel()
             learningSubtitlePrefetchTrackKey = trackKey
+            learningSubtitlePrefetchStartedForTrack = false
             learningSubtitleSelectionGeneration += 1L
         }
         val selectionGeneration = learningSubtitleSelectionGeneration
@@ -775,10 +780,17 @@ private fun ExoPlayerSurface(
                 }
             }
         }
-        if (sameTrack) {
+        if (sameTrack && learningSubtitlePrefetchStartedForTrack) {
             Log.d(TAG, "Embedded subtitle prefetch already started for track=${format.id}; keeping current job and refreshing manual translation action")
             return
         }
+        if (!PlayerSettingsRepository.uiState.value.bilingualSubtitleMergeEnabled) {
+            Log.i(TAG, "Skipping embedded bilingual merge: disabled in global subtitle settings")
+            PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
+            finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+            return
+        }
+        learningSubtitlePrefetchStartedForTrack = true
         val selectedTrackNumber = format.id?.toIntOrNull()
         if (selectedTrackNumber == null) {
             Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id}); manual translation remains available for captured cues")
@@ -995,6 +1007,36 @@ private fun ExoPlayerSurface(
             }
         }
     }
+
+    LaunchedEffect(exoPlayer) {
+        var previousMergeEnabled = PlayerSettingsRepository.uiState.value.bilingualSubtitleMergeEnabled
+        var previousAutoTranslateEnabled = PlayerSettingsRepository.uiState.value.automaticSubtitleTranslationEnabled
+        PlayerSettingsRepository.uiState.collect { settings ->
+            if (settings.bilingualSubtitleMergeEnabled != previousMergeEnabled) {
+                previousMergeEnabled = settings.bilingualSubtitleMergeEnabled
+                if (!settings.bilingualSubtitleMergeEnabled) {
+                    learningSubtitleLoadJob?.cancel()
+                    learningSubtitleSelectionGeneration += 1L
+                    learningSubtitlePrefetchTrackKey = null
+                    learningSubtitlePrefetchStartedForTrack = false
+                    PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
+                    PlayerLearningSubtitleState.clearTranslations()
+                    finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+                } else {
+                    selectedLearningSubtitleFormat?.let(::startEmbeddedSubtitlePrefetch)
+                }
+            }
+            if (settings.automaticSubtitleTranslationEnabled != previousAutoTranslateEnabled) {
+                previousAutoTranslateEnabled = settings.automaticSubtitleTranslationEnabled
+                if (settings.automaticSubtitleTranslationEnabled && settings.englishLearningEnabled &&
+                    sidecarControllerRef?.activeSidecarSubtitleKey != null
+                ) {
+                    PlayerLearningSubtitleState.translateManually(exoPlayer.currentPosition)
+                }
+            }
+        }
+    }
+
     val isInPip = rememberIsInPictureInPicture()
     // Player size outside PiP, so PiP subtitles keep the full-screen size relative to the video.
     var playerSizeOutsidePip by remember { mutableStateOf(IntSize.Zero) }
@@ -1049,6 +1091,9 @@ private fun ExoPlayerSurface(
                                 translationBlockMessage == null,
                                 translationBlockMessage,
                             )
+                            if (PlayerSettingsRepository.uiState.value.automaticSubtitleTranslationEnabled) {
+                                PlayerLearningSubtitleState.translateManually(exoPlayer.currentPosition)
+                            }
                         }
                     }
                 }

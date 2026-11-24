@@ -1801,7 +1801,7 @@
     <string name="profile_primary_addons_required">该个人资料使用主配置的扩展。</string>
     <string name="streams_failed_to_load_scraper">无法加载 %1$s</string>
     <string name="stream_default_name">播放源</string>
-    <string name="source_embedded">内嵌</string>
+    <string name="source_embedded">内置</string>
     <string name="trakt_authorization_denied">授权被拒绝</string>
     <string name="trakt_authorization_expired_reconnect">你的 Trakt 授权已失效，请重新连接 Trakt 账号。</string>
     <string name="trakt_complete_sign_in_browser">请在浏览器中完成 Trakt 登录</string>
@@ -2483,7 +2483,7 @@
     <string name="stream_info_name">名称</string>
     <string name="stream_info_source">来源</string>
     <string name="stream_info_subtitle_source_addon">扩展</string>
-    <string name="stream_info_subtitle_source_embedded">内嵌</string>
+    <string name="stream_info_subtitle_source_embedded">内置</string>
     <string name="stream_info_player_engine">播放引擎</string>
     <string name="stream_info_server">服务器</string>
     <string name="settings_group_you">个人</string>

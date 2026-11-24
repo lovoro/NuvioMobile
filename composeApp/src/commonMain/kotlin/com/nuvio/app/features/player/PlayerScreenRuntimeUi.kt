@@ -99,8 +99,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
 ) {
     val runtime = this
     var showSubtitleAutomationSettingsDialog by remember { mutableStateOf(false) }
-    var bilingualMergeSwitch by remember { mutableStateOf(true) }
-    var automaticTranslationSwitch by remember { mutableStateOf(false) }
+    var showClearSubtitleCacheConfirmation by remember { mutableStateOf(false) }
+    var isClearingSubtitleCache by remember { mutableStateOf(false) }
+    var subtitleCacheClearMessage by remember { mutableStateOf<String?>(null) }
+    val settingsCoroutineScope = rememberCoroutineScope()
     val isInPip = rememberIsInPictureInPicture()
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
     val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
@@ -522,14 +524,14 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("双语合并", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "自动读取并合并内嵌双语字幕",
+                                "自动获取并合并内置双语字幕",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
-                            checked = bilingualMergeSwitch,
-                            onCheckedChange = { bilingualMergeSwitch = it },
+                            checked = playerSettingsUiState.bilingualSubtitleMergeEnabled,
+                            onCheckedChange = { PlayerSettingsRepository.setBilingualSubtitleMergeEnabled(it) },
                         )
                     }
                     Row(
@@ -539,15 +541,75 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("自动翻译", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "自动翻译字幕内容（暂未启用功能）",
+                                "自动翻译外挂字幕；关闭后仅在手动触发时翻译",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
-                            checked = automaticTranslationSwitch,
-                            onCheckedChange = { automaticTranslationSwitch = it },
+                            checked = playerSettingsUiState.automaticSubtitleTranslationEnabled,
+                            onCheckedChange = { PlayerSettingsRepository.setAutomaticSubtitleTranslationEnabled(it) },
                         )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("字幕缓存", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "清除已保存的内置字幕、双语合并和翻译缓存，不会删除播放记录。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        androidx.compose.material3.TextButton(
+                            enabled = !isClearingSubtitleCache,
+                            onClick = { showClearSubtitleCacheConfirmation = true },
+                        ) {
+                            if (isClearingSubtitleCache) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("清除字幕缓存")
+                            }
+                        }
+                        subtitleCacheClearMessage?.let { message ->
+                            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showClearSubtitleCacheConfirmation) {
+        Dialog(onDismissRequest = { if (!isClearingSubtitleCache) showClearSubtitleCacheConfirmation = false }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Text("清除字幕缓存？", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "这会删除已缓存的内置字幕、双语合并结果和翻译内容。下次播放时需要重新获取或翻译。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        androidx.compose.material3.TextButton(
+                            enabled = !isClearingSubtitleCache,
+                            onClick = { showClearSubtitleCacheConfirmation = false },
+                        ) { Text("取消") }
+                        androidx.compose.material3.TextButton(
+                            enabled = !isClearingSubtitleCache,
+                            onClick = {
+                                isClearingSubtitleCache = true
+                                settingsCoroutineScope.launch {
+                                    val result = runCatching { clearPlayerSubtitleCaches() }
+                                    subtitleCacheClearMessage = result.fold(
+                                        onSuccess = { "已清除 $it 个字幕缓存文件" },
+                                        onFailure = { "清除字幕缓存失败：${it.message ?: "未知错误"}" },
+                                    )
+                                    isClearingSubtitleCache = false
+                                    showClearSubtitleCacheConfirmation = false
+                                }
+                            },
+                        ) { Text("确认清除") }
                     }
                 }
             }

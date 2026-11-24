@@ -21,6 +21,8 @@ actual object PlayerSettingsStorage {
     private const val playbackBrightnessKey = "playback_brightness"
     private const val useLegacyPlayerLayoutKey = "use_legacy_player_layout"
     private const val englishLearningEnabledKey = "english_learning_enabled"
+    private const val bilingualSubtitleMergeEnabledKey = "bilingual_subtitle_merge_enabled"
+    private const val automaticSubtitleTranslationEnabledKey = "automatic_subtitle_translation_enabled"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
     private const val pauseOverlayEnabledKey = "pause_overlay_enabled"
@@ -303,6 +305,29 @@ actual object PlayerSettingsStorage {
 
     actual fun saveEnglishLearningEnabled(enabled: Boolean) {
         saveBoolean(englishLearningEnabledKey, enabled)
+    }
+
+    // These switches are app-wide, not scoped to a playback profile or individual video.
+    actual fun loadBilingualSubtitleMergeEnabled(): Boolean? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        return if (defaults.objectForKey(bilingualSubtitleMergeEnabledKey) != null) {
+            defaults.boolForKey(bilingualSubtitleMergeEnabledKey)
+        } else null
+    }
+
+    actual fun saveBilingualSubtitleMergeEnabled(enabled: Boolean) {
+        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = bilingualSubtitleMergeEnabledKey)
+    }
+
+    actual fun loadAutomaticSubtitleTranslationEnabled(): Boolean? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        return if (defaults.objectForKey(automaticSubtitleTranslationEnabledKey) != null) {
+            defaults.boolForKey(automaticSubtitleTranslationEnabledKey)
+        } else null
+    }
+
+    actual fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean) {
+        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = automaticSubtitleTranslationEnabledKey)
     }
 
     actual fun loadShowParentalGuide(): Boolean? {

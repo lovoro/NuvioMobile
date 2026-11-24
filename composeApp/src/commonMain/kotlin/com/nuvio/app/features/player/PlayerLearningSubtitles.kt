@@ -217,6 +217,18 @@ object PlayerLearningSubtitleState {
         refreshTranslationProgress()
     }
 
+    /** Removes automatically merged/translated text while preserving the source subtitle timeline. */
+    fun clearTranslations() {
+        translationGeneration += 1L
+        isTranslating = false
+        cues = cues.map { it.copy(translationText = null) }
+        prefetchedCues = prefetchedCues.map { it.copy(translationText = null) }
+        completedLiveCues.indices.forEach { index ->
+            completedLiveCues[index] = completedLiveCues[index].copy(translationText = null)
+        }
+        refreshTranslationProgress()
+    }
+
     fun updateManualTranslationEnabled(enabled: Boolean, disabledMessage: String? = null) {
         manualTranslationEnabled = enabled
         manualTranslationDisabledMessage = if (enabled) null else disabledMessage
