@@ -1124,23 +1124,12 @@ private fun LearningSubtitlePanel(
     val activeIndex = remember(cues, prefixMaxEndMs, positionMs) {
         findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
     }
-    val scrollTargetIndex = remember(cues, positionMs, activeIndex) {
-        // A partial cache may temporarily contain only earlier cues (for example, up to 2:00
-        // while playback has already been restored to 5:00). Do not treat the last currently
-        // loaded cue as the current position; wait until the loaded range reaches playback.
-        if (
-            cues.isEmpty() ||
-            positionMs < cues.first().startTimeMs ||
-            positionMs > cues.last().endTimeMs
-        ) {
-            -1
-        } else {
-            findLearningSubtitleScrollIndex(cues, positionMs)
-        }
-    }
-    // Keep the scroll target tied to the subtitle itself, not its mutable list index.
-    // Background prefetch inserts earlier cues and shifts indices; that must not trigger
-    // an animated scroll every time another batch is merged.
+    // Auto-follow only the subtitle that is active at the current playback position.
+    // Do not scroll to the nearest loaded cue during gaps: while cache batches are arriving,
+    // that fallback can point at an older cue (for example 1:00 instead of restored 3:00).
+    val scrollTargetIndex = activeIndex
+    // Keep the target tied to cue identity, not its mutable list index. Earlier cached cues
+    // may be inserted before it; stable LazyColumn keys preserve its visible position.
     val scrollTargetCue = cues.getOrNull(scrollTargetIndex)
     val listState = rememberLazyListState()
     val controlScope = rememberCoroutineScope()
@@ -1149,11 +1138,10 @@ private fun LearningSubtitlePanel(
     var repeatJob by remember { mutableStateOf<Job?>(null) }
     var repeatCueStartMs by remember { mutableStateOf<Long?>(null) }
     val repeatCue = repeatCueStartMs?.let { startMs -> cues.firstOrNull { it.startTimeMs == startMs } }
-    val currentLineNumber = when {
-        cues.isEmpty() -> 0
-        scrollTargetIndex >= 0 -> (scrollTargetIndex + 1).coerceIn(1, cues.size)
-        activeIndex >= 0 -> (activeIndex + 1).coerceIn(1, cues.size)
-        else -> 0
+    val currentLineNumber = if (activeIndex >= 0) {
+        (activeIndex + 1).coerceIn(1, cues.size)
+    } else {
+        0
     }
     LaunchedEffect(
         scrollTargetCue?.startTimeMs,
