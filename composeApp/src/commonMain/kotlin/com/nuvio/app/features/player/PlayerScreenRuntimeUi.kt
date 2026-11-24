@@ -1380,7 +1380,7 @@ private fun LearningSubtitlePanel(
                         )
                         Text(
                             text = "${PlayerLearningSubtitleState.translationProgressPercent}%",
-                            modifier = Modifier.offset(y = (-1).dp),
+                            modifier = Modifier.offset(y = (-0.5).dp),
                             fontSize = 7.sp,
                             lineHeight = 7.sp,
                             fontWeight = FontWeight.SemiBold,
