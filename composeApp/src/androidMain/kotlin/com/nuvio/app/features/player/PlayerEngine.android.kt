@@ -702,12 +702,27 @@ private fun ExoPlayerSurface(
     var learningSubtitleDiagnosticSource by remember { mutableStateOf("未知") }
     var learningSubtitleDiagnosticLanguage by remember { mutableStateOf("") }
     var learningSubtitleDiagnosticLookup by remember { mutableStateOf("未取得语言信息") }
-    fun findExternalSubtitleForLearning(url: String) = externalSubtitles.firstOrNull { it.url == url }
-        ?: externalSubtitles.firstOrNull { candidate ->
-            runCatching {
-                Uri.decode(candidate.url.substringBefore('#')) == Uri.decode(url.substringBefore('#'))
-            }.getOrDefault(false)
+    fun findSubtitleLanguageForLearning(url: String): Pair<String, String> {
+        // Addon subtitles are grouped by language in the subtitle picker. Read the
+        // language from that original top-level item instead of trying to infer it
+        // from the URL passed into the Sidecar loader.
+        val addonSubtitle = SubtitleRepository.addonSubtitles.value.firstOrNull { it.url == url }
+        if (addonSubtitle != null) {
+            return addonSubtitle.language to "AddonSubtitle.language（字幕列表原始条目）"
         }
+
+        val streamSubtitle = externalSubtitles.firstOrNull { it.url == url }
+            ?: externalSubtitles.firstOrNull { candidate ->
+                runCatching {
+                    Uri.decode(candidate.url.substringBefore('#')) == Uri.decode(url.substringBefore('#'))
+                }.getOrDefault(false)
+            }
+        if (streamSubtitle != null) {
+            return streamSubtitle.language to "StreamSubtitle.language"
+        }
+
+        return "" to "字幕列表中未找到原始条目"
+    }
     SideEffect {
         PlayerLearningSubtitleState.setManualTranslationDiagnosticAction { enabled, hasAction, cueCount, status ->
             DoubleSubtitlesLocalTranslator.showManualClickDiagnostic(
@@ -979,11 +994,10 @@ private fun ExoPlayerSurface(
                 if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) {
                     PlayerLearningSubtitleState.clear()
                 } else {
-                    val matchedSubtitle = findExternalSubtitleForLearning(url)
-                    val selectedSubtitleLanguage = matchedSubtitle?.language.orEmpty()
+                    val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
                     learningSubtitleDiagnosticSource = "外挂字幕（Sidecar）"
                     learningSubtitleDiagnosticLanguage = selectedSubtitleLanguage
-                    learningSubtitleDiagnosticLookup = if (matchedSubtitle == null) "externalSubtitles URL 未匹配（sidecar URL 与列表 URL 不同）" else "externalSubtitles URL 匹配成功"
+                    learningSubtitleDiagnosticLookup = languageLookup
                     PlayerLearningSubtitleState.beginLoading()
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                     PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
@@ -1621,11 +1635,10 @@ private fun ExoPlayerSurface(
                     sidecarController.stopSidecarAddonSubtitle(clearView = true)
                     PlayerLearningSubtitleState.beginLoading()
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
-                    val matchedSubtitle = findExternalSubtitleForLearning(url)
-                    val selectedSubtitleLanguage = matchedSubtitle?.language.orEmpty()
+                    val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
                     learningSubtitleDiagnosticSource = "外挂字幕（字幕 URL）"
                     learningSubtitleDiagnosticLanguage = selectedSubtitleLanguage
-                    learningSubtitleDiagnosticLookup = if (matchedSubtitle == null) "externalSubtitles URL 未匹配" else "externalSubtitles URL 匹配成功"
+                    learningSubtitleDiagnosticLookup = languageLookup
                     coroutineScope.launch {
                         val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
                             context,
