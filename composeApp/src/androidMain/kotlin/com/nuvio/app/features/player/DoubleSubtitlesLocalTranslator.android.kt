@@ -5,10 +5,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.app.AlertDialog
 import android.util.Log
+import android.view.ViewGroup
 import android.os.Handler
 import android.os.Looper
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
@@ -439,9 +441,9 @@ internal object DoubleSubtitlesLocalTranslator {
             val scroll = ScrollView(context).apply {
                 addView(
                     content,
-                    ScrollView.LayoutParams(
-                        ScrollView.LayoutParams.MATCH_PARENT,
-                        ScrollView.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
                     ),
                 )
                 isFillViewport = true
