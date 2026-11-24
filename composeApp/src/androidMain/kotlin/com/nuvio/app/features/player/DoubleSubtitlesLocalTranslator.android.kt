@@ -30,8 +30,10 @@ import java.util.concurrent.TimeUnit
 internal object DoubleSubtitlesLocalTranslator {
     private const val TAG = "NuvioDoubleSubs"
     private const val ADDON_ID = "community.doublesubtitles"
-    private const val MAX_BATCH_CUES = 50
-    private const val MAX_BATCH_CHARS = 9_000
+    // Keep client batches aligned with the addon's Google batch envelope.
+    private const val MAX_BATCH_CUES = 128
+    private const val MAX_BATCH_CHARS = 5_000
+    private const val PRIORITY_AHEAD_MS = 60_000L
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
     private data class CachedSubtitle(
         val startTimeMs: Long,
@@ -155,11 +157,15 @@ internal object DoubleSubtitlesLocalTranslator {
         val prioritizedMissing = priorityPositionMs?.let { positionMs ->
             val active = missing.filter { it.startTimeMs <= positionMs && it.endTimeMs > positionMs }
                 .sortedByDescending { it.startTimeMs }
-            val upcoming = missing.filter { it.startTimeMs > positionMs }
+            val nearFuture = missing.filter {
+                it.startTimeMs > positionMs && it.startTimeMs <= positionMs + PRIORITY_AHEAD_MS
+            }.sortedBy { it.startTimeMs }
+            val distantFuture = missing.filter { it.startTimeMs > positionMs + PRIORITY_AHEAD_MS }
                 .sortedBy { it.startTimeMs }
             val earlier = missing.filter { it.endTimeMs <= positionMs }
                 .sortedByDescending { it.startTimeMs }
-            active + upcoming + earlier
+            // Translate the current cue and next minute before the rest of the track.
+            active + nearFuture + distantFuture + earlier
         } ?: missing
         val chunks = mutableListOf<List<LearningSubtitleCue>>()
         var current = mutableListOf<LearningSubtitleCue>()
@@ -167,7 +173,14 @@ internal object DoubleSubtitlesLocalTranslator {
         prioritizedMissing.forEach { cue ->
             val length = cue.text.length
             if (length > MAX_BATCH_CHARS) {
-                Log.w(TAG, "Skipping oversized embedded subtitle cue")
+                // Keep an unusually long cue; send it alone instead of silently dropping it.
+                if (current.isNotEmpty()) {
+                    chunks += current
+                    current = mutableListOf()
+                    currentChars = 0
+                }
+                chunks += listOf(cue)
+                Log.w(TAG, "Sending oversized embedded subtitle cue in its own request: chars=$length")
             } else {
                 if (current.isNotEmpty() && (current.size >= MAX_BATCH_CUES || currentChars + length > MAX_BATCH_CHARS)) {
                     chunks += current
