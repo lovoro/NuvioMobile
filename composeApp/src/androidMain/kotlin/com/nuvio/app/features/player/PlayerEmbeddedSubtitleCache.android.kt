@@ -109,12 +109,39 @@ internal object PlayerEmbeddedSubtitleCache {
         targetLanguage: String,
     ): String {
         fun normalizeLanguage(value: String): String = value.trim().replace('_', '-').lowercase()
-        return sha256(
-            videoIdentity(url, headers) +
-                "|embedded-bilingual|$sourceTrackNumber|$targetTrackNumber" +
-                "|${normalizeLanguage(sourceLanguage)}|${normalizeLanguage(targetLanguage)}" +
-                "|converter:$CONVERTER_VERSION|matching:$MATCHING_VERSION",
+        val stableUrl = stablePlaybackUrl(url)
+        val stableHeaders = headers
+            .filterNot { (name, _) -> isVolatileCredentialName(name) }
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+        val ignoredHeaderNames = headers.keys
+            .filter(::isVolatileCredentialName)
+            .sortedBy(String::lowercase)
+        val identitySource = buildString {
+            append(stableUrl)
+            stableHeaders.forEach { (name, value) ->
+                append('\\n').append(name.lowercase()).append(':').append(value.trim())
+            }
+        }
+        val videoIdentity = sha256(identitySource)
+        val normalizedSourceLanguage = normalizeLanguage(sourceLanguage)
+        val normalizedTargetLanguage = normalizeLanguage(targetLanguage)
+        val cacheKeySource = videoIdentity +
+            "|embedded-bilingual|$sourceTrackNumber|$targetTrackNumber" +
+            "|$normalizedSourceLanguage|$normalizedTargetLanguage" +
+            "|converter:$CONVERTER_VERSION|matching:$MATCHING_VERSION"
+        val cacheKey = sha256(cacheKeySource)
+        val headerDiagnostics = stableHeaders.entries.joinToString(",") { (name, value) ->
+            "$name:valueSha256=${sha256(value.trim())}"
+        }.ifBlank { "none" }
+        Log.i(
+            TAG,
+            "Bilingual cache identity inputs: stableUrl=$stableUrl " +
+                "stableHeaders=[$headerDiagnostics] ignoredCredentialHeaderNames=${ignoredHeaderNames.joinToString(",").ifBlank { "none" }} " +
+                "videoIdentity=$videoIdentity sourceTrack=$sourceTrackNumber targetTrack=$targetTrackNumber " +
+                "sourceLanguage=$normalizedSourceLanguage targetLanguage=$normalizedTargetLanguage " +
+                "converter=$CONVERTER_VERSION matching=$MATCHING_VERSION cacheKey=$cacheKey",
         )
+        return cacheKey
     }
 
     suspend fun readBilingual(key: String): List<LearningSubtitleCue>? = withContext(Dispatchers.IO) {
