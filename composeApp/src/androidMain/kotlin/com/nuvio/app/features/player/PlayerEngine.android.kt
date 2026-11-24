@@ -983,11 +983,19 @@ private fun ExoPlayerSurface(
                             cues,
                             requiredSourceLanguage = selectedSourceLanguage,
                         )
+                        // Keep manual translation disabled until the existing cache has been
+                        // restored. Otherwise a fast tap can start a second translation while
+                        // the initial cache restore is still publishing its results.
+                        val translationAllowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                            context,
+                            selectedSourceLanguage,
+                        )
                         if (
                             sidecarLearningSelectionGeneration == selectionGeneration &&
                             sidecarControllerRef?.activeSidecarSubtitleKey == selectedUrl
                         ) {
                             PlayerLearningSubtitleState.update(restored)
+                            PlayerLearningSubtitleState.updateManualTranslationEnabled(translationAllowed)
                         }
                     }
                 }
@@ -1026,18 +1034,6 @@ private fun ExoPlayerSurface(
                                 sidecarLearningSelectionGeneration == generation &&
                                 sidecarControllerRef?.activeSidecarSubtitleKey == url
                             ) translated else emptyList()
-                        }
-                    }
-                    coroutineScope.launch {
-                        val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
-                            context,
-                            selectedSubtitleLanguage,
-                        )
-                        if (
-                            sidecarLearningSelectionGeneration == generation &&
-                            sidecarControllerRef?.activeSidecarSubtitleKey == url
-                        ) {
-                            PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
                         }
                     }
                 }
