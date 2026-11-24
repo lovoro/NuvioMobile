@@ -422,6 +422,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         kotlin.math.abs(value.startTimeMs - cue.startTimeMs) * 2L +
                             kotlin.math.abs(value.endTimeMs - cue.endTimeMs)
                     }
+                    ?.let { it.key to it.value }
                     ?.also { timingFallbackMatches++ }
             val cached = matched?.second ?: return@map cue
             matched.first.let(usedCacheIds::add)
