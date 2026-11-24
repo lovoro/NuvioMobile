@@ -1384,6 +1384,11 @@ private fun LearningSubtitlePanel(
         }
 
         PlayerLearningSubtitleState.translationMessage?.let { message ->
+            val messageGeneration = PlayerLearningSubtitleState.translationMessageGeneration
+            LaunchedEffect(message, messageGeneration) {
+                delay(5_000L)
+                PlayerLearningSubtitleState.dismissTranslationMessage(message, messageGeneration)
+            }
             Text(text = message, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB45309), modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp))
         }
         Spacer(Modifier.height(2.dp))
