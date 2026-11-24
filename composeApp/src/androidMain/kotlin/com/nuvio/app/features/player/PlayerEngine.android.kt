@@ -970,6 +970,7 @@ private fun ExoPlayerSurface(
             onLearningCues = { cues ->
                 val selectedUrl = sidecarControllerRef?.activeSidecarSubtitleKey
                 val selectionGeneration = sidecarLearningSelectionGeneration
+                val selectedSourceLanguage = sidecarLearningSourceLanguage
                 if (cues.isEmpty() || selectedUrl == null ||
                     !PlayerSettingsRepository.uiState.value.englishLearningEnabled
                 ) {
@@ -980,7 +981,7 @@ private fun ExoPlayerSurface(
                             context,
                             "external|$selectedUrl",
                             cues,
-                            requiredSourceLanguage = sidecarLearningSourceLanguage,
+                            requiredSourceLanguage = selectedSourceLanguage,
                         )
                         if (
                             sidecarLearningSelectionGeneration == selectionGeneration &&
