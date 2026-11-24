@@ -109,6 +109,93 @@ object PlayerLearningSubtitleState {
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
     private var completeExtractionLoaded = false
 
+    private data class PartialCueEntry(var cue: LearningSubtitleCue, val normalizedText: String)
+    private val partialCueEntries = mutableListOf<PartialCueEntry>()
+    private val partialCueBuckets = HashMap<String, MutableList<PartialCueEntry>>()
+    private var partialCueIndexInitialized = false
+
+    private fun invalidatePartialCueIndex() {
+        partialCueEntries.clear()
+        partialCueBuckets.clear()
+        partialCueIndexInitialized = false
+    }
+
+    private fun insertPartialCueEntry(entry: PartialCueEntry) {
+        var low = 0
+        var high = partialCueEntries.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (partialCueEntries[middle].cue.startTimeMs <= entry.cue.startTimeMs) {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        partialCueEntries.add(low, entry)
+
+        val bucket = partialCueBuckets.getOrPut(entry.normalizedText) { mutableListOf() }
+        var bucketLow = 0
+        var bucketHigh = bucket.size
+        while (bucketLow < bucketHigh) {
+            val middle = (bucketLow + bucketHigh) ushr 1
+            if (bucket[middle].cue.startTimeMs <= entry.cue.startTimeMs) {
+                bucketLow = middle + 1
+            } else {
+                bucketHigh = middle
+            }
+        }
+        bucket.add(bucketLow, entry)
+    }
+
+    private fun initializePartialCueIndex() {
+        if (partialCueIndexInitialized) return
+        partialCueEntries.clear()
+        partialCueBuckets.clear()
+        val initialCues = mergeLearningSubtitleCueLists(cues, prefetchedCues)
+        val whitespace = Regex("\\s+")
+        initialCues.forEach { cue ->
+            val normalized = cue.text.trim().replace(whitespace, " ")
+            val entry = PartialCueEntry(cue, normalized)
+            partialCueEntries.add(entry)
+            partialCueBuckets.getOrPut(normalized) { mutableListOf() }.add(entry)
+        }
+        partialCueIndexInitialized = true
+    }
+
+    private fun addPartialCueIncrementally(cue: LearningSubtitleCue, whitespace: Regex) {
+        val normalized = cue.text.trim().replace(whitespace, " ")
+        val bucket = partialCueBuckets.getOrPut(normalized) { mutableListOf() }
+        var duplicate: PartialCueEntry? = null
+        for (index in bucket.indices.reversed()) {
+            val existing = bucket[index]
+            if (cue.startTimeMs - existing.cue.startTimeMs > 750L) break
+            if (minOf(existing.cue.endTimeMs, cue.endTimeMs) >
+                maxOf(existing.cue.startTimeMs, cue.startTimeMs)
+            ) {
+                duplicate = existing
+                break
+            }
+        }
+
+        if (duplicate == null) {
+            insertPartialCueEntry(PartialCueEntry(cue, normalized))
+            return
+        }
+
+        val previous = duplicate.cue
+        val updated = previous.copy(
+            startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
+            endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
+            translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
+        )
+        if (updated != previous) {
+            partialCueEntries.remove(duplicate)
+            bucket.remove(duplicate)
+            duplicate.cue = updated
+            insertPartialCueEntry(duplicate)
+        }
+    }
+
     private fun mergeCueLists(vararg lists: List<LearningSubtitleCue>): List<LearningSubtitleCue> =
         mergeLearningSubtitleCueLists(*lists)
 
@@ -198,12 +285,14 @@ object PlayerLearningSubtitleState {
     }
 
     private fun applyTranslations(translatedCues: List<LearningSubtitleCue>) {
+        invalidatePartialCueIndex()
         cues = mergeCueLists(cues, translatedCues)
         prefetchedCues = mergeCueLists(prefetchedCues, translatedCues)
         refreshTranslationProgress()
     }
 
     fun mergePrefetched(newCues: List<LearningSubtitleCue>) {
+        invalidatePartialCueIndex()
         prefetchedCues = mergeCueLists(prefetchedCues, newCues)
         publishCombined(cues)
         if (cues.isNotEmpty()) mutableStatus = LearningSubtitleStatus.PARTIAL
@@ -211,6 +300,7 @@ object PlayerLearningSubtitleState {
 
     /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
     fun beginLiveCapture(subtitleName: String? = null) {
+        invalidatePartialCueIndex()
         setManualTranslationAction(null)
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
@@ -246,6 +336,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun setStatus(newStatus: LearningSubtitleStatus) {
+        invalidatePartialCueIndex()
         mutableStatus = newStatus
         if (newStatus != LearningSubtitleStatus.LOADING) loadingSubtitleName = null
         if (newStatus != LearningSubtitleStatus.READY) {
@@ -255,6 +346,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun beginLoading(subtitleName: String? = null) {
+        invalidatePartialCueIndex()
         // Loading a new cue batch does not own the translation action lifecycle.
         // The player registers/replaces the action when a subtitle is selected; clearing it
         // here can leave a successfully loaded Sidecar subtitle with no manual action.
@@ -281,19 +373,26 @@ object PlayerLearningSubtitleState {
      */
     fun appendPartialCues(newCues: List<LearningSubtitleCue>) {
         if (completeExtractionLoaded || newCues.isEmpty()) return
-        val validNewCues = newCues.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+        val validNewCues = newCues
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .sortedBy { it.startTimeMs }
         if (validNewCues.isEmpty()) return
-        val merged = mergeCueLists(cues, validNewCues, prefetchedCues)
-        if (merged != cues) {
-            cues = merged
-            refreshTranslationProgress()
-        }
-        mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.LOADING else LearningSubtitleStatus.PARTIAL
-        if (cues.isNotEmpty()) loadingSubtitleName = null
+
+        initializePartialCueIndex()
+        val whitespace = Regex("\\s+")
+        validNewCues.forEach { cue -> addPartialCueIncrementally(cue, whitespace) }
+
+        // The index and duplicate matching are incremental; only the immutable Compose snapshot
+        // is copied for publication. Existing entries are not re-merged or re-sorted.
+        cues = partialCueEntries.map { it.cue }
+        refreshTranslationProgress()
+        mutableStatus = LearningSubtitleStatus.PARTIAL
+        loadingSubtitleName = null
     }
 
     /** Updates the visible list with cues discovered by embedded-track extraction. */
     fun updatePartial(newCues: List<LearningSubtitleCue>) {
+        invalidatePartialCueIndex()
         if (completeExtractionLoaded) return
         publishCombined(newCues
             .asSequence()
@@ -306,6 +405,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun update(newCues: List<LearningSubtitleCue>) {
+        invalidatePartialCueIndex()
         completeExtractionLoaded = true
         val translatedPartialCues = prefetchedCues
         prefetchedCues = emptyList()
@@ -318,6 +418,7 @@ object PlayerLearningSubtitleState {
     }
 
     fun clear() {
+        invalidatePartialCueIndex()
         setManualTranslationAction(null)
         manualTranslationEnabled = true
         manualTranslationDisabledMessage = null

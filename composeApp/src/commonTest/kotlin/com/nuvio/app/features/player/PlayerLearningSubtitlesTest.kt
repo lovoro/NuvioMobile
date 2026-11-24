@@ -222,6 +222,25 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun appendsTwoThousandMovieCuesInSmallBatchesAndKeepsTimelineOrdered() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading()
+        val movieCues = (0 until 2_000).map { index ->
+            cue(index * 2_000L, index * 2_000L + 1_800L, "Movie line $index")
+        }
+
+        movieCues.chunked(40).forEach(PlayerLearningSubtitleState::appendPartialCues)
+
+        assertEquals(2_000, PlayerLearningSubtitleState.cues.size)
+        assertEquals(0L, PlayerLearningSubtitleState.cues.first().startTimeMs)
+        assertEquals(3_998_000L, PlayerLearningSubtitleState.cues.last().startTimeMs)
+        assertEquals(true, PlayerLearningSubtitleState.cues.zipWithNext().all { (a, b) ->
+            a.startTimeMs <= b.startTimeMs
+        })
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun capturesEmbeddedCueGroupsAsExplicitlyPartialPlaybackSamples() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()
