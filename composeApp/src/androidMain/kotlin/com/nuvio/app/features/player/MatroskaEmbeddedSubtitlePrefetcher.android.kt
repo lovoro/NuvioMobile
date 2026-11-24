@@ -229,11 +229,40 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
             }
         }
-        val pairedResult = pairTargetCues(allSourceCues, allTargetCues)
+        // The same cue can be exposed by neighboring/overlapping Cluster indexes with
+        // slightly shifted timestamps. Collapse only same-text cues whose intervals overlap
+        // and whose start times are close; repeated dialogue at a later time stays separate.
+        val uniqueSourceCues = deduplicateOverlappingCues(allSourceCues)
+        val uniqueTargetCues = deduplicateOverlappingCues(allTargetCues)
+        val pairedResult = pairTargetCues(uniqueSourceCues, uniqueTargetCues)
         return LoadResult(
-            cues = pairedResult.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },
+            cues = pairedResult.sortedBy { it.startTimeMs },
             isComplete = complete,
         )
+    }
+
+    private fun deduplicateOverlappingCues(cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
+        val unique = mutableListOf<LearningSubtitleCue>()
+        cues.forEach { cue ->
+            if (cue.text.isBlank() || cue.endTimeMs <= cue.startTimeMs) return@forEach
+            val normalizedText = cue.text.trim().replace(Regex("\\s+"), " ")
+            val index = unique.indexOfFirst { existing ->
+                existing.text.trim().replace(Regex("\\s+"), " ") == normalizedText &&
+                    kotlin.math.abs(existing.startTimeMs - cue.startTimeMs) <= 750L &&
+                    minOf(existing.endTimeMs, cue.endTimeMs) > maxOf(existing.startTimeMs, cue.startTimeMs)
+            }
+            if (index < 0) {
+                unique += cue
+            } else {
+                val previous = unique[index]
+                unique[index] = previous.copy(
+                    startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
+                    endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
+                    translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
+                )
+            }
+        }
+        return unique.sortedBy { it.startTimeMs }
     }
 
     private fun pairTargetCues(

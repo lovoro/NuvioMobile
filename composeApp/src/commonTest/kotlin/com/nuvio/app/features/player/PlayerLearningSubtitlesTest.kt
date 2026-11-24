@@ -128,6 +128,38 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun mergesDuplicateCuesFromOverlappingClusterReads() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading()
+        PlayerLearningSubtitleState.mergePrefetched(
+            listOf(cue(61_090L, 62_400L, "Slipper Truth?")),
+        )
+        PlayerLearningSubtitleState.mergePrefetched(
+            listOf(cue(61_320L, 62_500L, "  Slipper   Truth?  ").copy(translationText = "玻璃鞋真心话")),
+        )
+
+        assertEquals(1, PlayerLearningSubtitleState.cues.size)
+        assertEquals(61_090L, PlayerLearningSubtitleState.cues.single().startTimeMs)
+        assertEquals("玻璃鞋真心话", PlayerLearningSubtitleState.cues.single().translationText)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
+    fun keepsSameTextWhenCueIntervalsDoNotOverlap() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading()
+        PlayerLearningSubtitleState.mergePrefetched(
+            listOf(
+                cue(10_000L, 11_000L, "Hello"),
+                cue(12_000L, 13_000L, "Hello"),
+            ),
+        )
+
+        assertEquals(2, PlayerLearningSubtitleState.cues.size)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun addsNewlyTranslatedCuesToExistingCachedProgress() {
         PlayerLearningSubtitleState.clear()
         val allCues = (0 until 164).map { index ->

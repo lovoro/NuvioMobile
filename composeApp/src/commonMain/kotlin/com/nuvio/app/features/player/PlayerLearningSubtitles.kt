@@ -63,19 +63,29 @@ object PlayerLearningSubtitleState {
     private var completeExtractionLoaded = false
 
     private fun mergeCueLists(vararg lists: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
-        val merged = linkedMapOf<Pair<Long, String>, LearningSubtitleCue>()
+        val merged = mutableListOf<LearningSubtitleCue>()
         lists.forEach { list ->
             list.forEach cueLoop@{ cue ->
                 if (cue.text.isBlank() || cue.endTimeMs <= cue.startTimeMs) return@cueLoop
-                val key = cue.startTimeMs to cue.text
-                val previous = merged[key]
-                merged[key] = if (previous == null) cue else previous.copy(
-                    endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
-                    translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
-                )
+                val normalizedText = cue.text.trim().replace(Regex("\\s+"), " ")
+                val duplicateIndex = merged.indexOfFirst { existing ->
+                    existing.text.trim().replace(Regex("\\s+"), " ") == normalizedText &&
+                        kotlin.math.abs(existing.startTimeMs - cue.startTimeMs) <= 750L &&
+                        minOf(existing.endTimeMs, cue.endTimeMs) > maxOf(existing.startTimeMs, cue.startTimeMs)
+                }
+                if (duplicateIndex < 0) {
+                    merged += cue
+                } else {
+                    val previous = merged[duplicateIndex]
+                    merged[duplicateIndex] = previous.copy(
+                        startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
+                        endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
+                        translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
+                    )
+                }
             }
         }
-        return merged.values.sortedBy { it.startTimeMs }
+        return merged.sortedBy { it.startTimeMs }
     }
 
     private fun refreshTranslationProgress() {
