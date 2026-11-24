@@ -32,9 +32,11 @@ internal object PlayerEmbeddedSubtitleCapture {
         val generation = selectionGeneration
         val key = selectedTrackKey ?: return@Runnable
         val entry = tracks[key] ?: return@Runnable
-        val snapshot = synchronized(entry.lock) { entry.cues.values.toList() }
+        val snapshot = synchronized(entry.lock) {
+            entry.pendingCues.values.toList().also { entry.pendingCues.clear() }
+        }
         if (snapshot.isNotEmpty() && selectionGeneration == generation && selectedTrackKey == key) {
-            PlayerLearningSubtitleState.updatePartial(snapshot)
+            PlayerLearningSubtitleState.appendPartialCues(snapshot)
             val maxCueEndMs = snapshot.maxOfOrNull { it.endTimeMs } ?: return@Runnable
             val shouldLogCoverage = lastLoggedCueEndMs == Long.MIN_VALUE ||
                 maxCueEndMs >= lastLoggedCueEndMs + 30_000L ||
@@ -65,6 +67,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         val label: String?,
         val lock: Any = Any(),
         val cues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
+        val pendingCues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
     )
 
     fun configureSource(sourceIdentity: String) {
@@ -105,7 +108,10 @@ internal object PlayerEmbeddedSubtitleCapture {
         lastLoggedCueEndMs = Long.MIN_VALUE
         if (key == null) return
         val snapshot = tracks[key]?.let { entry ->
-            synchronized(entry.lock) { entry.cues.values.toList() }
+            synchronized(entry.lock) {
+                entry.pendingCues.clear()
+                entry.cues.values.toList()
+            }
         }.orEmpty()
         if (snapshot.isNotEmpty()) {
             mainHandler.post {
@@ -235,12 +241,16 @@ internal object PlayerEmbeddedSubtitleCapture {
             texts.forEach { text ->
                 val cue = LearningSubtitleCue(startMs, endMs, text)
                 val cueKey = "$startMs|$endMs|$text"
-                if (!entry.cues.containsKey(cueKey)) added = true
+                if (!entry.cues.containsKey(cueKey)) {
+                    added = true
+                    entry.pendingCues[cueKey] = cue
+                }
                 entry.cues[cueKey] = cue
             }
             while (entry.cues.size > MAX_CUES_PER_TRACK) {
                 val firstKey = entry.cues.keys.firstOrNull() ?: break
                 entry.cues.remove(firstKey)
+                entry.pendingCues.remove(firstKey)
             }
             added
         }

@@ -27,6 +27,53 @@ enum class LearningSubtitleStatus {
     ERROR,
 }
 
+/**
+ * Indexed cue merge. The former implementation scanned every accumulated cue for every
+ * incoming cue (quadratic on large subtitle tracks). Sort once and compare only cues with the
+ * same normalized text whose start times are within the existing 750 ms tolerance.
+ */
+internal fun mergeLearningSubtitleCueLists(
+    vararg lists: List<LearningSubtitleCue>,
+): List<LearningSubtitleCue> {
+    val ordered = lists.asSequence().flatten()
+        .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+        .sortedBy { it.startTimeMs }
+        .toList()
+    if (ordered.isEmpty()) return emptyList()
+
+    val merged = ArrayList<LearningSubtitleCue>(ordered.size)
+    val byText = HashMap<String, MutableList<Int>>()
+    val whitespace = Regex("\\s+")
+    ordered.forEach { cue ->
+        val normalizedText = cue.text.trim().replace(whitespace, " ")
+        val candidates = byText.getOrPut(normalizedText) { mutableListOf() }
+        var duplicateIndex = -1
+        for (candidatePosition in candidates.indices.reversed()) {
+            val index = candidates[candidatePosition]
+            val existing = merged[index]
+            if (cue.startTimeMs - existing.startTimeMs > 750L) break
+            if (minOf(existing.endTimeMs, cue.endTimeMs) >
+                maxOf(existing.startTimeMs, cue.startTimeMs)
+            ) {
+                duplicateIndex = index
+                break
+            }
+        }
+        if (duplicateIndex < 0) {
+            candidates += merged.size
+            merged += cue
+        } else {
+            val previous = merged[duplicateIndex]
+            merged[duplicateIndex] = previous.copy(
+                startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
+                endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
+                translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
+            )
+        }
+    }
+    return merged.sortedBy { it.startTimeMs }
+}
+
 object PlayerLearningSubtitleState {
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
@@ -62,40 +109,20 @@ object PlayerLearningSubtitleState {
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
     private var completeExtractionLoaded = false
 
-    private fun mergeCueLists(vararg lists: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
-        val merged = mutableListOf<LearningSubtitleCue>()
-        lists.forEach { list ->
-            list.forEach cueLoop@{ cue ->
-                if (cue.text.isBlank() || cue.endTimeMs <= cue.startTimeMs) return@cueLoop
-                val normalizedText = cue.text.trim().replace(Regex("\\s+"), " ")
-                val duplicateIndex = merged.indexOfFirst { existing ->
-                    existing.text.trim().replace(Regex("\\s+"), " ") == normalizedText &&
-                        kotlin.math.abs(existing.startTimeMs - cue.startTimeMs) <= 750L &&
-                        minOf(existing.endTimeMs, cue.endTimeMs) > maxOf(existing.startTimeMs, cue.startTimeMs)
-                }
-                if (duplicateIndex < 0) {
-                    merged += cue
-                } else {
-                    val previous = merged[duplicateIndex]
-                    merged[duplicateIndex] = previous.copy(
-                        startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
-                        endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
-                        translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
-                    )
-                }
-            }
-        }
-        return merged.sortedBy { it.startTimeMs }
-    }
+    private fun mergeCueLists(vararg lists: List<LearningSubtitleCue>): List<LearningSubtitleCue> =
+        mergeLearningSubtitleCueLists(*lists)
 
     private fun refreshTranslationProgress() {
-        val validCues = cues.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
-        if (validCues.isEmpty()) {
-            translationProgressPercent = 0
-            return
+        var validCount = 0
+        var completedCount = 0
+        cues.forEach { cue ->
+            if (cue.text.isNotBlank() && cue.endTimeMs > cue.startTimeMs) {
+                validCount++
+                if (!cue.translationText.isNullOrBlank()) completedCount++
+            }
         }
-        val completedCount = validCues.count { !it.translationText.isNullOrBlank() }
-        translationProgressPercent = ((completedCount * 100) / validCues.size).coerceIn(0, 100)
+        translationProgressPercent = if (validCount == 0) 0
+        else ((completedCount * 100) / validCount).coerceIn(0, 100)
     }
 
     private fun publishCombined(live: List<LearningSubtitleCue>) {
@@ -247,6 +274,23 @@ object PlayerLearningSubtitleState {
     fun markUnsupported() = setStatus(LearningSubtitleStatus.UNSUPPORTED)
 
     fun markError() = setStatus(LearningSubtitleStatus.ERROR)
+
+    /**
+     * Appends newly parsed timed cues without making the capture layer resend the full track
+     * every 200 ms. Existing cues remain the canonical timeline entries.
+     */
+    fun appendPartialCues(newCues: List<LearningSubtitleCue>) {
+        if (completeExtractionLoaded || newCues.isEmpty()) return
+        val validNewCues = newCues.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+        if (validNewCues.isEmpty()) return
+        val merged = mergeCueLists(cues, validNewCues, prefetchedCues)
+        if (merged != cues) {
+            cues = merged
+            refreshTranslationProgress()
+        }
+        mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.LOADING else LearningSubtitleStatus.PARTIAL
+        if (cues.isNotEmpty()) loadingSubtitleName = null
+    }
 
     /** Updates the visible list with cues discovered by embedded-track extraction. */
     fun updatePartial(newCues: List<LearningSubtitleCue>) {

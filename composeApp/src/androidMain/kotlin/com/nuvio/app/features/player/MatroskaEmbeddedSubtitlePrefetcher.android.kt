@@ -241,29 +241,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         )
     }
 
-    private fun deduplicateOverlappingCues(cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
-        val unique = mutableListOf<LearningSubtitleCue>()
-        cues.forEach { cue ->
-            if (cue.text.isBlank() || cue.endTimeMs <= cue.startTimeMs) return@forEach
-            val normalizedText = cue.text.trim().replace(Regex("\\s+"), " ")
-            val index = unique.indexOfFirst { existing ->
-                existing.text.trim().replace(Regex("\\s+"), " ") == normalizedText &&
-                    kotlin.math.abs(existing.startTimeMs - cue.startTimeMs) <= 750L &&
-                    minOf(existing.endTimeMs, cue.endTimeMs) > maxOf(existing.startTimeMs, cue.startTimeMs)
-            }
-            if (index < 0) {
-                unique += cue
-            } else {
-                val previous = unique[index]
-                unique[index] = previous.copy(
-                    startTimeMs = minOf(previous.startTimeMs, cue.startTimeMs),
-                    endTimeMs = maxOf(previous.endTimeMs, cue.endTimeMs),
-                    translationText = cue.translationText?.takeIf(String::isNotBlank) ?: previous.translationText,
-                )
-            }
-        }
-        return unique.sortedBy { it.startTimeMs }
-    }
+    private fun deduplicateOverlappingCues(cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> =
+        mergeLearningSubtitleCueLists(cues)
 
     private fun pairTargetCues(
         sourceCues: List<LearningSubtitleCue>,

@@ -204,6 +204,24 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun appendsPartialCueBatchesWithoutDroppingEarlierTimelineEntries() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLoading()
+        PlayerLearningSubtitleState.appendPartialCues(listOf(cue(1_000L, 2_000L, "First")))
+        PlayerLearningSubtitleState.appendPartialCues(
+            listOf(
+                cue(3_000L, 4_000L, "Second"),
+                cue(1_000L, 2_000L, "First").copy(translationText = "第一条"),
+            ),
+        )
+
+        assertEquals(listOf("First", "Second"), PlayerLearningSubtitleState.cues.map { it.text })
+        assertEquals("第一条", PlayerLearningSubtitleState.cues.first().translationText)
+        assertEquals("First\\n第一条", PlayerLearningSubtitleState.cues.first().displayText)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun capturesEmbeddedCueGroupsAsExplicitlyPartialPlaybackSamples() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()
