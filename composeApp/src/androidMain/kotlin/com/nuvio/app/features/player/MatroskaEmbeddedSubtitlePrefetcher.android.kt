@@ -110,10 +110,16 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             .sortedBy { it.first }
             .toMutableList()
         if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
-        val result = mutableListOf<LearningSubtitleCue>()
-        // Playback-window cues are emitted one at a time for immediate translation.
-        // All other clusters retain the efficient eight-cluster background batches.
-        val backgroundBatch = mutableListOf<LearningSubtitleCue>()
+        val allSourceCues = mutableListOf<LearningSubtitleCue>()
+        val allTargetCues = mutableListOf<LearningSubtitleCue>()
+        // Source and target cues are not guaranteed to live in the same Matroska Cluster.
+        // Hold the playback-window source cues until every priority Cluster has been read,
+        // then pair across the whole window before publishing any cue to the player.
+        val prioritySourceCues = mutableListOf<LearningSubtitleCue>()
+        val priorityTargetCues = mutableListOf<LearningSubtitleCue>()
+        // Background work remains batched; pair across all Clusters in each batch.
+        val backgroundSourceCues = mutableListOf<LearningSubtitleCue>()
+        val backgroundTargetCues = mutableListOf<LearningSubtitleCue>()
         var backgroundClustersSinceCallback = 0
         var complete = true
         while (pendingPositions.isNotEmpty()) {
@@ -130,6 +136,17 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             val priorityIndex = pendingPositions.indexOfFirst { (cueTime, _) ->
                 val cueTimeMs = ticksToMs(cueTime, scale)
                 cueTimeMs in windowStart..windowEnd
+            }
+            // The priority window is now fully scanned. Publish its cues only after pairing
+            // against target cues that may have been stored in a different Cluster.
+            if (priorityIndex < 0 && prioritySourceCues.isNotEmpty()) {
+                val ready = pairTargetCues(prioritySourceCues, priorityTargetCues)
+                    .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+                if (ready.isNotEmpty()) {
+                    withContext(Dispatchers.Main.immediate) { onPartialCues(ready, true) }
+                }
+                prioritySourceCues.clear()
+                priorityTargetCues.clear()
             }
             val isPlaybackPriorityCluster = priorityIndex >= 0
             val selectedIndex = if (isPlaybackPriorityCluster) priorityIndex else 0
@@ -171,34 +188,50 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                     LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text)
                 }
             }.orEmpty()
-            val decodedCues = pairTargetCues(sourceCues, targetCues)
-            result += decodedCues
+            allSourceCues += sourceCues
+            allTargetCues += targetCues
 
             if (isPlaybackPriorityCluster) {
-                // Do not wait for another cue or another Cluster: every newly decoded
-                // playback-window cue gets its own translation request immediately.
-                decodedCues.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }.forEach { cue ->
-                    withContext(Dispatchers.Main.immediate) { onPartialCues(listOf(cue), true) }
-                }
+                prioritySourceCues += sourceCues
+                priorityTargetCues += targetCues
             } else {
-                backgroundBatch += decodedCues
+                backgroundSourceCues += sourceCues
+                backgroundTargetCues += targetCues
                 backgroundClustersSinceCallback++
                 if (backgroundClustersSinceCallback >= 8) {
-                    val batch = backgroundBatch.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+                    // Only publish background cues that have a native target match.
+                    // Unmatched cues remain in the final extraction result but are not
+                    // briefly shown as source-only while later Clusters are still loading.
+                    val batch = pairTargetCues(backgroundSourceCues, backgroundTargetCues)
+                        .filter { !it.translationText.isNullOrBlank() }
+                        .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
                     if (batch.isNotEmpty()) {
                         withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
                     }
-                    backgroundBatch.clear()
+                    backgroundSourceCues.clear()
+                    backgroundTargetCues.clear()
                     backgroundClustersSinceCallback = 0
                 }
             }
         }
-        if (backgroundBatch.isNotEmpty()) {
-            val batch = backgroundBatch.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-            withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
+        if (prioritySourceCues.isNotEmpty()) {
+            val ready = pairTargetCues(prioritySourceCues, priorityTargetCues)
+                .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+            if (ready.isNotEmpty()) {
+                withContext(Dispatchers.Main.immediate) { onPartialCues(ready, true) }
+            }
         }
+        if (backgroundSourceCues.isNotEmpty()) {
+            val batch = pairTargetCues(backgroundSourceCues, backgroundTargetCues)
+                .filter { !it.translationText.isNullOrBlank() }
+                .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+            if (batch.isNotEmpty()) {
+                withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
+            }
+        }
+        val pairedResult = pairTargetCues(allSourceCues, allTargetCues)
         return LoadResult(
-            cues = result.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },
+            cues = pairedResult.distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs },
             isComplete = complete,
         )
     }
