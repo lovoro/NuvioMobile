@@ -1368,8 +1368,17 @@ private fun ExoPlayerSurface(
             exoPlayer.removeListener(listener)
             playerViewRef?.keepScreenOn = false
             subtitleSelectionJob?.cancel()
+            learningSubtitleSelectionGeneration += 1L
             learningSubtitleLoadJob?.cancel()
+            learningSubtitleLoadJob = null
+            learningSubtitlePrefetchTrackKey = null
             learningSubtitleSelectionUrl = null
+            synchronized(embeddedSubtitleLiveCueBufferLock) {
+                embeddedSubtitleCacheLookupPending.set(false)
+                embeddedSubtitleCacheRestored.set(false)
+                embeddedSubtitleLiveCueBuffer.clear()
+            }
+            PlayerEmbeddedSubtitleCapture.reset()
             PlayerLearningSubtitleState.clear()
             sidecarController.stopSidecarAddonSubtitle(clearView = true)
         }
