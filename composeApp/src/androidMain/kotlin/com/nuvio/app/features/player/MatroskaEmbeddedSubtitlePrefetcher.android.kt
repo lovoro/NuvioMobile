@@ -115,7 +115,10 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         val allSourceCues = mutableListOf<LearningSubtitleCue>()
         val allTargetCues = mutableListOf<LearningSubtitleCue>()
         // Keep both tracks across Cluster boundaries and publish as soon as a counterpart arrives.
-        val emittedCueKeys = mutableSetOf<Pair<Long, String>>()
+        // A source cue and a target cue can each participate in at most one emitted pair.
+        // Keep the actual intervals so slightly shifted duplicate Cluster reads remain recognized.
+        val emittedSourceCues = mutableListOf<LearningSubtitleCue>()
+        val consumedTargetCues = mutableListOf<LearningSubtitleCue>()
         var complete = true
         while (pendingPositions.isNotEmpty()) {
             if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
@@ -179,17 +182,19 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             allSourceCues += sourceCues
             allTargetCues += targetCues
 
-            // Compare only newly decoded cues against the opposite track accumulated so far.
-            // This avoids waiting for the entire priority window or a batch of 8 Clusters.
-            val candidates = buildList {
-                if (sourceCues.isNotEmpty()) addAll(pairTargetCues(sourceCues, allTargetCues))
-                if (targetCues.isNotEmpty()) addAll(pairTargetCues(allSourceCues, targetCues))
+            // Re-evaluate the accumulated tracks together. Pairing only the newly decoded
+            // side allowed one target cue to be reused by several source cues.
+            val availableSources = deduplicateOverlappingCues(allSourceCues).filterNot { source ->
+                emittedSourceCues.any { emitted -> sameSubtitleCue(emitted, source) }
             }
-            val ready = candidates.asSequence()
-                .filter { !it.translationText.isNullOrBlank() }
-                .filter { emittedCueKeys.add(it.startTimeMs to it.text) }
-                .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-                .toList()
+            val availableTargets = deduplicateOverlappingCues(allTargetCues).filterNot { target ->
+                consumedTargetCues.any { consumed -> sameSubtitleCue(consumed, target) }
+            }
+            val ready = pairSubtitleCuesOneToOne(availableSources, availableTargets, allowNearestFallback = false).map { pair ->
+                emittedSourceCues += pair.sourceCue
+                consumedTargetCues += pair.targetCue
+                pair.sourceCue.copy(translationText = pair.targetCue.text.trim())
+            }
             if (ready.isNotEmpty()) {
                 withContext(Dispatchers.Main.immediate) { onPartialCues(ready, isPlaybackPriorityCluster) }
             }
@@ -199,7 +204,13 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         // and whose start times are close; repeated dialogue at a later time stays separate.
         val uniqueSourceCues = deduplicateOverlappingCues(allSourceCues)
         val uniqueTargetCues = deduplicateOverlappingCues(allTargetCues)
-        val pairedResult = pairTargetCues(uniqueSourceCues, uniqueTargetCues)
+        val finalPairs = pairSubtitleCuesOneToOne(uniqueSourceCues, uniqueTargetCues)
+            .associate { it.sourceCue to it.targetCue }
+        val pairedResult = uniqueSourceCues.map { source ->
+            finalPairs[source]?.let { target ->
+                source.copy(translationText = target.text.trim())
+            } ?: source
+        }
         return LoadResult(
             cues = pairedResult.sortedBy { it.startTimeMs },
             isComplete = complete,
@@ -209,47 +220,9 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     private fun deduplicateOverlappingCues(cues: List<LearningSubtitleCue>): List<LearningSubtitleCue> =
         mergeLearningSubtitleCueLists(cues)
 
-    private fun pairTargetCues(
-        sourceCues: List<LearningSubtitleCue>,
-        targetCues: List<LearningSubtitleCue>,
-    ): List<LearningSubtitleCue> {
-        if (sourceCues.isEmpty() || targetCues.isEmpty()) return sourceCues
-        return sourceCues.map { source ->
-            // Prefer every target cue that overlaps the source interval. If subtitle tracks
-            // have a small timestamp offset and no strict overlap, pair only the nearest cue
-            // within the tolerance instead of rejecting the translation track entirely.
-            val overlapping = targetCues.filter { target ->
-                minOf(source.endTimeMs, target.endTimeMs) >
-                    maxOf(source.startTimeMs, target.startTimeMs)
-            }
-            val matched = if (overlapping.isNotEmpty()) {
-                overlapping
-            } else {
-                val nearest = targetCues.minByOrNull { target ->
-                    when {
-                        target.endTimeMs < source.startTimeMs ->
-                            source.startTimeMs - target.endTimeMs
-                        target.startTimeMs > source.endTimeMs ->
-                            target.startTimeMs - source.endTimeMs
-                        else -> 0L
-                    }
-                }
-                val gap = nearest?.let { target ->
-                    when {
-                        target.endTimeMs < source.startTimeMs ->
-                            source.startTimeMs - target.endTimeMs
-                        target.startTimeMs > source.endTimeMs ->
-                            target.startTimeMs - source.endTimeMs
-                        else -> 0L
-                    }
-                }
-                if (nearest != null && gap != null && gap <= 1_500L) listOf(nearest) else emptyList()
-            }
-            val joined = matched.map { it.text.trim() }.filter(String::isNotBlank).distinct()
-                .joinToString(" ")
-            if (joined.isBlank()) source else source.copy(translationText = joined)
-        }
-    }
+    private fun sameSubtitleCue(first: LearningSubtitleCue, second: LearningSubtitleCue): Boolean =
+        first.text == second.text &&
+            minOf(first.endTimeMs, second.endTimeMs) > maxOf(first.startTimeMs, second.startTimeMs)
 
     private fun parseTracks(
         bytes: ByteArray,
