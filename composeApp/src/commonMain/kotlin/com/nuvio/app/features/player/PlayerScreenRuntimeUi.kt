@@ -1124,32 +1124,64 @@ private fun LearningSubtitlePanel(
     val activeIndex = remember(cues, prefixMaxEndMs, positionMs) {
         findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
     }
-    // Auto-follow only the subtitle that is active at the current playback position.
-    // Do not scroll to the nearest loaded cue during gaps: while cache batches are arriving,
-    // that fallback can point at an older cue (for example 1:00 instead of restored 3:00).
-    val scrollTargetIndex = activeIndex
-    // Keep the target tied to cue identity, not its mutable list index. Earlier cached cues
-    // may be inserted before it; stable LazyColumn keys preserve its visible position.
-    val scrollTargetCue = cues.getOrNull(scrollTargetIndex)
+    // Highlighting and list navigation are separate: a subtitle gap has no active cue,
+    // but playback still has a meaningful position in the subtitle timeline.
+    val subtitleStatus = PlayerLearningSubtitleState.status
+    val scrollTargetIndex = remember(cues, positionMs) {
+        findLearningSubtitleScrollIndex(cues, positionMs)
+    }
+    val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
+        (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
+    val displayLineIndex = scrollTargetIndex.takeIf { timelineCoversPosition }
     val listState = rememberLazyListState()
+    var scrollAnchorCueKey by remember { mutableStateOf<String?>(null) }
     val controlScope = rememberCoroutineScope()
     var repeatCurrentCue by remember { mutableStateOf(false) }
     var repeatDelayMs by remember { mutableStateOf(1_000L) }
     var repeatJob by remember { mutableStateOf<Job?>(null) }
     var repeatCueStartMs by remember { mutableStateOf<Long?>(null) }
     val repeatCue = repeatCueStartMs?.let { startMs -> cues.firstOrNull { it.startTimeMs == startMs } }
-    val currentLineNumber = if (activeIndex >= 0) {
-        (activeIndex + 1).coerceIn(1, cues.size)
-    } else {
-        0
+    // During silence, show the nearest timeline line instead of 0/N. Do not report a
+    // misleading line until the incrementally loaded timeline has reached this position.
+    val currentLineNumber = displayLineIndex?.let { (it + 1).coerceIn(1, cues.size) } ?: 0
+
+    // Initial restore: wait until cached cues reach the restored playback time. This avoids
+    // anchoring to the last old cue while the cache is still loading earlier batches.
+    // Once chosen, the cue identity is locked so inserting earlier cached cues cannot move it.
+    LaunchedEffect(cues, positionMs, subtitleStatus) {
+        if (cues.isEmpty()) {
+            scrollAnchorCueKey = null
+            return@LaunchedEffect
+        }
+        if (scrollAnchorCueKey != null) return@LaunchedEffect
+        if (!timelineCoversPosition) return@LaunchedEffect
+        val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
+        val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+        scrollAnchorCueKey = targetKey
+        listState.animateScrollToItem(scrollTargetIndex)
     }
-    LaunchedEffect(
-        scrollTargetCue?.startTimeMs,
-        scrollTargetCue?.endTimeMs,
-        scrollTargetCue?.text,
-    ) {
-        if (scrollTargetCue != null && scrollTargetIndex >= 0) {
-            listState.animateScrollToItem(scrollTargetIndex)
+
+    // While speaking, follow the active cue. During ordinary silence, keep the existing
+    // anchor: newly arriving cached cues must not change the target just because the nearest
+    // neighbor calculation changed. A large playback-position jump is treated as an explicit
+    // seek and may re-anchor to the nearest cue even when the seek lands in silence.
+    var lastObservedPositionMs by remember { mutableStateOf(positionMs) }
+    LaunchedEffect(positionMs, activeIndex) {
+        val previousPositionMs = lastObservedPositionMs
+        lastObservedPositionMs = positionMs
+        if (scrollAnchorCueKey == null) return@LaunchedEffect
+        val isSeek = positionMs - previousPositionMs > 2_000L ||
+            previousPositionMs - positionMs > 2_000L
+        val targetIndex = when {
+            activeIndex >= 0 -> activeIndex
+            isSeek -> scrollTargetIndex
+            else -> -1
+        }
+        val targetCue = cues.getOrNull(targetIndex) ?: return@LaunchedEffect
+        val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+        if (targetKey != scrollAnchorCueKey) {
+            scrollAnchorCueKey = targetKey
+            listState.animateScrollToItem(targetIndex)
         }
     }
     LaunchedEffect(repeatCurrentCue, repeatCueStartMs, repeatCue?.endTimeMs, positionMs, isPlaying) {
