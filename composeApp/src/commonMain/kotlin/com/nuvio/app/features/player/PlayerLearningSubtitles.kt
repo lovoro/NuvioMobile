@@ -84,7 +84,7 @@ object PlayerLearningSubtitleState {
     var isLoadingFromCache by mutableStateOf(false)
         private set
 
-    fun setLoadingFromCache(loading: Boolean) {
+    fun updateCacheLoadingState(loading: Boolean) {
         isLoadingFromCache = loading
     }
     var isTranslating by mutableStateOf(false)

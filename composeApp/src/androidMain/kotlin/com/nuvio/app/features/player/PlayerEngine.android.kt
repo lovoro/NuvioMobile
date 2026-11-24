@@ -887,7 +887,7 @@ private fun ExoPlayerSurface(
                 sourceLanguage = languagePair.first,
                 targetLanguage = languagePair.second,
             )
-            PlayerLearningSubtitleState.setLoadingFromCache(true)
+            PlayerLearningSubtitleState.updateCacheLoadingState(true)
             val cachedBilingualCues = try {
                 PlayerEmbeddedSubtitleCache.readBilingual(bilingualCacheKey)
             } catch (error: Throwable) {
@@ -896,7 +896,7 @@ private fun ExoPlayerSurface(
                 }
                 throw error
             } finally {
-                PlayerLearningSubtitleState.setLoadingFromCache(false)
+                PlayerLearningSubtitleState.updateCacheLoadingState(false)
             }
             if (!cachedBilingualCues.isNullOrEmpty()) {
                 val cacheComplete = PlayerEmbeddedSubtitleCache.isBilingualComplete(bilingualCacheKey)
