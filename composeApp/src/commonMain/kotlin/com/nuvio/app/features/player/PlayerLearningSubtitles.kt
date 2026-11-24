@@ -37,6 +37,11 @@ object PlayerLearningSubtitleState {
     var translationMessage by mutableStateOf<String?>(null)
         private set
     private var manualTranslationAction: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)? = null
+    private var manualTranslationDiagnosticAction: ((Boolean, Boolean, Int, String) -> Unit)? = null
+
+    fun setManualTranslationDiagnosticAction(action: ((Boolean, Boolean, Int, String) -> Unit)?) {
+        manualTranslationDiagnosticAction = action
+    }
     private var translationGeneration = 0L
     val hasManualTranslationAction: Boolean get() = manualTranslationAction != null
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
@@ -80,6 +85,12 @@ object PlayerLearningSubtitleState {
     }
 
     suspend fun translateManually(currentPositionMs: Long) {
+        manualTranslationDiagnosticAction?.invoke(
+            manualTranslationEnabled,
+            manualTranslationAction != null,
+            cues.size,
+            status.name,
+        )
         if (isTranslating) return
         if (!manualTranslationEnabled) {
             translationMessage = "当前字幕语言与插件配置的源语言不一致，无需翻译。"

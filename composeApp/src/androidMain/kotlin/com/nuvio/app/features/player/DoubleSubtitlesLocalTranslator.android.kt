@@ -387,6 +387,42 @@ internal object DoubleSubtitlesLocalTranslator {
         }.onFailure { Log.w(TAG, "Unable to persist embedded subtitle cache", it) }
     }
 
+    /** Shows the complete selection state at the manual-translation button entry point. */
+    fun showManualClickDiagnostic(
+        context: Context,
+        subtitleSource: String,
+        subtitleLanguage: String,
+        languageLookup: String,
+        translationEnabled: Boolean,
+        hasAction: Boolean,
+        cueCount: Int,
+        subtitleStatus: String,
+    ) {
+        val addon = AddonRepository.uiState.value.addons.firstOrNull { it.manifest?.id == ADDON_ID }
+        val manifestUrl = addon?.manifestUrl.orEmpty()
+        val segments = runCatching { URI(manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank) }
+            .getOrDefault(emptyList())
+        val configureIndex = segments.indexOfLast { it.equals("configure", ignoreCase = true) }
+        val configuredSource = segments.getOrNull(configureIndex + 1)
+        val configuredTarget = segments.getOrNull(configureIndex + 2)
+        val subtitleCode = normalizeLanguageCode(subtitleLanguage)
+        val configuredCode = configuredSource?.let(::normalizeLanguageCode)
+        val message = buildString {
+            appendLine("手动翻译点击诊断")
+            appendLine("字幕来源: $subtitleSource")
+            appendLine("字幕原始语言: ${subtitleLanguage.ifBlank { "<empty>" }}")
+            appendLine("语言识别: ${subtitleCode ?: "unknown"}（$languageLookup）")
+            appendLine("插件源语言: ${configuredSource ?: "未读取到"} (${configuredCode ?: "unknown"})")
+            appendLine("插件目标语言: ${configuredTarget ?: "未读取到"} (${configuredTarget?.let(::normalizeLanguageCode) ?: "unknown"})")
+            appendLine("允许翻译: $translationEnabled；翻译 action: $hasAction")
+            append("字幕条数: $cueCount；字幕状态: $subtitleStatus；语言比较: ${if (configuredCode != null && subtitleCode != null && configuredCode == subtitleCode) "MATCH" else "MISMATCH"}")
+        }
+        Log.i(TAG, message.replace('\n', ' '))
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     /**
      * Double Subtitles encodes its source/target language pair in the configured manifest path,
      * for example /configure/en/zh-CN/manifest.json. Embedded tracks are translated only when
