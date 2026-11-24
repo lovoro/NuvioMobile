@@ -114,6 +114,18 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun beginLoadingKeepsRegisteredManualTranslationActionAvailable() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, _, _ -> selectedCues }
+
+        PlayerLearningSubtitleState.beginLoading("OpenSubtitles.srt")
+
+        assertEquals(true, PlayerLearningSubtitleState.hasManualTranslationAction)
+        PlayerLearningSubtitleState.clear()
+        assertEquals(false, PlayerLearningSubtitleState.hasManualTranslationAction)
+    }
+
+    @Test
     fun preservesPartialBatchTranslationsWhenFullEmbeddedExtractionFinishes() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLoading()

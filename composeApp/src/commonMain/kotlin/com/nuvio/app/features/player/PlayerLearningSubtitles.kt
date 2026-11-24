@@ -169,7 +169,12 @@ object PlayerLearningSubtitleState {
     }
 
     fun beginLoading(subtitleName: String? = null) {
-        setManualTranslationAction(null)
+        // Loading a new cue batch does not own the translation action lifecycle.
+        // The player registers/replaces the action when a subtitle is selected; clearing it
+        // here can leave a successfully loaded Sidecar subtitle with no manual action.
+        translationGeneration += 1L
+        isTranslating = false
+        translationMessage = null
         subtitleName?.takeIf { it.isNotBlank() }?.let { loadingSubtitleName = it }
         cues = emptyList()
         prefetchedCues = emptyList()
