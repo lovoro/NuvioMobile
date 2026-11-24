@@ -35,6 +35,8 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -66,6 +68,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
@@ -95,6 +98,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     containerHeight: Dp,
 ) {
     val runtime = this
+    var showSubtitleAutomationSettingsDialog by remember { mutableStateOf(false) }
+    var bilingualMergeSwitch by remember { mutableStateOf(true) }
+    var automaticTranslationSwitch by remember { mutableStateOf(false) }
     val isInPip = rememberIsInPictureInPicture()
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
     val isEpisode = activeSeasonNumber != null && activeEpisodeNumber != null
@@ -436,6 +442,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         iconTint = Color(0xFF343A43),
                         showResizeModeAction = false,
                         expandAllActions = true,
+                        onSubtitleAutomationSettingsClick = { showSubtitleAutomationSettingsDialog = true },
                     )
                 },
                 modifier = Modifier
@@ -495,6 +502,56 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             panelVisible = showPartyPanel && !isInPip,
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
+    }
+
+    if (showSubtitleAutomationSettingsDialog) {
+        Dialog(onDismissRequest = { showSubtitleAutomationSettingsDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Text("字幕设置", style = MaterialTheme.typography.titleLarge)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("双语合并", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "自动读取并合并内嵌双语字幕",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = bilingualMergeSwitch,
+                            onCheckedChange = { bilingualMergeSwitch = it },
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("自动翻译", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "自动翻译字幕内容（暂未启用功能）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = automaticTranslationSwitch,
+                            onCheckedChange = { automaticTranslationSwitch = it },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

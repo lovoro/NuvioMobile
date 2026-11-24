@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -136,6 +137,7 @@ internal fun PlayerControlActions(
     showRuntime: Boolean = true,
     iconTint: Color = Color.White,
     expandAllActions: Boolean = false,
+    onSubtitleAutomationSettingsClick: (() -> Unit)? = null,
 ) {
     val actions = playerControlActions(
         playbackSnapshot = playbackSnapshot,
@@ -218,6 +220,17 @@ internal fun PlayerControlActions(
                         maxLines = 1,
                     )
                 }
+            }
+            if (onSubtitleAutomationSettingsClick != null) {
+                PlayerAction(
+                    description = "字幕设置",
+                    icon = Icons.Rounded.Settings,
+                    onClick = {
+                        onInteraction()
+                        onSubtitleAutomationSettingsClick()
+                    },
+                    tint = iconTint,
+                )
             }
         }
     }
