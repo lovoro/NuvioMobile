@@ -5,7 +5,14 @@ import android.util.Log
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -172,54 +179,63 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }
         if (current.isNotEmpty()) chunks += current
-        chunks.forEachIndexed { chunkIndex, chunk ->
-            runCatching {
-                val requestCues = JSONArray()
-                chunk.forEach { cue ->
-                    requestCues.put(JSONObject().put("id", cueIdentity(cue)).put("start", cue.startTimeMs).put("end", cue.endTimeMs).put("text", cue.text))
-                }
-                val batchId = sha256("$trackCacheKey|$chunkIndex|${chunk.joinToString("|") { cueIdentity(it) }}").take(32)
-                val requestBody = JSONObject().put("batchId", batchId).put("subtitles", requestCues).toString()
-                    .toRequestBody("application/json; charset=utf-8".toMediaType())
-                val request = Request.Builder().url(endpoint).header("Accept", "application/json").post(requestBody).build()
-                client.newCall(request).execute().use { response ->
-                    val responseText = response.body?.string().orEmpty()
-                    if (!response.isSuccessful) error("Double Subtitles returned HTTP ${response.code}")
-                    val payload = JSONObject(responseText)
-                    if (!payload.optBoolean("success", false)) error(payload.optString("error").ifBlank { "Translation request failed" })
-                    val result = payload.optJSONArray("translations") ?: JSONArray()
-                    var translatedInResponse = 0
-                    for (index in 0 until result.length()) {
-                        val item = result.optJSONObject(index) ?: continue
-                        val id = item.optString("id")
-                        val translatedText = item.optString("text").trim()
-                        if (id.isNotBlank() && translatedText.isNotBlank()) {
-                            val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
-                            if (sourceCue != null) {
-                                translations[id] = CachedSubtitle(
-                                    startTimeMs = sourceCue.startTimeMs,
-                                    endTimeMs = sourceCue.endTimeMs,
-                                    originalText = sourceCue.text,
-                                    translatedText = translatedText,
-                                )
-                                translatedInResponse++
+        // Run at most two network requests at once. Cache merging and UI publication are
+        // serialized so concurrent responses cannot overwrite one another's translations.
+        val requestSemaphore = Semaphore(2)
+        val resultMutex = Mutex()
+        coroutineScope {
+            chunks.mapIndexed { chunkIndex, chunk ->
+                async {
+                    requestSemaphore.withPermit {
+                        val batchStartedAt = System.nanoTime()
+                        runCatching {
+                            val requestCues = JSONArray()
+                            chunk.forEach { cue ->
+                                requestCues.put(JSONObject().put("id", cueIdentity(cue)).put("start", cue.startTimeMs).put("end", cue.endTimeMs).put("text", cue.text))
                             }
+                            val batchId = sha256("$trackCacheKey|$chunkIndex|${chunk.joinToString("|") { cueIdentity(it) }}").take(32)
+                            val requestBody = JSONObject().put("batchId", batchId).put("subtitles", requestCues).toString()
+                                .toRequestBody("application/json; charset=utf-8".toMediaType())
+                            val request = Request.Builder().url(endpoint).header("Accept", "application/json").post(requestBody).build()
+                            val batchTranslations = linkedMapOf<String, CachedSubtitle>()
+                            var translatedInResponse = 0
+                            client.newCall(request).execute().use { response ->
+                                val responseText = response.body?.string().orEmpty()
+                                if (!response.isSuccessful) error("Double Subtitles returned HTTP ${response.code}")
+                                val payload = JSONObject(responseText)
+                                if (!payload.optBoolean("success", false)) error(payload.optString("error").ifBlank { "Translation request failed" })
+                                val result = payload.optJSONArray("translations") ?: JSONArray()
+                                for (index in 0 until result.length()) {
+                                    val item = result.optJSONObject(index) ?: continue
+                                    val id = item.optString("id")
+                                    val translatedText = item.optString("text").trim()
+                                    if (id.isNotBlank() && translatedText.isNotBlank()) {
+                                        val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
+                                        if (sourceCue != null) {
+                                            batchTranslations[id] = CachedSubtitle(sourceCue.startTimeMs, sourceCue.endTimeMs, sourceCue.text, translatedText)
+                                            translatedInResponse++
+                                        }
+                                    }
+                                }
+                                if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
+                            }
+                            resultMutex.withLock {
+                                translations.putAll(batchTranslations)
+                                writeCache(cacheFile, translations.toMap(), configId)
+                                val translatedBatch = chunk.mapNotNull { cue ->
+                                    translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
+                                }
+                                if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
+                            }
+                            val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
+                            Log.i(TAG, "Translated embedded batch: index=${chunkIndex + 1}/${chunks.size} cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
+                        }.onFailure { error ->
+                            val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
+                            Log.e(TAG, "Embedded subtitle batch failed: index=${chunkIndex + 1}/${chunks.size} cues=${chunk.size} elapsedMs=$elapsedMs error=${error.message}", error)
                         }
                     }
-                    if (translatedInResponse == 0) {
-                        error("Translation API returned success but no usable translated cues")
-                    }
-                    Log.i(TAG, "Translation API returned $translatedInResponse translated cues")
                 }
-                writeCache(cacheFile, translations, configId)
-                val translatedBatch = chunk.mapNotNull { cue ->
-                    translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
-                }
-                if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
-                Log.i(TAG, "Translated embedded batch: cues=${chunk.size}")
-            }.onFailure { error ->
-                Log.e(TAG, "Embedded subtitle batch translation failed: ${error.message}", error)
-            }
+            }.awaitAll()
         }
         cues.map { cue ->
             val translated = translations[cueIdentity(cue)]?.translatedText ?: cue.translationText
