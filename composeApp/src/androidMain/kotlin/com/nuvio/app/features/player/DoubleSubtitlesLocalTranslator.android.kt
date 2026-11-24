@@ -45,8 +45,8 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    /** Reads the target language from /configure/{source}/{target}/manifest.json. */
-    suspend fun configuredTargetLanguage(context: Context): String? = withContext(Dispatchers.IO) {
+    /** Reads both language codes from /configure/{source}/{target}/manifest.json. */
+    suspend fun configuredLanguagePair(context: Context): Pair<String, String>? = withContext(Dispatchers.IO) {
         AddonRepository.initialize()
         val state = AddonRepository.uiState.first { current ->
             current.addons.any { it.manifest?.id == ADDON_ID } || current.addons.none { it.isRefreshing }
@@ -57,8 +57,20 @@ internal object DoubleSubtitlesLocalTranslator {
             URI(addon.manifestUrl.substringBefore("?")).path.orEmpty().split('/').filter(String::isNotBlank)
         }.getOrDefault(emptyList())
         val index = segments.indexOfLast { it.equals("configure", true) }
-        segments.getOrNull(index + 2)?.takeIf { normalizeLanguageCode(it) != null }
+        val source = segments.getOrNull(index + 1)?.takeIf { normalizeLanguageCode(it) != null }
+        val target = segments.getOrNull(index + 2)?.takeIf { normalizeLanguageCode(it) != null }
+        if (source == null || target == null) null else source to target
     }
+
+    suspend fun configuredTargetLanguage(context: Context): String? =
+        configuredLanguagePair(context)?.second
+
+    suspend fun isTargetLanguageAllowed(context: Context, subtitleLanguage: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val subtitleCode = normalizeLanguageCode(subtitleLanguage) ?: return@withContext false
+            val pair = configuredLanguagePair(context) ?: return@withContext false
+            normalizeLanguageCode(pair.second) == subtitleCode
+        }
 
     suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
         withContext(Dispatchers.IO) {

@@ -44,6 +44,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         url: String,
         headers: Map<String, String>,
         selectedTrackNumber: Int?,
+        targetTrackNumber: Int? = null,
         currentPositionMs: () -> Long,
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
@@ -53,7 +54,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         return withContext(Dispatchers.IO) {
             withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
-                    loadInternal(url, headers, selectedTrackNumber, currentPositionMs, onPartialCues)
+                    loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, currentPositionMs, onPartialCues)
                 } catch (_: Exception) {
                     LoadResult(emptyList(), false)
                 }
@@ -65,6 +66,7 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         url: String,
         headers: Map<String, String>,
         selectedTrack: Int,
+        targetTrack: Int?,
         currentPositionMs: () -> Long,
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
@@ -78,7 +80,10 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             ?: return LoadResult(emptyList(), false)
         val tracksBytes = elementBytes(initial, tracksElement, url, headers, budget)
             ?: return LoadResult(emptyList(), false)
-        val trackInfo = parseTrack(tracksBytes, selectedTrack) ?: return LoadResult(emptyList(), false)
+        val trackNumbers = listOfNotNull(selectedTrack, targetTrack?.takeIf { it > 0 }).toSet()
+        val trackInfos = parseTracks(tracksBytes, trackNumbers)
+        val sourceTrackInfo = trackInfos[selectedTrack] ?: return LoadResult(emptyList(), false)
+        val targetTrackInfo = targetTrack?.let(trackInfos::get)
         val scale = top.firstOrNull { it.id == ID_INFO }?.let {
             elementBytes(initial, it, url, headers, budget)?.let(::parseScale)
         } ?: DEFAULT_SCALE
@@ -153,12 +158,20 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                 complete = false
                 continue
             }
-            val decoded = MatroskaSubtitleTextParser.parseCluster(
+            // One Cluster HTTP range serves both configured language tracks.
+            val parsedTracks = MatroskaSubtitleTextParser.parseCluster(
                 cluster,
-                listOf(trackInfo),
+                listOfNotNull(sourceTrackInfo, targetTrackInfo),
                 scale,
-            )[selectedTrack].orEmpty()
-            val decodedCues = decoded.map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
+            )
+            val sourceCues = parsedTracks[selectedTrack].orEmpty()
+                .map { LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text) }
+            val targetCues = targetTrack?.let { number ->
+                parsedTracks[number].orEmpty().map {
+                    LearningSubtitleCue(it.startTimeMs, it.endTimeMs, it.text)
+                }
+            }.orEmpty()
+            val decodedCues = pairTargetCues(sourceCues, targetCues)
             result += decodedCues
 
             if (isPlaybackPriorityCluster) {
@@ -190,9 +203,31 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         )
     }
 
-    private fun parseTrack(bytes: ByteArray, wanted: Int): MatroskaSubtitleTextParser.Track? {
-        val root = readElement(bytes, 0) ?: return null
-        if (root.id != ID_TRACKS) return null
+    private fun pairTargetCues(
+        sourceCues: List<LearningSubtitleCue>,
+        targetCues: List<LearningSubtitleCue>,
+    ): List<LearningSubtitleCue> {
+        if (sourceCues.isEmpty() || targetCues.isEmpty()) return sourceCues
+        return sourceCues.map { source ->
+            val matched = targetCues.filter { target ->
+                val overlap = minOf(source.endTimeMs, target.endTimeMs) -
+                    maxOf(source.startTimeMs, target.startTimeMs)
+                overlap > 0L && target.startTimeMs <= source.endTimeMs + 1_500L &&
+                    target.endTimeMs >= source.startTimeMs - 1_500L
+            }.sortedBy { it.startTimeMs }
+            val joined = matched.map { it.text.trim() }.filter(String::isNotBlank).distinct()
+                .joinToString(" ")
+            if (joined.isBlank()) source else source.copy(translationText = joined)
+        }
+    }
+
+    private fun parseTracks(
+        bytes: ByteArray,
+        wanted: Set<Int>,
+    ): Map<Int, MatroskaSubtitleTextParser.Track> {
+        val root = readElement(bytes, 0) ?: return emptyMap()
+        if (root.id != ID_TRACKS) return emptyMap()
+        val result = linkedMapOf<Int, MatroskaSubtitleTextParser.Track>()
         for (entry in children(bytes, root.data, root.end).filter { it.id == ID_TRACK_ENTRY }) {
             var number = 0
             var type = 0L
@@ -206,13 +241,13 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                     ID_CODEC_PRIVATE -> codecPrivateText = utf8(bytes, child)
                 }
             }
-            if (number == wanted && type == 0x11L && codec in setOf("S_TEXT/UTF8", "S_TEXT/ASS", "S_TEXT/SSA")) {
+            if (number in wanted && type == 0x11L && codec in setOf("S_TEXT/UTF8", "S_TEXT/ASS", "S_TEXT/SSA")) {
                 val format = codecPrivateText.lineSequence().firstOrNull { it.trim().startsWith("Format:", true) }
                     ?.substringAfter(':')?.split(',')?.map(String::trim).orEmpty()
-                return MatroskaSubtitleTextParser.Track(number, codec, codecPrivateText, format)
+                result[number] = MatroskaSubtitleTextParser.Track(number, codec, codecPrivateText, format)
             }
         }
-        return null
+        return result
     }
 
     private fun parseCuePositions(bytes: ByteArray): List<Pair<Long, Long>> {

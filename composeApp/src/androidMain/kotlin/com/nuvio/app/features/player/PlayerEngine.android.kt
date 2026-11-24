@@ -850,7 +850,22 @@ private fun ExoPlayerSurface(
             }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
-            val targetLanguage = DoubleSubtitlesLocalTranslator.configuredTargetLanguage(context)
+            val configuredPair = DoubleSubtitlesLocalTranslator.configuredLanguagePair(context)
+            val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
+            val targetLanguage = languagePair?.second
+            // Select only a subtitle track matching the add-on configured target language.
+            val targetTrackNumber = if (languagePair != null) {
+                exoPlayer.currentTracks.groups.asSequence()
+                    .filter { it.type == C.TRACK_TYPE_TEXT }
+                    .map { it.mediaTrackGroup.getFormat(0) }
+                    .firstOrNull { candidate ->
+                        candidate.id?.toIntOrNull() != selectedTrackNumber &&
+                            DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
+                                context, candidate.language.orEmpty()
+                            )
+                    }?.id?.toIntOrNull()
+            } else null
+            Log.i(TAG, "Embedded bilingual track selection: configuredSource=${languagePair?.first} configuredTarget=${languagePair?.second} sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1}")
             val extraction = coroutineScope {
                 val translationScope = this
                 // Preserve extraction priority while allowing two network batches at once.
@@ -863,6 +878,7 @@ private fun ExoPlayerSurface(
                         url = sourceUrl,
                         headers = sanitizedSourceHeaders,
                         selectedTrackNumber = selectedTrackNumber,
+                        targetTrackNumber = targetTrackNumber,
                         currentPositionMs = { exoPlayer.currentPosition },
                         onPartialCues = { partialCues, isPlaybackPriority ->
                             if (
@@ -883,16 +899,14 @@ private fun ExoPlayerSurface(
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
-                                    val pairedCues = targetLanguage?.let {
-                                        PlayerEmbeddedSubtitleCapture.translationsFor(uniqueCues, it)
-                                    } ?: uniqueCues
+                                    val pairedCues = uniqueCues
                                     val readyFromEmbedded = pairedCues.count { !it.translationText.isNullOrBlank() }
                                     val needsGoogle = pairedCues.filter { it.translationText.isNullOrBlank() }
                                     // Publish source cues immediately; native matches already carry
                                     // translationText, while unmatched cues remain visible during Google fallback.
                                     PlayerLearningSubtitleState.mergePrefetched(pairedCues)
                                     if (readyFromEmbedded > 0) {
-                                        Log.i(TAG, "Embedded bilingual match: matched=${readyFromEmbedded} targetLanguage=${targetLanguage}")
+                                        Log.i(TAG, "Embedded bilingual match: matched=$readyFromEmbedded configuredTarget=$targetLanguage targetTrack=${targetTrackNumber ?: -1}")
                                     }
                                     if (sourceLanguageMatches && needsGoogle.isNotEmpty()) {
                                         PlayerLearningSubtitleState.isTranslating = true
