@@ -35,6 +35,8 @@ object PlayerLearningSubtitleState {
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
     var isTranslating by mutableStateOf(false)
+    var translationProgressPercent by mutableStateOf(0)
+        private set
     private var manualTranslationEnabled by mutableStateOf(true)
     var translationMessage by mutableStateOf<String?>(null)
         private set
@@ -91,6 +93,7 @@ object PlayerLearningSubtitleState {
         manualTranslationAction = action
         translationGeneration += 1L
         isTranslating = false
+        translationProgressPercent = 0
         translationMessage = null
     }
 
@@ -111,7 +114,22 @@ object PlayerLearningSubtitleState {
             return
         }
         val requestGeneration = translationGeneration
+        val validSource = source.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+        val totalCueCount = validSource.size
+        fun refreshProgress() {
+            if (totalCueCount <= 0) {
+                translationProgressPercent = 0
+                return
+            }
+            val translatedKeys = cues.asSequence()
+                .filter { !it.translationText.isNullOrBlank() }
+                .map { it.startTimeMs to it.text }
+                .toSet()
+            val completedCount = validSource.count { (it.startTimeMs to it.text) in translatedKeys }
+            translationProgressPercent = ((completedCount * 100) / totalCueCount).coerceIn(0, 99)
+        }
         isTranslating = true
+        refreshProgress()
         translationMessage = null
         try {
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
@@ -119,12 +137,16 @@ object PlayerLearningSubtitleState {
                 // this callback from that dispatcher. Compose state must be published on Main
                 // so each completed batch is observed immediately and reliably by the player UI.
                 withContext(Dispatchers.Main.immediate) {
-                    if (requestGeneration == translationGeneration) applyTranslations(batch)
+                    if (requestGeneration == translationGeneration) {
+                        applyTranslations(batch)
+                        refreshProgress()
+                    }
                 }
             }
             if (requestGeneration != translationGeneration) return
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
             applyTranslations(translated)
+            translationProgressPercent = 100
             translationMessage = null
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
@@ -132,7 +154,10 @@ object PlayerLearningSubtitleState {
                 showTranslationMessage(error.message?.takeIf(String::isNotBlank) ?: "翻译失败，请稍后重试。")
             }
         } finally {
-            if (requestGeneration == translationGeneration) isTranslating = false
+            if (requestGeneration == translationGeneration) {
+                isTranslating = false
+                translationProgressPercent = 0
+            }
         }
     }
 

@@ -1368,11 +1368,23 @@ private fun LearningSubtitlePanel(
                 contentAlignment = Alignment.Center,
             ) {
                 if (PlayerLearningSubtitleState.isTranslating) {
-                    CircularProgressIndicator(
+                    Box(
                         modifier = Modifier.size(19.dp),
-                        strokeWidth = 1.8.dp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(19.dp),
+                            strokeWidth = 1.8.dp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "${PlayerLearningSubtitleState.translationProgressPercent}%",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                 } else {
                     TranslationGlyph(
                         modifier = Modifier.size(24.dp),
