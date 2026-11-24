@@ -77,8 +77,19 @@ object PlayerLearningSubtitleState {
         return merged.values.sortedBy { it.startTimeMs }
     }
 
+    private fun refreshTranslationProgress() {
+        val validCues = cues.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+        if (validCues.isEmpty()) {
+            translationProgressPercent = 0
+            return
+        }
+        val completedCount = validCues.count { !it.translationText.isNullOrBlank() }
+        translationProgressPercent = ((completedCount * 100) / validCues.size).coerceIn(0, 100)
+    }
+
     private fun publishCombined(live: List<LearningSubtitleCue>) {
         cues = mergeCueLists(live, prefetchedCues)
+        refreshTranslationProgress()
     }
 
     fun updateManualTranslationEnabled(enabled: Boolean) {
@@ -93,7 +104,7 @@ object PlayerLearningSubtitleState {
         manualTranslationAction = action
         translationGeneration += 1L
         isTranslating = false
-        translationProgressPercent = 0
+        refreshTranslationProgress()
         translationMessage = null
     }
 
@@ -114,22 +125,8 @@ object PlayerLearningSubtitleState {
             return
         }
         val requestGeneration = translationGeneration
-        val validSource = source.filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
-        val totalCueCount = validSource.size
-        fun refreshProgress() {
-            if (totalCueCount <= 0) {
-                translationProgressPercent = 0
-                return
-            }
-            val translatedKeys = cues.asSequence()
-                .filter { !it.translationText.isNullOrBlank() }
-                .map { it.startTimeMs to it.text }
-                .toSet()
-            val completedCount = validSource.count { (it.startTimeMs to it.text) in translatedKeys }
-            translationProgressPercent = ((completedCount * 100) / totalCueCount).coerceIn(0, 99)
-        }
         isTranslating = true
-        refreshProgress()
+        refreshTranslationProgress()
         translationMessage = null
         try {
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
@@ -139,14 +136,12 @@ object PlayerLearningSubtitleState {
                 withContext(Dispatchers.Main.immediate) {
                     if (requestGeneration == translationGeneration) {
                         applyTranslations(batch)
-                        refreshProgress()
                     }
                 }
             }
             if (requestGeneration != translationGeneration) return
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
             applyTranslations(translated)
-            translationProgressPercent = 100
             translationMessage = null
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
@@ -156,7 +151,6 @@ object PlayerLearningSubtitleState {
         } finally {
             if (requestGeneration == translationGeneration) {
                 isTranslating = false
-                translationProgressPercent = 0
             }
         }
     }
@@ -164,6 +158,7 @@ object PlayerLearningSubtitleState {
     private fun applyTranslations(translatedCues: List<LearningSubtitleCue>) {
         cues = mergeCueLists(cues, translatedCues)
         prefetchedCues = mergeCueLists(prefetchedCues, translatedCues)
+        refreshTranslationProgress()
     }
 
     fun mergePrefetched(newCues: List<LearningSubtitleCue>) {
@@ -177,6 +172,7 @@ object PlayerLearningSubtitleState {
         setManualTranslationAction(null)
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
+        refreshTranslationProgress()
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
@@ -210,7 +206,10 @@ object PlayerLearningSubtitleState {
     fun setStatus(newStatus: LearningSubtitleStatus) {
         mutableStatus = newStatus
         if (newStatus != LearningSubtitleStatus.LOADING) loadingSubtitleName = null
-        if (newStatus != LearningSubtitleStatus.READY) cues = emptyList()
+        if (newStatus != LearningSubtitleStatus.READY) {
+            cues = emptyList()
+            refreshTranslationProgress()
+        }
     }
 
     fun beginLoading(subtitleName: String? = null) {
@@ -222,6 +221,7 @@ object PlayerLearningSubtitleState {
         translationMessage = null
         subtitleName?.takeIf { it.isNotBlank() }?.let { loadingSubtitleName = it }
         cues = emptyList()
+        refreshTranslationProgress()
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
@@ -253,6 +253,7 @@ object PlayerLearningSubtitleState {
         completedLiveCues.clear()
         activeLiveCues.clear()
         cues = mergeCueLists(newCues, translatedPartialCues)
+        refreshTranslationProgress()
         mutableStatus = if (cues.isEmpty()) LearningSubtitleStatus.UNSUPPORTED else LearningSubtitleStatus.READY
         loadingSubtitleName = null
     }
@@ -265,6 +266,7 @@ object PlayerLearningSubtitleState {
         completeExtractionLoaded = false
         prefetchedCues = emptyList()
         cues = emptyList()
+        refreshTranslationProgress()
         completedLiveCues.clear()
         activeLiveCues.clear()
         loadingSubtitleName = null

@@ -114,6 +114,37 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun countsCachedTranslationsWhenSubtitleTrackIsLoaded() {
+        PlayerLearningSubtitleState.clear()
+        val allCues = (0 until 164).map { index ->
+            cue(index * 2_000L, index * 2_000L + 1_500L, "Line $index")
+                .let { if (index < 60) it.copy(translationText = "译文 $index") else it }
+        }
+
+        PlayerLearningSubtitleState.update(allCues)
+
+        assertEquals(36, PlayerLearningSubtitleState.translationProgressPercent)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
+    fun addsNewlyTranslatedCuesToExistingCachedProgress() {
+        PlayerLearningSubtitleState.clear()
+        val allCues = (0 until 164).map { index ->
+            cue(index * 2_000L, index * 2_000L + 1_500L, "Line $index")
+                .let { if (index < 60) it.copy(translationText = "译文 $index") else it }
+        }
+        PlayerLearningSubtitleState.update(allCues)
+
+        PlayerLearningSubtitleState.mergePrefetched(
+            allCues.drop(60).take(20).map { it.copy(translationText = "新译文") },
+        )
+
+        assertEquals(48, PlayerLearningSubtitleState.translationProgressPercent)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun beginLoadingKeepsRegisteredManualTranslationActionAvailable() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, _, _ -> selectedCues }
