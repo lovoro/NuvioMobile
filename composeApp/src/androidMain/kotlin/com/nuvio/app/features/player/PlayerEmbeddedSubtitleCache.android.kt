@@ -21,6 +21,8 @@ internal object PlayerEmbeddedSubtitleCache {
     private const val BILINGUAL_MAGIC = 0x4E56424C
     private const val BILINGUAL_VERSION = 1
     private const val CONVERTER_VERSION = 1
+    // Prevent reuse of partial bilingual results produced by the previous matching strategy.
+    private const val MATCHING_VERSION = 2
     private const val MAX_TEXT_BYTES = 256 * 1024
     @Volatile private var appContext: Context? = null
 
@@ -98,7 +100,7 @@ internal object PlayerEmbeddedSubtitleCache {
             videoIdentity(url, headers) +
                 "|embedded-bilingual|$sourceTrackNumber|$targetTrackNumber" +
                 "|${normalizeLanguage(sourceLanguage)}|${normalizeLanguage(targetLanguage)}" +
-                "|converter:$CONVERTER_VERSION",
+                "|converter:$CONVERTER_VERSION|matching:$MATCHING_VERSION",
         )
     }
 

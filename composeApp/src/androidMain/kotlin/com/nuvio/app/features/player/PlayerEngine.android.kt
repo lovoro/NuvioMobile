@@ -901,76 +901,14 @@ private fun ExoPlayerSurface(
                 TAG,
                 "Embedded bilingual track selection: configuredSource=${languagePair.first} configuredTarget=${languagePair.second} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
             )
-            val extraction = coroutineScope {
-                val translationScope = this
-                // Preserve extraction priority while allowing two network batches at once.
-                // Semaphore acquisition is FIFO, so the near-playback batches stay ahead.
-                val translationSemaphore = Semaphore(2)
-                val translationJobs = mutableListOf<Job>()
-                val scheduledTranslationCueKeys = mutableSetOf<Pair<Long, String>>()
-                var cacheWriteJob: Job? = null
-                try {
-                    val result = MatroskaEmbeddedSubtitlePrefetcher.load(
-                        url = sourceUrl,
-                        headers = sanitizedSourceHeaders,
-                        selectedTrackNumber = selectedTrackNumber,
-                        targetTrackNumber = targetTrackNumber,
-                        targetLanguage = languagePair.second,
-                        currentPositionMs = { exoPlayer.currentPosition },
-                        onPartialCues = { partialCues, isPlaybackPriority ->
-                            if (
-                                partialCues.isNotEmpty() &&
-                                learningSubtitleSelectionGeneration == selectionGeneration &&
-                                learningSubtitlePrefetchTrackKey == trackKey &&
-                                learningSubtitleSelectionUrl == null &&
-                                selectedExternalSubtitleMimeType == null
-                            ) {
-                                // Reserve identities before launching work so overlapping Cluster
-                                // indexes cannot schedule the same cue more than once.
-                                val uniqueCues = synchronized(scheduledTranslationCueKeys) {
-                                    partialCues.filter { cue ->
-                                        // Overlapping Cluster windows may report the same cue with
-                                        // slightly different end timestamps. Use the same identity
-                                        // as the visible subtitle list so it is scheduled only once.
-                                        scheduledTranslationCueKeys.add(cue.startTimeMs to cue.text)
-                                    }
-                                }
-                                if (uniqueCues.isNotEmpty()) {
-                                    val pairedCues = uniqueCues.filter { !it.translationText.isNullOrBlank() }
-                                    if (pairedCues.isNotEmpty()) {
-                                        PlayerLearningSubtitleState.mergePrefetched(pairedCues)
-                                        val previousCacheWrite = cacheWriteJob
-                                        cacheWriteJob = translationScope.launch {
-                                            previousCacheWrite?.join()
-                                            if (
-                                                learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                learningSubtitlePrefetchTrackKey == trackKey &&
-                                                learningSubtitleSelectionUrl == null &&
-                                                selectedExternalSubtitleMimeType == null
-                                            ) {
-                                                PlayerEmbeddedSubtitleCache.appendBilingual(bilingualCacheKey, pairedCues)
-                                            }
-                                        }
-                                    }
-                                    Log.i(
-                                        TAG,
-                                        "Embedded bilingual merge result: matched=${pairedCues.size} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber",
-                                    )
-                                    Log.d(
-                                        TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background cue"} ready: cues=${pairedCues.size}",
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    translationJobs.joinAll()
-                    cacheWriteJob?.join()
-                    result
-                } finally {
-                    if (translationJobs.isNotEmpty()) PlayerLearningSubtitleState.isTranslating = false
-                }
-            }
+            val extraction = MatroskaEmbeddedSubtitlePrefetcher.load(
+                url = sourceUrl,
+                headers = sanitizedSourceHeaders,
+                selectedTrackNumber = selectedTrackNumber,
+                targetTrackNumber = targetTrackNumber,
+                targetLanguage = languagePair.second,
+                currentPositionMs = { exoPlayer.currentPosition },
+            )
             // A cancelled or superseded scan must never overwrite the currently selected track.
             if (
                 learningSubtitleSelectionGeneration != selectionGeneration ||
@@ -986,9 +924,10 @@ private fun ExoPlayerSurface(
                     PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, pairedExtractionCues)
                     PlayerLearningSubtitleState.update(pairedExtractionCues)
                 } else {
-                    // Partial bilingual cues were persisted batch-by-batch during extraction.
+                    // Keep provisional results visible, but never persist an incomplete pairing.
+                    // An unscanned Cluster may contain a better match for one of these cues.
                     PlayerLearningSubtitleState.mergePrefetched(pairedExtractionCues)
-                    Log.w(TAG, "Embedded subtitle extraction incomplete; kept incremental bilingual cache (cues=${pairedExtractionCues.size})")
+                    Log.w(TAG, "Embedded subtitle extraction incomplete; provisional pairs were not cached")
                 }
             } else {
                 Log.w(TAG, "Embedded subtitle extraction returned no cues for selected track=$selectedTrackNumber")
