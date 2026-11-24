@@ -198,6 +198,18 @@ internal fun PlayerControlActions(
                         icon = if (expanded) Icons.AutoMirrored.Rounded.KeyboardArrowLeft else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     )
                 }
+                if (onSubtitleAutomationSettingsClick != null) {
+                    PlayerAction(
+                        description = "字幕设置",
+                        icon = Icons.Rounded.Settings,
+                        onClick = {
+                            onInteraction()
+                            onSubtitleAutomationSettingsClick()
+                        },
+                        iconSize = 22.dp,
+                        tint = iconTint,
+                    )
+                }
             }
             if (showRuntime) {
                 Box(
@@ -220,17 +232,6 @@ internal fun PlayerControlActions(
                         maxLines = 1,
                     )
                 }
-            }
-            if (onSubtitleAutomationSettingsClick != null) {
-                PlayerAction(
-                    description = "字幕设置",
-                    icon = Icons.Rounded.Settings,
-                    onClick = {
-                        onInteraction()
-                        onSubtitleAutomationSettingsClick()
-                    },
-                    tint = iconTint,
-                )
             }
         }
     }
