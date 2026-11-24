@@ -1,10 +1,14 @@
 package com.nuvio.app.features.player
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.app.AlertDialog
 import android.util.Log
 import android.os.Handler
 import android.os.Looper
-import android.widget.Toast
+import android.widget.ScrollView
+import android.widget.TextView
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
@@ -417,9 +421,52 @@ internal object DoubleSubtitlesLocalTranslator {
             appendLine("允许翻译: $translationEnabled；翻译 action: $hasAction")
             append("字幕条数: $cueCount；字幕状态: $subtitleStatus；语言比较: ${if (configuredCode != null && subtitleCode != null && configuredCode == subtitleCode) "MATCH" else "MISMATCH"}")
         }
-        Log.i(TAG, message.replace('\n', ' '))
+        Log.i(TAG, "ManualTranslationDiagnostic\\n$message")
         Handler(Looper.getMainLooper()).post {
-            Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
+            val appContext = context.applicationContext
+            val density = appContext.resources.displayMetrics.density
+            val content = TextView(context).apply {
+                text = message
+                textSize = 15f
+                setTextIsSelectable(true)
+                setPadding(
+                    (20 * density).toInt(),
+                    (12 * density).toInt(),
+                    (20 * density).toInt(),
+                    (12 * density).toInt(),
+                )
+            }
+            val scroll = ScrollView(context).apply {
+                addView(
+                    content,
+                    ScrollView.LayoutParams(
+                        ScrollView.LayoutParams.MATCH_PARENT,
+                        ScrollView.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+                isFillViewport = true
+            }
+            val dialog = AlertDialog.Builder(context)
+                .setTitle("手动翻译点击诊断")
+                .setView(scroll)
+                .setPositiveButton("复制全部") { _, _ ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("字幕翻译诊断", message))
+                }
+                .setNegativeButton("关闭", null)
+                .create()
+            dialog.setOnShowListener {
+                val metrics = context.resources.displayMetrics
+                dialog.window?.setLayout(
+                    (metrics.widthPixels * 0.92f).toInt(),
+                    (metrics.heightPixels * 0.72f).toInt(),
+                )
+            }
+            dialog.show()
+            dialog.window?.setLayout(
+                (context.resources.displayMetrics.widthPixels * 0.92f).toInt(),
+                (context.resources.displayMetrics.heightPixels * 0.72f).toInt(),
+            )
         }
     }
 
