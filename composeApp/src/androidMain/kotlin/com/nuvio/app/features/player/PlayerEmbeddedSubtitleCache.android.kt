@@ -144,8 +144,8 @@ internal object PlayerEmbeddedSubtitleCache {
             }
         }
         val existing = readBilingual(key).orEmpty()
+        // Keep source cues even when the target track has no matching line.
         val merged = mergeLearningSubtitleCueLists(existing + cues)
-            .filter { !it.translationText.isNullOrBlank() }
         writeBilingual(key, merged, complete = false)
     }
 
@@ -159,9 +159,7 @@ internal object PlayerEmbeddedSubtitleCache {
             .distinctBy { it.startTimeMs to it.text }
             .sortedBy { it.startTimeMs }
             .toList()
-        if (uniqueCues.isEmpty() || uniqueCues.size > MAX_CUES ||
-            uniqueCues.none { !it.translationText.isNullOrBlank() }
-        ) return@withContext
+        if (uniqueCues.isEmpty() || uniqueCues.size > MAX_CUES) return@withContext
         val directory = cacheDirectory() ?: return@withContext
         runCatching {
             synchronized(directory.absolutePath.intern()) {

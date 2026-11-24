@@ -948,9 +948,10 @@ private fun ExoPlayerSurface(
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
-                                    val pairedCues = uniqueCues.filter { !it.translationText.isNullOrBlank() }
-                                    if (pairedCues.isNotEmpty()) {
-                                        PlayerLearningSubtitleState.mergePrefetched(pairedCues)
+                                    // Keep every extracted source cue, even when no target cue matched.
+                                    // An unmatched English line remains valid subtitle content.
+                                    if (uniqueCues.isNotEmpty()) {
+                                        PlayerLearningSubtitleState.mergePrefetched(uniqueCues)
                                         val previousCacheWrite = cacheWriteJob
                                         cacheWriteJob = translationScope.launch {
                                             previousCacheWrite?.join()
@@ -960,13 +961,13 @@ private fun ExoPlayerSurface(
                                                 learningSubtitleSelectionUrl == null &&
                                                 selectedExternalSubtitleMimeType == null
                                             ) {
-                                                PlayerEmbeddedSubtitleCache.appendBilingual(bilingualCacheKey, pairedCues)
+                                                PlayerEmbeddedSubtitleCache.appendBilingual(bilingualCacheKey, uniqueCues)
                                             }
                                         }
                                     }
                                     Log.i(
                                         TAG,
-                                        "Embedded bilingual merge result: matched=${pairedCues.size} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber",
+                                        "Embedded bilingual merge result: extracted=${uniqueCues.size} matched=${uniqueCues.count { !it.translationText.isNullOrBlank() }} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber",
                                     )
                                     Log.d(
                                         TAG,
@@ -992,15 +993,16 @@ private fun ExoPlayerSurface(
             ) {
                 return@launch
             }
-            val pairedExtractionCues = extraction.cues.filter { !it.translationText.isNullOrBlank() }
-            if (pairedExtractionCues.isNotEmpty()) {
+            // Keep the full source-language timeline; translation is optional for each cue.
+            val extractedSourceCues = extraction.cues
+            if (extractedSourceCues.isNotEmpty()) {
                 if (extraction.isComplete) {
-                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, pairedExtractionCues)
-                    PlayerLearningSubtitleState.update(pairedExtractionCues)
+                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, extractedSourceCues)
+                    PlayerLearningSubtitleState.update(extractedSourceCues)
                 } else {
-                    // Partial bilingual cues were persisted batch-by-batch during extraction.
-                    PlayerLearningSubtitleState.mergePrefetched(pairedExtractionCues)
-                    Log.w(TAG, "Embedded subtitle extraction incomplete; kept incremental bilingual cache (cues=${pairedExtractionCues.size})")
+                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, extractedSourceCues, complete = false)
+                    PlayerLearningSubtitleState.mergePrefetched(extractedSourceCues)
+                    Log.w(TAG, "Embedded subtitle extraction incomplete; kept incremental bilingual cache (cues=${extractedSourceCues.size}, matched=${extractedSourceCues.count { !it.translationText.isNullOrBlank() }})")
                 }
             } else {
                 Log.w(TAG, "Embedded subtitle extraction returned no cues for selected track=$selectedTrackNumber")
