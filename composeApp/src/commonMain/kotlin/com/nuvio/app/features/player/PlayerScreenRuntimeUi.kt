@@ -1274,7 +1274,9 @@ private fun LearningSubtitlePanel(
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         val loadingSubtitleName = PlayerLearningSubtitleState.loadingSubtitleName
-        val emptyMessage = when (PlayerLearningSubtitleState.status) {
+        val emptyMessage = if (PlayerLearningSubtitleState.isLoadingFromCache) {
+            "Loading from cache..."
+        } else when (PlayerLearningSubtitleState.status) {
             LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
             LearningSubtitleStatus.LOADING -> loadingSubtitleName?.let { "Loading subtitle: $it" }
                 ?: "Loading the selected subtitle..."
@@ -1285,6 +1287,7 @@ private fun LearningSubtitlePanel(
         }
         Text(
             text = when {
+                PlayerLearningSubtitleState.isLoadingFromCache -> "Language Learning · Loading from cache"
                 cues.isEmpty() && PlayerLearningSubtitleState.status == LearningSubtitleStatus.LOADING ->
                     "Language Learning · Loading: ${loadingSubtitleName ?: "subtitle"}"
                 cues.isEmpty() -> "Language Learning · Subtitles"

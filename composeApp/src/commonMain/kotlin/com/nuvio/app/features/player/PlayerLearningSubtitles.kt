@@ -81,6 +81,12 @@ object PlayerLearningSubtitleState {
     val status: LearningSubtitleStatus get() = mutableStatus
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
+    var isLoadingFromCache by mutableStateOf(false)
+        private set
+
+    fun setLoadingFromCache(loading: Boolean) {
+        isLoadingFromCache = loading
+    }
     var isTranslating by mutableStateOf(false)
     var translationProgressPercent by mutableStateOf(0)
         private set
