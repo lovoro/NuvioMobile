@@ -85,6 +85,19 @@ internal object DoubleSubtitlesLocalTranslator {
             matchesConfiguredSourceLanguage(addon.manifestUrl, sourceLanguage)
         }
 
+    /** Returns the reason shown when manual translation is unavailable. */
+    suspend fun manualTranslationBlockMessage(context: Context, sourceLanguage: String): String? =
+        withContext(Dispatchers.IO) {
+            val pair = configuredLanguagePair(context)
+                ?: return@withContext "未检测到有效插件，请检查插件配置。"
+            val sourceCode = normalizeLanguageCode(sourceLanguage)
+            if (sourceCode != null && sourceCode == normalizeLanguageCode(pair.first)) {
+                null
+            } else {
+                "当前字幕语言与插件配置的源语言不一致，无需翻译。"
+            }
+        }
+
     suspend fun translate(
         context: Context,
         trackCacheKey: String,

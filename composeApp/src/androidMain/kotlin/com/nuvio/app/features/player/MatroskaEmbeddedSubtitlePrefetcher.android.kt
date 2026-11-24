@@ -209,12 +209,36 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     ): List<LearningSubtitleCue> {
         if (sourceCues.isEmpty() || targetCues.isEmpty()) return sourceCues
         return sourceCues.map { source ->
-            val matched = targetCues.filter { target ->
-                val overlap = minOf(source.endTimeMs, target.endTimeMs) -
+            // Prefer every target cue that overlaps the source interval. If subtitle tracks
+            // have a small timestamp offset and no strict overlap, pair only the nearest cue
+            // within the tolerance instead of rejecting the translation track entirely.
+            val overlapping = targetCues.filter { target ->
+                minOf(source.endTimeMs, target.endTimeMs) >
                     maxOf(source.startTimeMs, target.startTimeMs)
-                overlap > 0L && target.startTimeMs <= source.endTimeMs + 1_500L &&
-                    target.endTimeMs >= source.startTimeMs - 1_500L
-            }.sortedBy { it.startTimeMs }
+            }
+            val matched = if (overlapping.isNotEmpty()) {
+                overlapping
+            } else {
+                val nearest = targetCues.minByOrNull { target ->
+                    when {
+                        target.endTimeMs < source.startTimeMs ->
+                            source.startTimeMs - target.endTimeMs
+                        target.startTimeMs > source.endTimeMs ->
+                            target.startTimeMs - source.endTimeMs
+                        else -> 0L
+                    }
+                }
+                val gap = nearest?.let { target ->
+                    when {
+                        target.endTimeMs < source.startTimeMs ->
+                            source.startTimeMs - target.endTimeMs
+                        target.startTimeMs > source.endTimeMs ->
+                            target.startTimeMs - source.endTimeMs
+                        else -> 0L
+                    }
+                }
+                if (nearest != null && gap != null && gap <= 1_500L) listOf(nearest) else emptyList()
+            }
             val joined = matched.map { it.text.trim() }.filter(String::isNotBlank).distinct()
                 .joinToString(" ")
             if (joined.isBlank()) source else source.copy(translationText = joined)

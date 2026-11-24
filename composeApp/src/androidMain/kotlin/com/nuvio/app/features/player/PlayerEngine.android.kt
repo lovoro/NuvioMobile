@@ -783,11 +783,13 @@ private fun ExoPlayerSurface(
         if (selectedTrackNumber == null) {
             Log.w(TAG, "Skipping Matroska extraction: embedded track has no numeric TrackNumber (format.id=${format.id}); manual translation remains available for captured cues")
             coroutineScope.launch {
-                val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(context, format.language.orEmpty())
+                val blockedMessage = DoubleSubtitlesLocalTranslator.manualTranslationBlockMessage(
+                    context, format.language.orEmpty()
+                )
                 if (
                     learningSubtitleSelectionGeneration == selectionGeneration &&
                     learningSubtitlePrefetchTrackKey == trackKey
-                ) PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                ) PlayerLearningSubtitleState.updateManualTranslationEnabled(blockedMessage == null, blockedMessage)
             }
             return
         }
@@ -799,14 +801,21 @@ private fun ExoPlayerSurface(
         }
         Log.d(TAG, "Starting embedded subtitle prefetch for track=$selectedTrackNumber")
         learningSubtitleLoadJob = coroutineScope.launch {
-            val sourceLanguageMatches = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
-                context,
-                format.language.orEmpty(),
-            )
+            val configuredPair = DoubleSubtitlesLocalTranslator.configuredLanguagePair(context)
+            val sourceLanguageMatches = configuredPair != null &&
+                DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(context, format.language.orEmpty())
+            val manualTranslationBlockMessage = when {
+                configuredPair == null -> "未检测到有效插件，请检查插件配置。"
+                !sourceLanguageMatches -> "当前字幕语言与插件配置的源语言不一致，无需翻译。"
+                else -> null
+            }
             if (
                 learningSubtitleSelectionGeneration == selectionGeneration &&
                 learningSubtitlePrefetchTrackKey == trackKey
-            ) PlayerLearningSubtitleState.updateManualTranslationEnabled(sourceLanguageMatches)
+            ) PlayerLearningSubtitleState.updateManualTranslationEnabled(
+                manualTranslationBlockMessage == null,
+                manualTranslationBlockMessage,
+            )
             val cachedCues = try {
                 PlayerEmbeddedSubtitleCache.read(cacheKey)
             } catch (error: Throwable) {
@@ -836,22 +845,30 @@ private fun ExoPlayerSurface(
                 Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-            val configuredPair = DoubleSubtitlesLocalTranslator.configuredLanguagePair(context)
             val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
-            val targetLanguage = languagePair?.second
-            // Select only a subtitle track matching the add-on configured target language.
-            val targetTrackNumber = if (languagePair != null) {
-                exoPlayer.currentTracks.groups.asSequence()
-                    .filter { it.type == C.TRACK_TYPE_TEXT }
-                    .map { it.mediaTrackGroup.getFormat(0) }
-                    .firstOrNull { candidate ->
-                        candidate.id?.toIntOrNull() != selectedTrackNumber &&
-                            DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
-                                context, candidate.language.orEmpty()
-                            )
-                    }?.id?.toIntOrNull()
+            // Inspect every subtitle format in every text group. Media3 can place multiple
+            // language tracks in one TrackGroup; checking only format 0 silently misses them.
+            val availableTextTracks = exoPlayer.currentTracks.groups.asSequence()
+                .filter { it.type == C.TRACK_TYPE_TEXT }
+                .flatMap { group ->
+                    (0 until group.length).asSequence().map(group::getTrackFormat)
+                }
+                .toList()
+            val targetFormat = if (languagePair != null) {
+                availableTextTracks.firstOrNull { candidate ->
+                    val candidateTrackNumber = candidate.id?.toIntOrNull()
+                    candidateTrackNumber != null &&
+                        candidateTrackNumber != selectedTrackNumber &&
+                        DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
+                            context, candidate.language.orEmpty()
+                        )
+                }
             } else null
-            Log.i(TAG, "Embedded bilingual track selection: configuredSource=${languagePair?.first} configuredTarget=${languagePair?.second} sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1}")
+            val targetTrackNumber = targetFormat?.id?.toIntOrNull()
+            Log.i(
+                TAG,
+                "Embedded bilingual track selection: configuredSource=${languagePair?.first} configuredTarget=${languagePair?.second} sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1} availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
+            )
             val extraction = coroutineScope {
                 val translationScope = this
                 // Preserve extraction priority while allowing two network batches at once.
@@ -974,7 +991,7 @@ private fun ExoPlayerSurface(
                         // Keep manual translation disabled until the existing cache has been
                         // restored. Otherwise a fast tap can start a second translation while
                         // the initial cache restore is still publishing its results.
-                        val translationAllowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                        val translationBlockMessage = DoubleSubtitlesLocalTranslator.manualTranslationBlockMessage(
                             context,
                             selectedSourceLanguage,
                         )
@@ -983,7 +1000,10 @@ private fun ExoPlayerSurface(
                             sidecarControllerRef?.activeSidecarSubtitleKey == selectedUrl
                         ) {
                             PlayerLearningSubtitleState.update(restored)
-                            PlayerLearningSubtitleState.updateManualTranslationEnabled(translationAllowed)
+                            PlayerLearningSubtitleState.updateManualTranslationEnabled(
+                                translationBlockMessage == null,
+                                translationBlockMessage,
+                            )
                         }
                     }
                 }
@@ -1561,12 +1581,15 @@ private fun ExoPlayerSurface(
                             val cacheKey = "external|$sourceUrl|$externalTrackKey"
                             PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                             coroutineScope.launch {
-                                val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                                val blockedMessage = DoubleSubtitlesLocalTranslator.manualTranslationBlockMessage(
                                     context,
                                     selectedFormat?.language.orEmpty(),
                                 )
                                 if (learningSubtitleSelectionGeneration == selectionGeneration) {
-                                    PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                                    PlayerLearningSubtitleState.updateManualTranslationEnabled(
+                                        blockedMessage == null,
+                                        blockedMessage,
+                                    )
                                 }
                             }
                             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
@@ -1620,11 +1643,16 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                     val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
                     coroutineScope.launch {
-                        val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+                        val blockedMessage = DoubleSubtitlesLocalTranslator.manualTranslationBlockMessage(
                             context,
                             selectedSubtitleLanguage,
                         )
-                        if (learningSubtitleSelectionUrl == url) PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                        if (learningSubtitleSelectionUrl == url) {
+                            PlayerLearningSubtitleState.updateManualTranslationEnabled(
+                                blockedMessage == null,
+                                blockedMessage,
+                            )
+                        }
                     }
                     val learningSubtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
                     PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
@@ -2455,12 +2483,15 @@ private class NuvioLibmpvView(
         PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
         val selectedSubtitleLanguage = currentExternalSubtitles.firstOrNull { it.url == url }?.language.orEmpty()
         scope.launch {
-            val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
+            val blockedMessage = DoubleSubtitlesLocalTranslator.manualTranslationBlockMessage(
                 context,
                 selectedSubtitleLanguage,
             )
             if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
-                PlayerLearningSubtitleState.updateManualTranslationEnabled(allowed)
+                PlayerLearningSubtitleState.updateManualTranslationEnabled(
+                    blockedMessage == null,
+                    blockedMessage,
+                )
             }
         }
         val headers = currentExternalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()

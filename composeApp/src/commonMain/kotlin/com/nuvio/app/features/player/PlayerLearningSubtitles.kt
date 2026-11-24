@@ -38,6 +38,7 @@ object PlayerLearningSubtitleState {
     var translationProgressPercent by mutableStateOf(0)
         private set
     private var manualTranslationEnabled by mutableStateOf(true)
+    private var manualTranslationDisabledMessage by mutableStateOf<String?>(null)
     var translationMessage by mutableStateOf<String?>(null)
         private set
     var translationMessageGeneration by mutableStateOf(0L)
@@ -92,8 +93,9 @@ object PlayerLearningSubtitleState {
         refreshTranslationProgress()
     }
 
-    fun updateManualTranslationEnabled(enabled: Boolean) {
+    fun updateManualTranslationEnabled(enabled: Boolean, disabledMessage: String? = null) {
         manualTranslationEnabled = enabled
+        manualTranslationDisabledMessage = if (enabled) null else disabledMessage
         if (!enabled) {
             isTranslating = false
             translationMessage = null
@@ -111,7 +113,10 @@ object PlayerLearningSubtitleState {
     suspend fun translateManually(currentPositionMs: Long) {
         if (isTranslating) return
         if (!manualTranslationEnabled) {
-            showTranslationMessage("当前字幕语言与插件配置的源语言不一致，无需翻译。")
+            showTranslationMessage(
+                manualTranslationDisabledMessage
+                    ?: "当前字幕语言与插件配置的源语言不一致，无需翻译。"
+            )
             return
         }
         val action = manualTranslationAction
@@ -261,6 +266,7 @@ object PlayerLearningSubtitleState {
     fun clear() {
         setManualTranslationAction(null)
         manualTranslationEnabled = true
+        manualTranslationDisabledMessage = null
         translationMessage = null
         isTranslating = false
         completeExtractionLoaded = false
