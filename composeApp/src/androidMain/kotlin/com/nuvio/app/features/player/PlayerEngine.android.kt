@@ -827,29 +827,15 @@ private fun ExoPlayerSurface(
                 }
                 return@launch
             }
+            // Always rescan Matroska Tracks/Clusters while validating bilingual merging.
+            // A previous single-language BIN cache must not short-circuit discovery of the
+            // configured target track. Manual translation remains available through the action.
             if (!cachedCues.isNullOrEmpty()) {
-                var cacheRestored = false
-                try {
-                    // Restore persisted translation pairs locally; do not let cache misses
-                    // trigger network translation before the cached track is published.
-                    val restoredCues = DoubleSubtitlesLocalTranslator.restoreCachedTranslations(
-                        context,
-                        cacheKey,
-                        cachedCues,
-                        requiredSourceLanguage = format.language.orEmpty(),
-                    )
-                    if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey) {
-                        PlayerLearningSubtitleState.update(restoredCues)
-                        cacheRestored = true
-                    }
-                } finally {
-                    finishEmbeddedSubtitleCacheLookup(useCachedTrack = cacheRestored)
-                }
-                Log.i(TAG, "Embedded subtitle cache hit: track=$selectedTrackNumber cues=${cachedCues.size}")
-                return@launch
+                Log.i(TAG, "Embedded subtitle cache bypassed for bilingual merge verification: track=$selectedTrackNumber cues=${cachedCues.size}")
+            } else {
+                Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-            Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
             val configuredPair = DoubleSubtitlesLocalTranslator.configuredLanguagePair(context)
             val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
             val targetLanguage = languagePair?.second
@@ -901,42 +887,18 @@ private fun ExoPlayerSurface(
                                 if (uniqueCues.isNotEmpty()) {
                                     val pairedCues = uniqueCues
                                     val readyFromEmbedded = pairedCues.count { !it.translationText.isNullOrBlank() }
-                                    val needsGoogle = pairedCues.filter { it.translationText.isNullOrBlank() }
-                                    // Publish source cues immediately; native matches already carry
-                                    // translationText, while unmatched cues remain visible during Google fallback.
+                                    val unmatched = pairedCues.size - readyFromEmbedded
+                                    // This pass verifies native bilingual track pairing only.
+                                    // Never start automatic Google translation; users can still
+                                    // invoke the existing manual translation action when desired.
                                     PlayerLearningSubtitleState.mergePrefetched(pairedCues)
-                                    if (readyFromEmbedded > 0) {
-                                        Log.i(TAG, "Embedded bilingual match: matched=$readyFromEmbedded configuredTarget=$targetLanguage targetTrack=${targetTrackNumber ?: -1}")
-                                    }
-                                    if (sourceLanguageMatches && needsGoogle.isNotEmpty()) {
-                                        PlayerLearningSubtitleState.isTranslating = true
-                                        translationJobs += translationScope.launch {
-                                            translationSemaphore.withPermit {
-                                                if (
-                                                    learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                    learningSubtitlePrefetchTrackKey == trackKey &&
-                                                    learningSubtitleSelectionUrl == null &&
-                                                    selectedExternalSubtitleMimeType == null
-                                                ) {
-                                                    val translated = DoubleSubtitlesLocalTranslator.translate(
-                                                        context,
-                                                        cacheKey,
-                                                        needsGoogle,
-                                                        requiredSourceLanguage = format.language.orEmpty(),
-                                                    )
-                                                    if (
-                                                        learningSubtitleSelectionGeneration == selectionGeneration &&
-                                                        learningSubtitlePrefetchTrackKey == trackKey &&
-                                                        learningSubtitleSelectionUrl == null &&
-                                                        selectedExternalSubtitleMimeType == null
-                                                    ) PlayerLearningSubtitleState.mergePrefetched(translated)
-                                                }
-                                            }
-                                        }
-                                    }
+                                    Log.i(
+                                        TAG,
+                                        "Embedded bilingual merge result: matched=$readyFromEmbedded unmatched=$unmatched sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1}",
+                                    )
                                     Log.d(
                                         TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=${readyFromEmbedded} googleFallback=${needsGoogle.size}",
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=$readyFromEmbedded",
                                     )
                                 }
                             }
