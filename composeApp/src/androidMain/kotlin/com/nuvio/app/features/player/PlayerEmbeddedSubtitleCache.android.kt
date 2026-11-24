@@ -18,6 +18,9 @@ internal object PlayerEmbeddedSubtitleCache {
     private const val MAGIC = 0x4E565343
     private const val VERSION = 1
     private const val MAX_CUES = 20_000
+    private const val BILINGUAL_MAGIC = 0x4E56424C
+    private const val BILINGUAL_VERSION = 1
+    private const val CONVERTER_VERSION = 1
     private const val MAX_TEXT_BYTES = 256 * 1024
     @Volatile private var appContext: Context? = null
 
@@ -77,6 +80,113 @@ internal object PlayerEmbeddedSubtitleCache {
 
     fun cacheKey(url: String, headers: Map<String, String>, trackKey: String): String =
         sha256(videoIdentity(url, headers) + "|" + trackKey)
+
+    /**
+     * Separate identity for the official embedded bilingual merge. Track numbers, configured
+     * languages, and the converter version prevent reuse after a track/configuration change.
+     */
+    fun bilingualCacheKey(
+        url: String,
+        headers: Map<String, String>,
+        sourceTrackNumber: Int,
+        targetTrackNumber: Int,
+        sourceLanguage: String,
+        targetLanguage: String,
+    ): String {
+        fun normalizeLanguage(value: String): String = value.trim().replace('_', '-').lowercase()
+        return sha256(
+            videoIdentity(url, headers) +
+                "|embedded-bilingual|$sourceTrackNumber|$targetTrackNumber" +
+                "|${normalizeLanguage(sourceLanguage)}|${normalizeLanguage(targetLanguage)}" +
+                "|converter:$CONVERTER_VERSION",
+        )
+    }
+
+    suspend fun readBilingual(key: String): List<LearningSubtitleCue>? = withContext(Dispatchers.IO) {
+        val directory = cacheDirectory() ?: return@withContext null
+        readBilingualCueFile(File(directory, "$key.bilingual.bin"))
+    }
+
+    suspend fun writeBilingual(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
+        val uniqueCues = cues.asSequence()
+            .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
+            .distinctBy { it.startTimeMs to it.text }
+            .sortedBy { it.startTimeMs }
+            .toList()
+        if (uniqueCues.isEmpty() || uniqueCues.size > MAX_CUES ||
+            uniqueCues.none { !it.translationText.isNullOrBlank() }
+        ) return@withContext
+        val directory = cacheDirectory() ?: return@withContext
+        runCatching {
+            synchronized(directory.absolutePath.intern()) {
+                val target = File(directory, "$key.bilingual.bin")
+                if (!sameBilingualCues(readBilingualCueFile(target), uniqueCues)) {
+                    val temporary = File(directory, target.name + ".tmp")
+                    DataOutputStream(BufferedOutputStream(temporary.outputStream())).use { output ->
+                        output.writeInt(BILINGUAL_MAGIC)
+                        output.writeInt(BILINGUAL_VERSION)
+                        output.writeInt(uniqueCues.size)
+                        uniqueCues.forEach { cue ->
+                            val sourceBytes = cue.text.toByteArray(Charsets.UTF_8)
+                            val translatedBytes = cue.translationText.orEmpty().toByteArray(Charsets.UTF_8)
+                            require(sourceBytes.size in 1..MAX_TEXT_BYTES)
+                            require(translatedBytes.size <= MAX_TEXT_BYTES)
+                            output.writeLong(cue.startTimeMs)
+                            output.writeLong(cue.endTimeMs)
+                            output.writeInt(sourceBytes.size)
+                            output.write(sourceBytes)
+                            output.writeInt(translatedBytes.size)
+                            if (translatedBytes.isNotEmpty()) output.write(translatedBytes)
+                        }
+                    }
+                    if (!temporary.renameTo(target)) {
+                        temporary.delete()
+                        error("Unable to finalize bilingual subtitle cache")
+                    }
+                }
+                Log.i(TAG, "Saved embedded bilingual cache: id=$key cues=${uniqueCues.size} matched=${uniqueCues.count { !it.translationText.isNullOrBlank() }} bytes=${target.length()}")
+            }
+        }.onFailure { Log.w(TAG, "Unable to save embedded bilingual cache", it) }
+    }
+
+    private fun readBilingualCueFile(file: File): List<LearningSubtitleCue>? {
+        if (!file.isFile || file.length() <= 0L) return null
+        return runCatching {
+            DataInputStream(BufferedInputStream(file.inputStream())).use { input ->
+                if (input.readInt() != BILINGUAL_MAGIC || input.readInt() != BILINGUAL_VERSION) return@use null
+                val count = input.readInt()
+                if (count !in 1..MAX_CUES) return@use null
+                val cues = ArrayList<LearningSubtitleCue>(count)
+                repeat(count) {
+                    val start = input.readLong()
+                    val end = input.readLong()
+                    val sourceLength = input.readInt()
+                    if (sourceLength !in 1..MAX_TEXT_BYTES) return@use null
+                    val sourceBytes = ByteArray(sourceLength)
+                    input.readFully(sourceBytes)
+                    val translatedLength = input.readInt()
+                    if (translatedLength !in 0..MAX_TEXT_BYTES) return@use null
+                    val translatedBytes = ByteArray(translatedLength)
+                    if (translatedLength > 0) input.readFully(translatedBytes)
+                    val sourceText = sourceBytes.toString(Charsets.UTF_8)
+                    val translatedText = translatedBytes.toString(Charsets.UTF_8).takeIf(String::isNotBlank)
+                    if (sourceText.isNotBlank() && end > start) {
+                        cues += LearningSubtitleCue(start, end, sourceText, translatedText)
+                    }
+                }
+                cues.asSequence().distinctBy { it.startTimeMs to it.text }.sortedBy { it.startTimeMs }
+                    .toList().takeIf { it.isNotEmpty() && it.any { cue -> !cue.translationText.isNullOrBlank() } }
+            }
+        }.onFailure { Log.w(TAG, "Unable to read embedded bilingual cache: ${file.name}", it) }.getOrNull()
+    }
+
+    private fun sameBilingualCues(first: List<LearningSubtitleCue>?, second: List<LearningSubtitleCue>): Boolean =
+        first != null && first.size == second.size && first.indices.all { index ->
+            first[index].startTimeMs == second[index].startTimeMs &&
+                first[index].endTimeMs == second[index].endTimeMs &&
+                first[index].text == second[index].text &&
+                first[index].translationText == second[index].translationText
+        }
 
     suspend fun read(key: String): List<LearningSubtitleCue>? = withContext(Dispatchers.IO) {
         val directory = cacheDirectory() ?: return@withContext null

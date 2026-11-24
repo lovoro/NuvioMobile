@@ -862,22 +862,29 @@ private fun ExoPlayerSurface(
                 }
                 return@launch
             }
-            val cachedCues = try {
-                PlayerEmbeddedSubtitleCache.read(cacheKey)
+            val bilingualCacheKey = PlayerEmbeddedSubtitleCache.bilingualCacheKey(
+                url = sourceUrl,
+                headers = sanitizedSourceHeaders,
+                sourceTrackNumber = selectedTrackNumber,
+                targetTrackNumber = targetTrackNumber,
+                sourceLanguage = languagePair.first,
+                targetLanguage = languagePair.second,
+            )
+            val cachedBilingualCues = try {
+                PlayerEmbeddedSubtitleCache.readBilingual(bilingualCacheKey)
             } catch (error: Throwable) {
                 if (learningSubtitleSelectionGeneration == selectionGeneration) {
                     finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
                 }
                 throw error
             }
-            // Always rescan Matroska Tracks/Clusters while validating bilingual merging.
-            // A previous single-language BIN cache must not short-circuit discovery of the
-            // configured target track. Manual translation remains available through the action.
-            if (!cachedCues.isNullOrEmpty()) {
-                Log.i(TAG, "Embedded subtitle cache bypassed for bilingual merge verification: track=$selectedTrackNumber cues=${cachedCues.size}")
-            } else {
-                Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
+            if (!cachedBilingualCues.isNullOrEmpty()) {
+                Log.i(TAG, "Embedded bilingual cache hit: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber cues=${cachedBilingualCues.size}")
+                PlayerLearningSubtitleState.update(cachedBilingualCues)
+                finishEmbeddedSubtitleCacheLookup(useCachedTrack = true)
+                return@launch
             }
+            Log.i(TAG, "Embedded bilingual cache miss: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber")
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.i(
                 TAG,
@@ -953,7 +960,7 @@ private fun ExoPlayerSurface(
             }
             if (extraction.cues.isNotEmpty()) {
                 if (extraction.isComplete) {
-                    PlayerEmbeddedSubtitleCache.write(cacheKey, extraction.cues)
+                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, extraction.cues)
                     PlayerLearningSubtitleState.update(extraction.cues)
                 } else {
                     // An incomplete range scan must not stop Media3's live fallback.
