@@ -826,6 +826,8 @@ private fun ExoPlayerSurface(
                 )
                 return@launch
             }
+            // Suppress source-only output while locating the configured native target track.
+            PlayerEmbeddedSubtitleCapture.beginTargetTrackLookup(languagePair.second)
             // Inspect every subtitle format in every text group. Media3 can place multiple
             // language tracks in one TrackGroup; checking only format 0 silently misses them.
             val availableTextTracks = exoPlayer.currentTracks.groups.asSequence()
@@ -882,13 +884,19 @@ private fun ExoPlayerSurface(
                 throw error
             }
             if (!cachedBilingualCues.isNullOrEmpty()) {
-                Log.i(TAG, "Embedded bilingual cache hit: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber cues=${cachedBilingualCues.size}")
+                val cacheComplete = PlayerEmbeddedSubtitleCache.isBilingualComplete(bilingualCacheKey)
+                Log.i(
+                    TAG,
+                    "Embedded bilingual cache ${if (cacheComplete) "hit" else "partial hit"}: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber cues=${cachedBilingualCues.size}",
+                )
                 PlayerLearningSubtitleState.update(cachedBilingualCues)
                 finishEmbeddedSubtitleCacheLookup(useCachedTrack = true)
-                return@launch
+                if (cacheComplete) return@launch
+                Log.i(TAG, "Resuming embedded bilingual extraction from partial cache")
+            } else {
+                Log.i(TAG, "Embedded bilingual cache miss: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber")
+                finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             }
-            Log.i(TAG, "Embedded bilingual cache miss: sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber")
-            finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.i(
                 TAG,
                 "Embedded bilingual track selection: configuredSource=${languagePair.first} configuredTarget=${languagePair.second} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
@@ -900,6 +908,7 @@ private fun ExoPlayerSurface(
                 val translationSemaphore = Semaphore(2)
                 val translationJobs = mutableListOf<Job>()
                 val scheduledTranslationCueKeys = mutableSetOf<Pair<Long, String>>()
+                var cacheWriteJob: Job? = null
                 try {
                     val result = MatroskaEmbeddedSubtitlePrefetcher.load(
                         url = sourceUrl,
@@ -927,26 +936,36 @@ private fun ExoPlayerSurface(
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
-                                    val pairedCues = uniqueCues
-                                    val readyFromEmbedded = pairedCues.count { !it.translationText.isNullOrBlank() }
-                                    val unmatched = pairedCues.size - readyFromEmbedded
-                                    // This pass verifies native bilingual track pairing only.
-                                    // Never start automatic Google translation; users can still
-                                    // invoke the existing manual translation action when desired.
-                                    PlayerLearningSubtitleState.mergePrefetched(pairedCues)
+                                    val pairedCues = uniqueCues.filter { !it.translationText.isNullOrBlank() }
+                                    if (pairedCues.isNotEmpty()) {
+                                        PlayerLearningSubtitleState.mergePrefetched(pairedCues)
+                                        val previousCacheWrite = cacheWriteJob
+                                        cacheWriteJob = translationScope.launch {
+                                            previousCacheWrite?.join()
+                                            if (
+                                                learningSubtitleSelectionGeneration == selectionGeneration &&
+                                                learningSubtitlePrefetchTrackKey == trackKey &&
+                                                learningSubtitleSelectionUrl == null &&
+                                                selectedExternalSubtitleMimeType == null
+                                            ) {
+                                                PlayerEmbeddedSubtitleCache.appendBilingual(bilingualCacheKey, pairedCues)
+                                            }
+                                        }
+                                    }
                                     Log.i(
                                         TAG,
-                                        "Embedded bilingual merge result: matched=$readyFromEmbedded unmatched=$unmatched sourceTrack=$selectedTrackNumber targetTrack=${targetTrackNumber ?: -1}",
+                                        "Embedded bilingual merge result: matched=${pairedCues.size} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber",
                                     )
                                     Log.d(
                                         TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=$readyFromEmbedded",
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background cue"} ready: cues=${pairedCues.size}",
                                     )
                                 }
                             }
                         },
                     )
                     translationJobs.joinAll()
+                    cacheWriteJob?.join()
                     result
                 } finally {
                     if (translationJobs.isNotEmpty()) PlayerLearningSubtitleState.isTranslating = false
@@ -961,14 +980,15 @@ private fun ExoPlayerSurface(
             ) {
                 return@launch
             }
-            if (extraction.cues.isNotEmpty()) {
+            val pairedExtractionCues = extraction.cues.filter { !it.translationText.isNullOrBlank() }
+            if (pairedExtractionCues.isNotEmpty()) {
                 if (extraction.isComplete) {
-                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, extraction.cues)
-                    PlayerLearningSubtitleState.update(extraction.cues)
+                    PlayerEmbeddedSubtitleCache.writeBilingual(bilingualCacheKey, pairedExtractionCues)
+                    PlayerLearningSubtitleState.update(pairedExtractionCues)
                 } else {
-                    // An incomplete range scan must not stop Media3's live fallback.
-                    PlayerLearningSubtitleState.mergePrefetched(extraction.cues)
-                    Log.w(TAG, "Embedded subtitle extraction incomplete; keeping live capture active (cues=${extraction.cues.size})")
+                    // Partial bilingual cues were persisted batch-by-batch during extraction.
+                    PlayerLearningSubtitleState.mergePrefetched(pairedExtractionCues)
+                    Log.w(TAG, "Embedded subtitle extraction incomplete; kept incremental bilingual cache (cues=${pairedExtractionCues.size})")
                 }
             } else {
                 Log.w(TAG, "Embedded subtitle extraction returned no cues for selected track=$selectedTrackNumber")

@@ -26,8 +26,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     private const val MAX_BYTES = 2L * 1024 * 1024 * 1024
     private const val MAX_REQUESTS = 40_100
     private const val EXTRACTION_TIMEOUT_MS = 900_000L
-    private const val PRIORITY_BEFORE_MS = 5 * 60 * 1000L
-    private const val PRIORITY_AFTER_MS = 10 * 60 * 1000L
+    private const val PRIORITY_BEFORE_MS = 5 * 1000L
+    private const val PRIORITY_AFTER_MS = 60 * 1000L
     private val client = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -114,15 +114,8 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
         val allSourceCues = mutableListOf<LearningSubtitleCue>()
         val allTargetCues = mutableListOf<LearningSubtitleCue>()
-        // Source and target cues are not guaranteed to live in the same Matroska Cluster.
-        // Hold the playback-window source cues until every priority Cluster has been read,
-        // then pair across the whole window before publishing any cue to the player.
-        val prioritySourceCues = mutableListOf<LearningSubtitleCue>()
-        val priorityTargetCues = mutableListOf<LearningSubtitleCue>()
-        // Background work remains batched; pair across all Clusters in each batch.
-        val backgroundSourceCues = mutableListOf<LearningSubtitleCue>()
-        val backgroundTargetCues = mutableListOf<LearningSubtitleCue>()
-        var backgroundClustersSinceCallback = 0
+        // Keep both tracks across Cluster boundaries and publish as soon as a counterpart arrives.
+        val emittedCueKeys = mutableSetOf<Pair<Long, String>>()
         var complete = true
         while (pendingPositions.isNotEmpty()) {
             if (budget.requests >= MAX_REQUESTS || budget.bytes >= MAX_BYTES) {
@@ -138,17 +131,6 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             val priorityIndex = pendingPositions.indexOfFirst { (cueTime, _) ->
                 val cueTimeMs = ticksToMs(cueTime, scale)
                 cueTimeMs in windowStart..windowEnd
-            }
-            // The priority window is now fully scanned. Publish its cues only after pairing
-            // against target cues that may have been stored in a different Cluster.
-            if (priorityIndex < 0 && prioritySourceCues.isNotEmpty()) {
-                val ready = pairTargetCues(prioritySourceCues, priorityTargetCues)
-                    .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-                if (ready.isNotEmpty()) {
-                    withContext(Dispatchers.Main.immediate) { onPartialCues(ready, true) }
-                }
-                prioritySourceCues.clear()
-                priorityTargetCues.clear()
             }
             val isPlaybackPriorityCluster = priorityIndex >= 0
             val selectedIndex = if (isPlaybackPriorityCluster) priorityIndex else 0
@@ -197,42 +179,19 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             allSourceCues += sourceCues
             allTargetCues += targetCues
 
-            if (isPlaybackPriorityCluster) {
-                prioritySourceCues += sourceCues
-                priorityTargetCues += targetCues
-            } else {
-                backgroundSourceCues += sourceCues
-                backgroundTargetCues += targetCues
-                backgroundClustersSinceCallback++
-                if (backgroundClustersSinceCallback >= 8) {
-                    // Only publish background cues that have a native target match.
-                    // Unmatched cues remain in the final extraction result but are not
-                    // briefly shown as source-only while later Clusters are still loading.
-                    val batch = pairTargetCues(backgroundSourceCues, backgroundTargetCues)
-                        .filter { !it.translationText.isNullOrBlank() }
-                        .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-                    if (batch.isNotEmpty()) {
-                        withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
-                    }
-                    backgroundSourceCues.clear()
-                    backgroundTargetCues.clear()
-                    backgroundClustersSinceCallback = 0
-                }
+            // Compare only newly decoded cues against the opposite track accumulated so far.
+            // This avoids waiting for the entire priority window or a batch of 8 Clusters.
+            val candidates = buildList {
+                if (sourceCues.isNotEmpty()) addAll(pairTargetCues(sourceCues, allTargetCues))
+                if (targetCues.isNotEmpty()) addAll(pairTargetCues(allSourceCues, targetCues))
             }
-        }
-        if (prioritySourceCues.isNotEmpty()) {
-            val ready = pairTargetCues(prioritySourceCues, priorityTargetCues)
-                .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-            if (ready.isNotEmpty()) {
-                withContext(Dispatchers.Main.immediate) { onPartialCues(ready, true) }
-            }
-        }
-        if (backgroundSourceCues.isNotEmpty()) {
-            val batch = pairTargetCues(backgroundSourceCues, backgroundTargetCues)
+            val ready = candidates.asSequence()
                 .filter { !it.translationText.isNullOrBlank() }
+                .filter { emittedCueKeys.add(it.startTimeMs to it.text) }
                 .distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
-            if (batch.isNotEmpty()) {
-                withContext(Dispatchers.Main.immediate) { onPartialCues(batch, false) }
+                .toList()
+            if (ready.isNotEmpty()) {
+                withContext(Dispatchers.Main.immediate) { onPartialCues(ready, isPlaybackPriorityCluster) }
             }
         }
         // The same cue can be exposed by neighboring/overlapping Cluster indexes with

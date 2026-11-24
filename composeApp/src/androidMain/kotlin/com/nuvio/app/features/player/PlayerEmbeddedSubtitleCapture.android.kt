@@ -36,9 +36,8 @@ internal object PlayerEmbeddedSubtitleCapture {
             entry.pendingCues.values.toList().also { entry.pendingCues.clear() }
         }
         if (snapshot.isNotEmpty() && selectionGeneration == generation && selectedTrackKey == key) {
-            PlayerLearningSubtitleState.appendPartialCues(
-                translationsFor(snapshot, configuredTargetLanguage)
-            )
+            val readyCues = displayableCues(snapshot)
+            if (readyCues.isNotEmpty()) PlayerLearningSubtitleState.appendPartialCues(readyCues)
             val maxCueEndMs = snapshot.maxOfOrNull { it.endTimeMs } ?: return@Runnable
             val shouldLogCoverage = lastLoggedCueEndMs == Long.MIN_VALUE ||
                 maxCueEndMs >= lastLoggedCueEndMs + 30_000L ||
@@ -61,6 +60,7 @@ internal object PlayerEmbeddedSubtitleCapture {
     @Volatile private var selectionGeneration: Long = 0L
     @Volatile private var selectedTrackKey: String? = null
     @Volatile private var targetTrackKey: String? = null
+    @Volatile private var targetTrackLookupPending: Boolean = false
     @Volatile private var configuredTargetLanguage: String = ""
     @Volatile private var playbackPositionMsProvider: (() -> Long)? = null
     private var lastLoggedCueCount = 0
@@ -80,6 +80,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         selectionGeneration += 1L
         selectedTrackKey = null
         targetTrackKey = null
+        targetTrackLookupPending = false
         configuredTargetLanguage = ""
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
@@ -90,6 +91,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         selectionGeneration += 1L
         selectedTrackKey = null
         targetTrackKey = null
+        targetTrackLookupPending = false
         configuredTargetLanguage = ""
         playbackPositionMsProvider = null
         lastLoggedCueCount = 0
@@ -122,6 +124,7 @@ internal object PlayerEmbeddedSubtitleCapture {
                 }
             }
             targetTrackKey = null
+            targetTrackLookupPending = false
             configuredTargetLanguage = ""
         }
         selectedTrackKey = key
@@ -138,16 +141,23 @@ internal object PlayerEmbeddedSubtitleCapture {
         if (snapshot.isNotEmpty()) {
             mainHandler.post {
                 if (selectionGeneration == generation && selectedTrackKey == key) {
-                    PlayerLearningSubtitleState.updatePartial(
-                        translationsFor(snapshot, configuredTargetLanguage)
-                    )
+                    val readyCues = displayableCues(snapshot)
+                    if (readyCues.isNotEmpty()) PlayerLearningSubtitleState.updatePartial(readyCues)
                 }
             }
         }
     }
 
+    /** Suppress source-only output while locating the configured native target track. */
+    fun beginTargetTrackLookup(targetLanguage: String) {
+        targetTrackKey = null
+        configuredTargetLanguage = targetLanguage
+        targetTrackLookupPending = targetLanguage.isNotBlank()
+    }
+
     /** Registers only the plugin-configured target track as a non-displayed capture source. */
     fun setTargetTrack(format: Format?, targetLanguage: String) {
+        targetTrackLookupPending = false
         val key = format?.let(::trackKey)
         val previousKey = targetTrackKey
         if (previousKey != key) {
@@ -162,7 +172,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
         targetTrackKey = key
         configuredTargetLanguage = if (key == null) "" else targetLanguage
-        if (key == null || key == selectedTrackKey) return
+        if (key == selectedTrackKey) return
 
         val sourceKey = selectedTrackKey ?: return
         val sourceEntry = tracks[sourceKey] ?: return
@@ -174,6 +184,13 @@ internal object PlayerEmbeddedSubtitleCapture {
             }
         }
         if (sourceSnapshot.isNotEmpty()) scheduleSnapshot()
+    }
+
+    /** Do not expose source-only cues while a configured target track is expected. */
+    private fun displayableCues(sourceCues: List<LearningSubtitleCue>): List<LearningSubtitleCue> {
+        if (targetTrackLookupPending) return emptyList()
+        val paired = translationsFor(sourceCues, configuredTargetLanguage)
+        return if (targetTrackKey != null) paired.filter { !it.translationText.isNullOrBlank() } else paired
     }
 
     /** Pairs source cues only with the one target track selected from the plugin configuration. */

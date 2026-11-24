@@ -107,7 +107,38 @@ internal object PlayerEmbeddedSubtitleCache {
         readBilingualCueFile(File(directory, "$key.bilingual.bin"))
     }
 
-    suspend fun writeBilingual(key: String, cues: List<LearningSubtitleCue>) = withContext(Dispatchers.IO) {
+    /** True only after the full track scan has been persisted. Older completed caches have no marker. */
+    suspend fun isBilingualComplete(key: String): Boolean = withContext(Dispatchers.IO) {
+        val directory = cacheDirectory() ?: return@withContext false
+        !File(directory, "$key.bilingual.partial").exists()
+    }
+
+    /** Persist newly paired cues during extraction so an interrupted scan still leaves a usable partial cache. */
+    suspend fun appendBilingual(key: String, cues: List<LearningSubtitleCue>) {
+        if (cues.isEmpty()) return
+        val directory = cacheDirectory() ?: return
+        synchronized(directory.absolutePath.intern()) {
+            val marker = File(directory, "$key.bilingual.partial")
+            if (!marker.exists()) {
+                val temporary = File(directory, marker.name + ".tmp")
+                temporary.writeText("partial", Charsets.UTF_8)
+                if (!temporary.renameTo(marker)) {
+                    temporary.delete()
+                    error("Unable to mark bilingual subtitle cache as partial")
+                }
+            }
+        }
+        val existing = readBilingual(key).orEmpty()
+        val merged = mergeLearningSubtitleCueLists(existing + cues)
+            .filter { !it.translationText.isNullOrBlank() }
+        writeBilingual(key, merged, complete = false)
+    }
+
+    suspend fun writeBilingual(
+        key: String,
+        cues: List<LearningSubtitleCue>,
+        complete: Boolean = true,
+    ) = withContext(Dispatchers.IO) {
         val uniqueCues = cues.asSequence()
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
             .distinctBy { it.startTimeMs to it.text }
@@ -144,7 +175,8 @@ internal object PlayerEmbeddedSubtitleCache {
                         error("Unable to finalize bilingual subtitle cache")
                     }
                 }
-                Log.i(TAG, "Saved embedded bilingual cache: id=$key cues=${uniqueCues.size} matched=${uniqueCues.count { !it.translationText.isNullOrBlank() }} bytes=${target.length()}")
+                if (complete) File(directory, "$key.bilingual.partial").delete()
+                Log.i(TAG, "Saved embedded bilingual cache: id=$key cues=${uniqueCues.size} matched=${uniqueCues.count { !it.translationText.isNullOrBlank() }} complete=$complete bytes=${target.length()}")
             }
         }.onFailure { Log.w(TAG, "Unable to save embedded bilingual cache", it) }
     }
