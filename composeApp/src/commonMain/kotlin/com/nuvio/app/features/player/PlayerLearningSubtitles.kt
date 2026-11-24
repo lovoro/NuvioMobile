@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class LearningSubtitleCue(
     val startTimeMs: Long,
@@ -113,7 +115,12 @@ object PlayerLearningSubtitleState {
         translationMessage = null
         try {
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
-                if (requestGeneration == translationGeneration) applyTranslations(batch)
+                // The Android translator performs network work on Dispatchers.IO and invokes
+                // this callback from that dispatcher. Compose state must be published on Main
+                // so each completed batch is observed immediately and reliably by the player UI.
+                withContext(Dispatchers.Main.immediate) {
+                    if (requestGeneration == translationGeneration) applyTranslations(batch)
+                }
             }
             if (requestGeneration != translationGeneration) return
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
