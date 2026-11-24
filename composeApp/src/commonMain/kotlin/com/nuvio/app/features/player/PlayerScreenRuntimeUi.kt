@@ -1125,7 +1125,18 @@ private fun LearningSubtitlePanel(
         findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
     }
     val scrollTargetIndex = remember(cues, positionMs, activeIndex) {
-        findLearningSubtitleScrollIndex(cues, positionMs)
+        // A partial cache may temporarily contain only earlier cues (for example, up to 2:00
+        // while playback has already been restored to 5:00). Do not treat the last currently
+        // loaded cue as the current position; wait until the loaded range reaches playback.
+        if (
+            cues.isEmpty() ||
+            positionMs < cues.first().startTimeMs ||
+            positionMs > cues.last().endTimeMs
+        ) {
+            -1
+        } else {
+            findLearningSubtitleScrollIndex(cues, positionMs)
+        }
     }
     // Keep the scroll target tied to the subtitle itself, not its mutable list index.
     // Background prefetch inserts earlier cues and shifts indices; that must not trigger
@@ -1138,10 +1149,11 @@ private fun LearningSubtitlePanel(
     var repeatJob by remember { mutableStateOf<Job?>(null) }
     var repeatCueStartMs by remember { mutableStateOf<Long?>(null) }
     val repeatCue = repeatCueStartMs?.let { startMs -> cues.firstOrNull { it.startTimeMs == startMs } }
-    val currentLineNumber = if (cues.isNotEmpty()) {
-        (scrollTargetIndex + 1).coerceIn(1, cues.size)
-    } else {
-        0
+    val currentLineNumber = when {
+        cues.isEmpty() -> 0
+        scrollTargetIndex >= 0 -> (scrollTargetIndex + 1).coerceIn(1, cues.size)
+        activeIndex >= 0 -> (activeIndex + 1).coerceIn(1, cues.size)
+        else -> 0
     }
     LaunchedEffect(
         scrollTargetCue?.startTimeMs,
