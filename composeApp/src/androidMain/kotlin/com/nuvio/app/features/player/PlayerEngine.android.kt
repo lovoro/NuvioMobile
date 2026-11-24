@@ -835,7 +835,7 @@ private fun ExoPlayerSurface(
                 .toList()
             val targetFormat = availableTextTracks.firstOrNull { candidate ->
                 val candidateTrackNumber = candidate.id?.toIntOrNull()
-                    candidateTrackNumber != null &&
+                candidateTrackNumber != null &&
                     candidateTrackNumber != selectedTrackNumber &&
                     DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
                         context, candidate.language.orEmpty()
