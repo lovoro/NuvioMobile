@@ -2,6 +2,9 @@ package com.nuvio.app.features.player
 
 import android.content.Context
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +52,7 @@ internal object DoubleSubtitlesLocalTranslator {
             }
             val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
                 ?: return@withContext false
-            matchesConfiguredSourceLanguage(addon.manifestUrl, normalizedLanguage)
+            matchesConfiguredSourceLanguage(context, addon.manifestUrl, sourceLanguage, showDiagnostic = false)
         }
 
     suspend fun translate(
@@ -77,7 +80,7 @@ internal object DoubleSubtitlesLocalTranslator {
             return@withContext cues
         }
         if (requiredSourceLanguage != null &&
-            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
+            !matchesConfiguredSourceLanguage(context, addon.manifestUrl, requiredSourceLanguage, showDiagnostic = true)
         ) {
             Log.i(TAG, "Translation skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
@@ -244,7 +247,7 @@ internal object DoubleSubtitlesLocalTranslator {
             managed.enabled && managed.manifest?.id == ADDON_ID
         } ?: return@withContext cues
         if (requiredSourceLanguage != null &&
-            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
+            !matchesConfiguredSourceLanguage(context, addon.manifestUrl, requiredSourceLanguage, showDiagnostic = false)
         ) {
             Log.i(TAG, "Translation cache restore skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
@@ -389,15 +392,38 @@ internal object DoubleSubtitlesLocalTranslator {
      * for example /configure/en/zh-CN/manifest.json. Embedded tracks are translated only when
      * their declared language matches that configured source language.
      */
-    private fun matchesConfiguredSourceLanguage(manifestUrl: String, subtitleLanguage: String): Boolean {
+    private fun matchesConfiguredSourceLanguage(
+        context: Context,
+        manifestUrl: String,
+        subtitleLanguage: String,
+        showDiagnostic: Boolean,
+    ): Boolean {
         val pathSegments = runCatching {
             URI(manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank)
         }.getOrDefault(emptyList())
         val configureIndex = pathSegments.indexOfLast { it.equals("configure", ignoreCase = true) }
-        val configuredSource = pathSegments.getOrNull(configureIndex + 1) ?: return false
-        val configuredCode = normalizeLanguageCode(configuredSource) ?: return false
-        val subtitleCode = normalizeLanguageCode(subtitleLanguage) ?: return false
-        return configuredCode == subtitleCode
+        val configuredSource = pathSegments.getOrNull(configureIndex + 1)
+        val configuredTarget = pathSegments.getOrNull(configureIndex + 2)
+        val configuredCode = configuredSource?.let(::normalizeLanguageCode)
+        val subtitleCode = normalizeLanguageCode(subtitleLanguage)
+        val matches = configuredCode != null && subtitleCode != null && configuredCode == subtitleCode
+
+        if (showDiagnostic) {
+            val targetCode = configuredTarget?.let(::normalizeLanguageCode) ?: "未知"
+            val message = buildString {
+                appendLine("字幕语言诊断")
+                appendLine("当前字幕: $subtitleLanguage")
+                appendLine("字幕识别: ${subtitleCode ?: "无法识别"}")
+                appendLine("插件源语言: ${configuredSource ?: "未读取到"} (${configuredCode ?: "未知"})")
+                appendLine("插件目标语言: ${configuredTarget ?: "未读取到"} ($targetCode)")
+                append("比较结果: ${if (matches) "MATCH" else "MISMATCH"}")
+            }
+            Log.i(TAG, message.replace('\n', ' '))
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
+            }
+        }
+        return matches
     }
 
     /** Normalizes ISO-639 tags and human-readable language names from subtitle providers. */
