@@ -378,10 +378,11 @@ internal object DoubleSubtitlesLocalTranslator {
                     .put("translations", buckets)
                 val temporary = File(file.parentFile, file.name + ".tmp")
                 temporary.writeText(json.toString(), Charsets.UTF_8)
-                if (file.exists() && !file.delete()) error("Unable to replace translation cache")
-                if (!temporary.renameTo(file)) error("Unable to finalize translation cache")
+                // File.renameTo maps to an atomic same-directory rename on Android/Linux.
+                // Do not delete the previous cache first: a failed rename must not destroy it.
+                if (!temporary.renameTo(file)) error("Unable to atomically replace translation cache")
             }
-        }.onFailure { Log.w(TAG, "Unable to persist embedded subtitle cache", it) }
+        }.onFailure { Log.w(TAG, "Unable to persist subtitle translation cache: ${file.name}", it) }
     }
 
     /**

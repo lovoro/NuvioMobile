@@ -954,6 +954,7 @@ private fun ExoPlayerSurface(
 
     val sidecarController = remember(exoPlayer, coroutineScope) {
         var sidecarLearningSelectionGeneration = 0L
+        var sidecarLearningSourceLanguage = ""
         SidecarSubtitleController(
             scope = coroutineScope,
             getPlayer = { exoPlayer },
@@ -966,7 +967,30 @@ private fun ExoPlayerSurface(
                     subtitlePresenter.present(cues, sidecarControllerRef?.subtitleMimeType != MimeTypes.TEXT_SSA)
                 }
             },
-            onLearningCues = PlayerLearningSubtitleState::update,
+            onLearningCues = { cues ->
+                val selectedUrl = sidecarControllerRef?.activeSidecarSubtitleKey
+                val selectionGeneration = sidecarLearningSelectionGeneration
+                if (cues.isEmpty() || selectedUrl == null ||
+                    !PlayerSettingsRepository.uiState.value.englishLearningEnabled
+                ) {
+                    PlayerLearningSubtitleState.update(cues)
+                } else {
+                    coroutineScope.launch {
+                        val restored = DoubleSubtitlesLocalTranslator.restoreCachedTranslations(
+                            context,
+                            "external|$selectedUrl",
+                            cues,
+                            requiredSourceLanguage = sidecarLearningSourceLanguage,
+                        )
+                        if (
+                            sidecarLearningSelectionGeneration == selectionGeneration &&
+                            sidecarControllerRef?.activeSidecarSubtitleKey == selectedUrl
+                        ) {
+                            PlayerLearningSubtitleState.update(restored)
+                        }
+                    }
+                }
+            },
             onLearningStatus = PlayerLearningSubtitleState::setStatus,
             onLearningSubtitleSelected = { url ->
                 val generation = ++sidecarLearningSelectionGeneration
@@ -974,6 +998,7 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.clear()
                 } else {
                     val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
+                    sidecarLearningSourceLanguage = selectedSubtitleLanguage
                     PlayerLearningSubtitleState.beginLoading()
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                     PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
