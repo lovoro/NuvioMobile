@@ -699,9 +699,6 @@ private fun ExoPlayerSurface(
     var learningSubtitleSelectionUrl by remember { mutableStateOf<String?>(null) }
     var learningSubtitlePrefetchTrackKey by remember(playerSourceKey) { mutableStateOf<String?>(null) }
     var learningSubtitleSelectionGeneration by remember(playerSourceKey) { mutableStateOf(0L) }
-    var learningSubtitleDiagnosticSource by remember { mutableStateOf("未知") }
-    var learningSubtitleDiagnosticLanguage by remember { mutableStateOf("") }
-    var learningSubtitleDiagnosticLookup by remember { mutableStateOf("未取得语言信息") }
     fun findSubtitleLanguageForLearning(url: String): Pair<String, String> {
         // Addon subtitles are grouped by language in the subtitle picker. Read the
         // language from that original top-level item instead of trying to infer it
@@ -723,21 +720,6 @@ private fun ExoPlayerSurface(
 
         return "" to "字幕列表中未找到原始条目"
     }
-    SideEffect {
-        PlayerLearningSubtitleState.setManualTranslationDiagnosticAction { enabled, hasAction, cueCount, status ->
-            DoubleSubtitlesLocalTranslator.showManualClickDiagnostic(
-                context,
-                learningSubtitleDiagnosticSource,
-                learningSubtitleDiagnosticLanguage,
-                learningSubtitleDiagnosticLookup,
-                enabled,
-                hasAction,
-                cueCount,
-                status,
-            )
-        }
-    }
-
     fun finishEmbeddedSubtitleCacheLookup(useCachedTrack: Boolean) {
         synchronized(embeddedSubtitleLiveCueBufferLock) {
             if (useCachedTrack) {
@@ -761,9 +743,6 @@ private fun ExoPlayerSurface(
     // Media3 may report the same selected track repeatedly; do not restart its scan.
     fun startEmbeddedSubtitlePrefetch(format: Format?) {
         if (format == null) return
-        learningSubtitleDiagnosticSource = "内嵌字幕（Media3 Format）"
-        learningSubtitleDiagnosticLanguage = format.language.orEmpty()
-        learningSubtitleDiagnosticLookup = "Format.language"
         val trackKey = listOf(
             format.id.orEmpty(),
             format.sampleMimeType.orEmpty(),
@@ -995,9 +974,6 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.clear()
                 } else {
                     val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
-                    learningSubtitleDiagnosticSource = "外挂字幕（Sidecar）"
-                    learningSubtitleDiagnosticLanguage = selectedSubtitleLanguage
-                    learningSubtitleDiagnosticLookup = languageLookup
                     PlayerLearningSubtitleState.beginLoading()
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                     PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
@@ -1561,9 +1537,6 @@ private fun ExoPlayerSurface(
                             // or deliver the MIME callback before the selector callback. Their
                             // live cues are still valid; register the action using the selected
                             // track index, even when both metadata values are unavailable.
-                            learningSubtitleDiagnosticSource = "外挂字幕（ExoPlayer 外部轨道）"
-                            learningSubtitleDiagnosticLanguage = selectedFormat?.language.orEmpty()
-                            learningSubtitleDiagnosticLookup = if (selectedFormat?.language.isNullOrBlank()) "Format.language 为空" else "Format.language"
                             val externalTrackKey = listOf(
                                 "exo-external",
                                 index.toString(),
@@ -1636,9 +1609,6 @@ private fun ExoPlayerSurface(
                     PlayerLearningSubtitleState.beginLoading()
                     PlayerLearningSubtitleState.updateManualTranslationEnabled(false)
                     val (selectedSubtitleLanguage, languageLookup) = findSubtitleLanguageForLearning(url)
-                    learningSubtitleDiagnosticSource = "外挂字幕（字幕 URL）"
-                    learningSubtitleDiagnosticLanguage = selectedSubtitleLanguage
-                    learningSubtitleDiagnosticLookup = languageLookup
                     coroutineScope.launch {
                         val allowed = DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(
                             context,

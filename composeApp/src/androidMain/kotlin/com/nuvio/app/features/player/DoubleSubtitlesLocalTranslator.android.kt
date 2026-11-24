@@ -1,16 +1,7 @@
 package com.nuvio.app.features.player
 
 import android.content.Context
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.app.AlertDialog
 import android.util.Log
-import android.view.ViewGroup
-import android.os.Handler
-import android.os.Looper
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +49,7 @@ internal object DoubleSubtitlesLocalTranslator {
             }
             val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
                 ?: return@withContext false
-            matchesConfiguredSourceLanguage(context, addon.manifestUrl, sourceLanguage, showDiagnostic = false)
+            matchesConfiguredSourceLanguage(addon.manifestUrl, sourceLanguage)
         }
 
     suspend fun translate(
@@ -86,7 +77,7 @@ internal object DoubleSubtitlesLocalTranslator {
             return@withContext cues
         }
         if (requiredSourceLanguage != null &&
-            !matchesConfiguredSourceLanguage(context, addon.manifestUrl, requiredSourceLanguage, showDiagnostic = true)
+            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
         ) {
             Log.i(TAG, "Translation skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
@@ -253,7 +244,7 @@ internal object DoubleSubtitlesLocalTranslator {
             managed.enabled && managed.manifest?.id == ADDON_ID
         } ?: return@withContext cues
         if (requiredSourceLanguage != null &&
-            !matchesConfiguredSourceLanguage(context, addon.manifestUrl, requiredSourceLanguage, showDiagnostic = false)
+            !matchesConfiguredSourceLanguage(addon.manifestUrl, requiredSourceLanguage)
         ) {
             Log.i(TAG, "Translation cache restore skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
@@ -393,95 +384,14 @@ internal object DoubleSubtitlesLocalTranslator {
         }.onFailure { Log.w(TAG, "Unable to persist embedded subtitle cache", it) }
     }
 
-    /** Shows the complete selection state at the manual-translation button entry point. */
-    fun showManualClickDiagnostic(
-        context: Context,
-        subtitleSource: String,
-        subtitleLanguage: String,
-        languageLookup: String,
-        translationEnabled: Boolean,
-        hasAction: Boolean,
-        cueCount: Int,
-        subtitleStatus: String,
-    ) {
-        val addon = AddonRepository.uiState.value.addons.firstOrNull { it.manifest?.id == ADDON_ID }
-        val manifestUrl = addon?.manifestUrl.orEmpty()
-        val segments = runCatching { URI(manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank) }
-            .getOrDefault(emptyList())
-        val configureIndex = segments.indexOfLast { it.equals("configure", ignoreCase = true) }
-        val configuredSource = segments.getOrNull(configureIndex + 1)
-        val configuredTarget = segments.getOrNull(configureIndex + 2)
-        val subtitleCode = normalizeLanguageCode(subtitleLanguage)
-        val configuredCode = configuredSource?.let(::normalizeLanguageCode)
-        val message = buildString {
-            appendLine("手动翻译点击诊断")
-            appendLine("字幕来源: $subtitleSource")
-            appendLine("字幕原始语言: ${subtitleLanguage.ifBlank { "<empty>" }}")
-            appendLine("语言识别: ${subtitleCode ?: "unknown"}（$languageLookup）")
-            appendLine("插件源语言: ${configuredSource ?: "未读取到"} (${configuredCode ?: "unknown"})")
-            appendLine("插件目标语言: ${configuredTarget ?: "未读取到"} (${configuredTarget?.let(::normalizeLanguageCode) ?: "unknown"})")
-            appendLine("允许翻译: $translationEnabled；翻译 action: $hasAction")
-            append("字幕条数: $cueCount；字幕状态: $subtitleStatus；语言比较: ${if (configuredCode != null && subtitleCode != null && configuredCode == subtitleCode) "MATCH" else "MISMATCH"}")
-        }
-        Log.i(TAG, "ManualTranslationDiagnostic\\n$message")
-        Handler(Looper.getMainLooper()).post {
-            val appContext = context.applicationContext
-            val density = appContext.resources.displayMetrics.density
-            val content = TextView(context).apply {
-                text = message
-                textSize = 15f
-                setTextIsSelectable(true)
-                setPadding(
-                    (20 * density).toInt(),
-                    (12 * density).toInt(),
-                    (20 * density).toInt(),
-                    (12 * density).toInt(),
-                )
-            }
-            val scroll = ScrollView(context).apply {
-                addView(
-                    content,
-                    ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
-                isFillViewport = true
-            }
-            val dialog = AlertDialog.Builder(context)
-                .setTitle("手动翻译点击诊断")
-                .setView(scroll)
-                .setPositiveButton("复制全部") { _, _ ->
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("字幕翻译诊断", message))
-                }
-                .setNegativeButton("关闭", null)
-                .create()
-            dialog.setOnShowListener {
-                val metrics = context.resources.displayMetrics
-                dialog.window?.setLayout(
-                    (metrics.widthPixels * 0.92f).toInt(),
-                    (metrics.heightPixels * 0.72f).toInt(),
-                )
-            }
-            dialog.show()
-            dialog.window?.setLayout(
-                (context.resources.displayMetrics.widthPixels * 0.92f).toInt(),
-                (context.resources.displayMetrics.heightPixels * 0.72f).toInt(),
-            )
-        }
-    }
-
     /**
      * Double Subtitles encodes its source/target language pair in the configured manifest path,
      * for example /configure/en/zh-CN/manifest.json. Embedded tracks are translated only when
      * their declared language matches that configured source language.
      */
     private fun matchesConfiguredSourceLanguage(
-        context: Context,
         manifestUrl: String,
         subtitleLanguage: String,
-        showDiagnostic: Boolean,
     ): Boolean {
         val pathSegments = runCatching {
             URI(manifestUrl).path.orEmpty().split('/').filter(String::isNotBlank)
@@ -493,21 +403,6 @@ internal object DoubleSubtitlesLocalTranslator {
         val subtitleCode = normalizeLanguageCode(subtitleLanguage)
         val matches = configuredCode != null && subtitleCode != null && configuredCode == subtitleCode
 
-        if (showDiagnostic) {
-            val targetCode = configuredTarget?.let(::normalizeLanguageCode) ?: "未知"
-            val message = buildString {
-                appendLine("字幕语言诊断")
-                appendLine("当前字幕: $subtitleLanguage")
-                appendLine("字幕识别: ${subtitleCode ?: "无法识别"}")
-                appendLine("插件源语言: ${configuredSource ?: "未读取到"} (${configuredCode ?: "未知"})")
-                appendLine("插件目标语言: ${configuredTarget ?: "未读取到"} ($targetCode)")
-                append("比较结果: ${if (matches) "MATCH" else "MISMATCH"}")
-            }
-            Log.i(TAG, message.replace('\n', ' '))
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
-            }
-        }
         return matches
     }
 
