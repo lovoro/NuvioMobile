@@ -5,14 +5,9 @@ import android.util.Log
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -35,6 +30,8 @@ internal object DoubleSubtitlesLocalTranslator {
     private const val MAX_BATCH_CHARS = 5_000
     private const val PRIORITY_AHEAD_MS = 60_000L
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
+    private class TranslationHttpException(val statusCode: Int, message: String) : Exception(message)
+
     private data class CachedSubtitle(
         val startTimeMs: Long,
         val endTimeMs: Long,
@@ -150,105 +147,158 @@ internal object DoubleSubtitlesLocalTranslator {
             onBatchTranslated(cachedBatch)
         }
 
-        val missing = cues.filter { cue -> cue.text.isNotBlank() && translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() && cue.translationText.isNullOrBlank() }
-        // Manual translation starts at the cue currently on screen, then moves forward
-        // through the remaining timeline. Earlier untranslated cues are backfilled last.
-        // Automatic/background translation keeps its existing source order when no priority is supplied.
-        val prioritizedMissing = priorityPositionMs?.let { positionMs ->
-            val active = missing.filter { it.startTimeMs <= positionMs && it.endTimeMs > positionMs }
-                .sortedByDescending { it.startTimeMs }
-            val nearFuture = missing.filter {
-                it.startTimeMs > positionMs && it.startTimeMs <= positionMs + PRIORITY_AHEAD_MS
-            }.sortedBy { it.startTimeMs }
-            val distantFuture = missing.filter { it.startTimeMs > positionMs + PRIORITY_AHEAD_MS }
-                .sortedBy { it.startTimeMs }
-            val earlier = missing.filter { it.endTimeMs <= positionMs }
-                .sortedByDescending { it.startTimeMs }
-            // Translate the current cue and next minute before the rest of the track.
-            active + nearFuture + distantFuture + earlier
-        } ?: missing
-        val chunks = mutableListOf<List<LearningSubtitleCue>>()
-        var current = mutableListOf<LearningSubtitleCue>()
-        var currentChars = 0
-        prioritizedMissing.forEach { cue ->
-            val length = cue.text.length
-            if (length > MAX_BATCH_CHARS) {
-                // Keep an unusually long cue; send it alone instead of silently dropping it.
-                if (current.isNotEmpty()) {
-                    chunks += current
-                    current = mutableListOf()
-                    currentChars = 0
+        val missing = cues.filter { cue ->
+            cue.text.isNotBlank() &&
+                translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() &&
+                cue.translationText.isNullOrBlank()
+        }
+        val positionMs = priorityPositionMs
+        val activeCue = positionMs?.let { position ->
+            missing.filter { it.startTimeMs <= position && it.endTimeMs > position }
+                .maxByOrNull { it.startTimeMs }
+        }
+        val firstMinute = if (positionMs != null) missing.filter { cue ->
+            cue !== activeCue && cue.startTimeMs > positionMs &&
+                cue.startTimeMs <= positionMs + PRIORITY_AHEAD_MS
+        }.sortedBy { it.startTimeMs } else emptyList()
+        val backgroundWindow = if (positionMs != null) missing.filter { cue ->
+            cue !== activeCue && cue.startTimeMs > positionMs + PRIORITY_AHEAD_MS &&
+                cue.startTimeMs <= positionMs + 5 * 60_000L
+        }.sortedBy { it.startTimeMs } else emptyList()
+
+        fun buildChunks(source: List<LearningSubtitleCue>): List<List<LearningSubtitleCue>> {
+            val result = mutableListOf<List<LearningSubtitleCue>>()
+            var current = mutableListOf<LearningSubtitleCue>()
+            var currentChars = 0
+            source.forEach { cue ->
+                val length = cue.text.length
+                if (length > MAX_BATCH_CHARS) {
+                    if (current.isNotEmpty()) {
+                        result += current
+                        current = mutableListOf()
+                        currentChars = 0
+                    }
+                    result += listOf(cue)
+                    Log.w(TAG, "Sending oversized embedded subtitle cue in its own request: chars=$length")
+                } else {
+                    if (current.isNotEmpty() &&
+                        (current.size >= MAX_BATCH_CUES || currentChars + length > MAX_BATCH_CHARS)
+                    ) {
+                        result += current
+                        current = mutableListOf()
+                        currentChars = 0
+                    }
+                    current += cue
+                    currentChars += length
                 }
-                chunks += listOf(cue)
-                Log.w(TAG, "Sending oversized embedded subtitle cue in its own request: chars=$length")
-            } else {
-                if (current.isNotEmpty() && (current.size >= MAX_BATCH_CUES || currentChars + length > MAX_BATCH_CHARS)) {
-                    chunks += current
-                    current = mutableListOf()
-                    currentChars = 0
+            }
+            if (current.isNotEmpty()) result += current
+            return result
+        }
+
+        val phaseOneBatches = buildList {
+            activeCue?.let { add(listOf(it)) }
+            addAll(buildChunks(firstMinute))
+        }
+        val phaseTwoBatches = buildChunks(backgroundWindow)
+        val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
+        Log.i(TAG, "Translation schedule: currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
+            "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
+            "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
+
+        var throttleDelayMs = 0L
+        var consecutiveRateLimits = 0
+
+        suspend fun processBatch(
+            chunk: List<LearningSubtitleCue>,
+            phase: String,
+            chunkIndex: Int,
+            totalChunks: Int,
+        ) {
+            while (true) {
+                val batchStartedAt = System.nanoTime()
+                try {
+                    val requestCues = JSONArray()
+                    chunk.forEach { cue ->
+                        requestCues.put(JSONObject().put("id", cueIdentity(cue))
+                            .put("start", cue.startTimeMs).put("end", cue.endTimeMs).put("text", cue.text))
+                    }
+                    val batchId = sha256("$trackCacheKey|$phase|$chunkIndex|" +
+                        chunk.joinToString("|") { cueIdentity(it) }).take(32)
+                    val requestBody = JSONObject().put("batchId", batchId).put("subtitles", requestCues)
+                        .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                    val request = Request.Builder().url(endpoint).header("Accept", "application/json")
+                        .post(requestBody).build()
+                    val batchTranslations = linkedMapOf<String, CachedSubtitle>()
+                    var translatedInResponse = 0
+                    client.newCall(request).execute().use { response ->
+                        val responseText = response.body?.string().orEmpty()
+                        if (!response.isSuccessful) {
+                            throw TranslationHttpException(response.code,
+                                "Double Subtitles returned HTTP ${response.code}: $responseText")
+                        }
+                        val payload = JSONObject(responseText)
+                        if (!payload.optBoolean("success", false)) {
+                            error(payload.optString("error").ifBlank { "Translation request failed" })
+                        }
+                        val result = payload.optJSONArray("translations") ?: JSONArray()
+                        for (index in 0 until result.length()) {
+                            val item = result.optJSONObject(index) ?: continue
+                            val id = item.optString("id")
+                            val translatedText = item.optString("text").trim()
+                            if (id.isNotBlank() && translatedText.isNotBlank()) {
+                                val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
+                                if (sourceCue != null) {
+                                    batchTranslations[id] = CachedSubtitle(sourceCue.startTimeMs,
+                                        sourceCue.endTimeMs, sourceCue.text, translatedText)
+                                    translatedInResponse++
+                                }
+                            }
+                        }
+                        if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
+                    }
+                    resultMutex.withLock {
+                        translations.putAll(batchTranslations)
+                        writeCache(cacheFile, translations.toMap(), configId)
+                        val translatedBatch = chunk.mapNotNull { cue ->
+                            translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)
+                                ?.let { cue.copy(translationText = it) }
+                        }
+                        if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
+                    }
+                    val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
+                    Log.i(TAG, "Translated embedded batch: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
+                        "cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
+                    if (consecutiveRateLimits > 0) Log.i(TAG, "Translation rate limit recovered; resetting batch delay")
+                    consecutiveRateLimits = 0
+                    throttleDelayMs = 0L
+                    return
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
+                    val statusCode = (error as? TranslationHttpException)?.statusCode
+                    if (statusCode == 403 || statusCode == 429) {
+                        consecutiveRateLimits++
+                        throttleDelayMs = if (throttleDelayMs == 0L) 3_000L
+                            else (throttleDelayMs * 2).coerceAtMost(60_000L)
+                        Log.w(TAG, "Translation rate limited: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
+                            "http=$statusCode consecutive=$consecutiveRateLimits retryInMs=$throttleDelayMs elapsedMs=$elapsedMs")
+                        kotlinx.coroutines.delay(throttleDelayMs)
+                        continue
+                    }
+                    Log.e(TAG, "Embedded subtitle batch failed: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
+                        "cues=${chunk.size} elapsedMs=$elapsedMs error=${error.message}", error)
+                    return
                 }
-                current += cue
-                currentChars += length
             }
         }
-        if (current.isNotEmpty()) chunks += current
-        // Run at most two network requests at once. Cache merging and UI publication are
-        // serialized so concurrent responses cannot overwrite one another's translations.
-        val requestSemaphore = Semaphore(2)
-        val resultMutex = Mutex()
-        coroutineScope {
-            chunks.mapIndexed { chunkIndex, chunk ->
-                async {
-                    requestSemaphore.withPermit {
-                        val batchStartedAt = System.nanoTime()
-                        runCatching {
-                            val requestCues = JSONArray()
-                            chunk.forEach { cue ->
-                                requestCues.put(JSONObject().put("id", cueIdentity(cue)).put("start", cue.startTimeMs).put("end", cue.endTimeMs).put("text", cue.text))
-                            }
-                            val batchId = sha256("$trackCacheKey|$chunkIndex|${chunk.joinToString("|") { cueIdentity(it) }}").take(32)
-                            val requestBody = JSONObject().put("batchId", batchId).put("subtitles", requestCues).toString()
-                                .toRequestBody("application/json; charset=utf-8".toMediaType())
-                            val request = Request.Builder().url(endpoint).header("Accept", "application/json").post(requestBody).build()
-                            val batchTranslations = linkedMapOf<String, CachedSubtitle>()
-                            var translatedInResponse = 0
-                            client.newCall(request).execute().use { response ->
-                                val responseText = response.body?.string().orEmpty()
-                                if (!response.isSuccessful) error("Double Subtitles returned HTTP ${response.code}")
-                                val payload = JSONObject(responseText)
-                                if (!payload.optBoolean("success", false)) error(payload.optString("error").ifBlank { "Translation request failed" })
-                                val result = payload.optJSONArray("translations") ?: JSONArray()
-                                for (index in 0 until result.length()) {
-                                    val item = result.optJSONObject(index) ?: continue
-                                    val id = item.optString("id")
-                                    val translatedText = item.optString("text").trim()
-                                    if (id.isNotBlank() && translatedText.isNotBlank()) {
-                                        val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
-                                        if (sourceCue != null) {
-                                            batchTranslations[id] = CachedSubtitle(sourceCue.startTimeMs, sourceCue.endTimeMs, sourceCue.text, translatedText)
-                                            translatedInResponse++
-                                        }
-                                    }
-                                }
-                                if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
-                            }
-                            resultMutex.withLock {
-                                translations.putAll(batchTranslations)
-                                writeCache(cacheFile, translations.toMap(), configId)
-                                val translatedBatch = chunk.mapNotNull { cue ->
-                                    translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
-                                }
-                                if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
-                            }
-                            val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
-                            Log.i(TAG, "Translated embedded batch: index=${chunkIndex + 1}/${chunks.size} cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
-                        }.onFailure { error ->
-                            val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
-                            Log.e(TAG, "Embedded subtitle batch failed: index=${chunkIndex + 1}/${chunks.size} cues=${chunk.size} elapsedMs=$elapsedMs error=${error.message}", error)
-                        }
-                    }
-                }
-            }.awaitAll()
+
+        phaseOneBatches.forEachIndexed { index, batch ->
+            processBatch(batch, "priority", index, phaseOneBatches.size)
+        }
+        phaseTwoBatches.forEachIndexed { index, batch ->
+            processBatch(batch, "background", index, phaseTwoBatches.size)
         }
         cues.map { cue ->
             val translated = translations[cueIdentity(cue)]?.translatedText ?: cue.translationText
