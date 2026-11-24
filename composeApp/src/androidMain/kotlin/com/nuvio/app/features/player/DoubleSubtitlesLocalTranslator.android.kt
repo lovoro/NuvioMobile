@@ -45,6 +45,21 @@ internal object DoubleSubtitlesLocalTranslator {
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
+    /** Reads the target language from /configure/{source}/{target}/manifest.json. */
+    suspend fun configuredTargetLanguage(context: Context): String? = withContext(Dispatchers.IO) {
+        AddonRepository.initialize()
+        val state = AddonRepository.uiState.first { current ->
+            current.addons.any { it.manifest?.id == ADDON_ID } || current.addons.none { it.isRefreshing }
+        }
+        val addon = state.addons.firstOrNull { it.enabled && it.manifest?.id == ADDON_ID }
+            ?: return@withContext null
+        val segments = runCatching {
+            URI(addon.manifestUrl.substringBefore("?")).path.orEmpty().split('/').filter(String::isNotBlank)
+        }.getOrDefault(emptyList())
+        val index = segments.indexOfLast { it.equals("configure", true) }
+        segments.getOrNull(index + 2)?.takeIf { normalizeLanguageCode(it) != null }
+    }
+
     suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
         withContext(Dispatchers.IO) {
             val normalizedLanguage = normalizeLanguageCode(sourceLanguage) ?: return@withContext false

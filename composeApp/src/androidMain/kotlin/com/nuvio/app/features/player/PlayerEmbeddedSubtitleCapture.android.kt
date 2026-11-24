@@ -61,6 +61,8 @@ internal object PlayerEmbeddedSubtitleCapture {
     private var lastLoggedCueEndMs = Long.MIN_VALUE
 
     private data class TrackCues(
+        val language: String?,
+        val label: String?,
         val lock: Any = Any(),
         val cues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
     )
@@ -114,6 +116,43 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
 
+    /** Finds timed subtitle text from a track matching the add-on's configured target language. */
+    fun translationsFor(sourceCues: List<LearningSubtitleCue>, targetLanguage: String): List<LearningSubtitleCue> {
+        if (sourceCues.isEmpty() || targetLanguage.isBlank()) return sourceCues
+        val wanted = normalizeTrackLanguage(targetLanguage) ?: return sourceCues
+        val candidates = tracks.values.flatMap { entry ->
+            val actual = normalizeTrackLanguage(entry.language.orEmpty())
+                ?: normalizeTrackLanguage(entry.label.orEmpty())
+            if (actual != wanted) emptyList() else synchronized(entry.lock) { entry.cues.values.toList() }
+        }.distinctBy { Triple(it.startTimeMs, it.endTimeMs, it.text) }
+        if (candidates.isEmpty()) return sourceCues
+        return sourceCues.map { source ->
+            if (!source.translationText.isNullOrBlank()) return@map source
+            val matches = candidates.filter { target ->
+                val overlap = minOf(source.endTimeMs, target.endTimeMs) -
+                    maxOf(source.startTimeMs, target.startTimeMs)
+                overlap > 0L && target.startTimeMs <= source.endTimeMs + 1_500L &&
+                    target.endTimeMs >= source.startTimeMs - 1_500L
+            }.sortedBy { it.startTimeMs }
+            val joined = matches.map { it.text.trim() }.filter(String::isNotBlank).distinct()
+                .joinToString(if (wanted in setOf("zh", "ja", "ko")) "" else " ")
+            if (joined.isBlank()) source else source.copy(translationText = joined)
+        }
+    }
+
+    private fun normalizeTrackLanguage(value: String): String? {
+        val tag = value.trim().replace('_', '-').substringBefore('(').trim()
+        if (tag.isBlank()) return null
+        val primary = tag.substringBefore('-').lowercase()
+        if (primary.length == 2) return primary
+        if (primary.length == 3) return java.util.Locale.getAvailableLocales().firstOrNull {
+            runCatching { it.isO3Language.equals(primary, true) }.getOrDefault(false)
+        }?.language?.lowercase() ?: primary
+        return java.util.Locale.getAvailableLocales().firstOrNull {
+            it.language.isNotBlank() && it.getDisplayLanguage(java.util.Locale.ENGLISH).equals(tag, true)
+        }?.language?.lowercase()
+    }
+
     fun createParserFactory(): SubtitleParser.Factory {
         val delegate = DefaultSubtitleParserFactory()
         return object : SubtitleParser.Factory {
@@ -130,6 +169,10 @@ internal object PlayerEmbeddedSubtitleCapture {
                 // the cues and timing behavior delivered to ExoPlayer.
                 val captureParser = delegate.create(format)
                 val key = trackKey(format)
+                tracks.putIfAbsent(key, TrackCues(
+                    language = format.language?.takeIf { it.isNotBlank() },
+                    label = format.label?.toString()?.takeIf { it.isNotBlank() },
+                ))
                 return object : SubtitleParser {
                     override fun getCueReplacementBehavior(): Int =
                         parser.cueReplacementBehavior
@@ -183,7 +226,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         val endMs = endUs / 1_000L
         if (startMs < 0L || endMs <= startMs) return
 
-        val entry = tracks.getOrPut(key) { TrackCues() }
+        val entry = tracks.getOrPut(key) { TrackCues(language = null, label = null) }
         val cueAdded = synchronized(entry.lock) {
             var added = false
             // Media3 can emit several simultaneous Cue objects in one timed group. Keep each

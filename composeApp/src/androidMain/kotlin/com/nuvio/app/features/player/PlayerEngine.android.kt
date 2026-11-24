@@ -881,8 +881,19 @@ private fun ExoPlayerSurface(
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
-                                    PlayerLearningSubtitleState.mergePrefetched(uniqueCues)
-                                    if (sourceLanguageMatches) {
+                                    val targetLanguage = DoubleSubtitlesLocalTranslator.configuredTargetLanguage(context)
+                                    val pairedCues = targetLanguage?.let {
+                                        PlayerEmbeddedSubtitleCapture.translationsFor(uniqueCues, it)
+                                    } ?: uniqueCues
+                                    val readyFromEmbedded = pairedCues.count { !it.translationText.isNullOrBlank() }
+                                    val needsGoogle = pairedCues.filter { it.translationText.isNullOrBlank() }
+                                    // Publish source cues immediately; native matches already carry
+                                    // translationText, while unmatched cues remain visible during Google fallback.
+                                    PlayerLearningSubtitleState.mergePrefetched(pairedCues)
+                                    if (readyFromEmbedded > 0) {
+                                        Log.i(TAG, "Embedded bilingual match: matched=${readyFromEmbedded} targetLanguage=${targetLanguage}")
+                                    }
+                                    if (sourceLanguageMatches && needsGoogle.isNotEmpty()) {
                                         PlayerLearningSubtitleState.isTranslating = true
                                         translationJobs += translationScope.launch {
                                             translationSemaphore.withPermit {
@@ -895,7 +906,7 @@ private fun ExoPlayerSurface(
                                                     val translated = DoubleSubtitlesLocalTranslator.translate(
                                                         context,
                                                         cacheKey,
-                                                        uniqueCues,
+                                                        needsGoogle,
                                                         requiredSourceLanguage = format.language.orEmpty(),
                                                     )
                                                     if (
@@ -910,7 +921,7 @@ private fun ExoPlayerSurface(
                                     }
                                     Log.d(
                                         TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size}",
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=${readyFromEmbedded.size} googleFallback=${needsGoogle.size}",
                                     )
                                 }
                             }
