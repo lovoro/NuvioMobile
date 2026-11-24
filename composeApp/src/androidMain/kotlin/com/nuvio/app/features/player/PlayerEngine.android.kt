@@ -818,6 +818,7 @@ private fun ExoPlayerSurface(
             )
             val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
             if (languagePair == null) {
+                PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
                 finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
                 Log.i(
                     TAG,
@@ -843,6 +844,7 @@ private fun ExoPlayerSurface(
             }
             val targetTrackNumber = targetFormat?.id?.toIntOrNull()
             if (targetTrackNumber == null) {
+                PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
                 finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
                 Log.i(
                     TAG,
@@ -850,6 +852,7 @@ private fun ExoPlayerSurface(
                 )
                 return@launch
             }
+            PlayerEmbeddedSubtitleCapture.setTargetTrack(targetFormat, languagePair.second)
             if (
                 !isActive ||
                 learningSubtitleSelectionGeneration != selectionGeneration ||
