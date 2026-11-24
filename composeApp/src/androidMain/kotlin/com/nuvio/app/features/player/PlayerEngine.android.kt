@@ -850,6 +850,7 @@ private fun ExoPlayerSurface(
             }
             finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
             Log.d(TAG, "Embedded subtitle cache miss: track=$selectedTrackNumber")
+            val targetLanguage = DoubleSubtitlesLocalTranslator.configuredTargetLanguage(context)
             val extraction = coroutineScope {
                 val translationScope = this
                 // Preserve extraction priority while allowing two network batches at once.
@@ -881,7 +882,6 @@ private fun ExoPlayerSurface(
                                     }
                                 }
                                 if (uniqueCues.isNotEmpty()) {
-                                    val targetLanguage = DoubleSubtitlesLocalTranslator.configuredTargetLanguage(context)
                                     val pairedCues = targetLanguage?.let {
                                         PlayerEmbeddedSubtitleCapture.translationsFor(uniqueCues, it)
                                     } ?: uniqueCues
@@ -921,7 +921,7 @@ private fun ExoPlayerSurface(
                                     }
                                     Log.d(
                                         TAG,
-                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=${readyFromEmbedded.size} googleFallback=${needsGoogle.size}",
+                                        "Embedded subtitle ${if (isPlaybackPriority) "playback-priority cue" else "background batch"} ready: cues=${uniqueCues.size} embeddedMatched=${readyFromEmbedded} googleFallback=${needsGoogle.size}",
                                     )
                                 }
                             }
