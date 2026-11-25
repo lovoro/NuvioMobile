@@ -73,16 +73,25 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
-    fun liveCaptureGapUsesLastCueBeforePlaybackAndNeverJumpsToUpcomingCue() {
+    fun liveCaptureGapPrefersNextCueAndFallsBackToPreviousAtTimelineEnd() {
         val cues = listOf(
             cue(88 * 60_000L + 12_000L, 88 * 60_000L + 30_000L, "previous"),
             cue(90 * 60_000L + 5_000L, 90 * 60_000L + 20_000L, "upcoming"),
         )
+        val prefix = buildLearningSubtitlePrefixMaxEndMs(cues)
+        assertEquals(1, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 89 * 60_000L + 20_000L))
+        assertEquals(1, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 90 * 60_000L + 4_999L))
+        assertEquals(1, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 90 * 60_000L + 5_000L))
+        assertEquals(0, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 91 * 60_000L))
+        assertEquals(-1, findLiveCaptureLearningSubtitleScrollIndex(emptyList(), emptyList(), 89 * 60_000L))
+    }
 
-        assertEquals(0, findLatestLearningSubtitleIndexAtOrBefore(cues, 89 * 60_000L + 20_000L))
-        assertEquals(0, findLatestLearningSubtitleIndexAtOrBefore(cues, 90 * 60_000L + 4_999L))
-        assertEquals(1, findLatestLearningSubtitleIndexAtOrBefore(cues, 90 * 60_000L + 5_000L))
-        assertEquals(-1, findLatestLearningSubtitleIndexAtOrBefore(cues, 88 * 60_000L))
+    @Test
+    fun liveCaptureNavigationPrefersActiveCueBeforeUpcomingCue() {
+        val cues = listOf(cue(1_000L, 5_000L, "active"), cue(8_000L, 9_000L, "upcoming"))
+        val prefix = buildLearningSubtitlePrefixMaxEndMs(cues)
+        assertEquals(0, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 3_000L))
+        assertEquals(1, findLiveCaptureLearningSubtitleScrollIndex(cues, prefix, 6_000L))
     }
 
     @Test

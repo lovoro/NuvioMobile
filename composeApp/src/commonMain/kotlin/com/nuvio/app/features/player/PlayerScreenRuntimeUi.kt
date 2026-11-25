@@ -1208,18 +1208,13 @@ private fun LearningSubtitlePanel(
     // but playback still has a meaningful position in the subtitle timeline.
     val subtitleStatus = PlayerLearningSubtitleState.status
     val isLiveCapture = PlayerLearningSubtitleState.isLiveCapture
-    val scrollTargetIndex = remember(cues, positionMs, isLiveCapture) {
-        if (isLiveCapture) {
-            findLatestLearningSubtitleIndexAtOrBefore(cues, positionMs)
-        } else {
-            findLearningSubtitleScrollIndex(cues, positionMs)
-        }
+    val scrollTargetIndex = remember(cues, positionMs, isLiveCapture, prefixMaxEndMs) {
+        if (isLiveCapture) findLiveCaptureLearningSubtitleScrollIndex(cues, prefixMaxEndMs, positionMs)
+        else findLearningSubtitleScrollIndex(cues, positionMs)
     }
     val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
         (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
-    val displayLineIndex = scrollTargetIndex.takeIf {
-        cues.isNotEmpty() && (isLiveCapture || timelineCoversPosition)
-    }
+    val displayLineIndex = scrollTargetIndex.takeIf { cues.isNotEmpty() && (isLiveCapture || timelineCoversPosition) }
     val listState = rememberLazyListState()
     var scrollAnchorCueKey by remember { mutableStateOf<String?>(null) }
     val controlScope = rememberCoroutineScope()
@@ -1228,162 +1223,63 @@ private fun LearningSubtitlePanel(
     var repeatJob by remember { mutableStateOf<Job?>(null) }
     var repeatCueStartMs by remember { mutableStateOf<Long?>(null) }
     val repeatCue = repeatCueStartMs?.let { startMs -> cues.firstOrNull { it.startTimeMs == startMs } }
-    // During silence, show the nearest timeline line instead of 0/N. Do not report a
-    // misleading line until the incrementally loaded timeline has reached this position.
     val currentLineNumber = displayLineIndex?.let { (it + 1).coerceIn(1, cues.size) } ?: 0
 
-    // Initial restore: wait until cached cues reach the restored playback time. This avoids
-    // anchoring to the last old cue while the cache is still loading earlier batches.
-    // Once chosen, the cue identity is locked so inserting earlier cached cues cannot move it.
-    LaunchedEffect(cues, positionMs, subtitleStatus) {
-        if (cues.isEmpty()) {
-            scrollAnchorCueKey = null
-            return@LaunchedEffect
-        }
-        if (scrollAnchorCueKey != null) return@LaunchedEffect
-        if (!timelineCoversPosition && !isLiveCapture) return@LaunchedEffect
-        val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
-        val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-        scrollAnchorCueKey = targetKey
-        listState.animateScrollToItem(scrollTargetIndex)
-    }
-
-    // Live capture can have no cues yet at a seek destination. Keep that destination pending
-    // and anchor to the first cue actually captured after it, never to an unrelated old cue.
+    // One effect owns every list scroll. Resolve against the latest cues and retain only
+    // a stable cue identity, never an index from an older list.
     var lastObservedPositionMs by remember { mutableStateOf(positionMs) }
     var handledSeekRequestId by remember { mutableStateOf(seekRequestId) }
     var pendingLiveSeekPositionMs by remember { mutableStateOf<Long?>(null) }
     var waitingMarkerScrollPositionMs by remember { mutableStateOf<Long?>(null) }
-    val isWaitingForLiveSubtitles =
-        PlayerLearningSubtitleState.isLiveCapture && pendingLiveSeekPositionMs != null
-    LaunchedEffect(
-        positionMs,
-        activeIndex,
-        cues,
-        pendingLiveSeekPositionMs,
-        PlayerLearningSubtitleState.isLiveCapture,
-        isScrubbing,
-        seekRequestId,
-        seekRequestPositionMs,
-    ) {
-        // An explicit seek request is authoritative. Position polling alone can miss a seek
-        // when the player snapshot jumps before this panel observes the pre-seek position.
-        if (seekRequestId != handledSeekRequestId && seekRequestPositionMs != null) {
-            handledSeekRequestId = seekRequestId
-            val targetPositionMs = seekRequestPositionMs.coerceAtLeast(0L)
-            val previousPositionMs = lastObservedPositionMs
-            lastObservedPositionMs = targetPositionMs
-            val wasLiveCapture = PlayerLearningSubtitleState.isLiveCapture
-            val latestCapturedEndMs = cues.maxOfOrNull { it.endTimeMs } ?: Long.MIN_VALUE
+    val isWaitingForLiveSubtitles = isLiveCapture && pendingLiveSeekPositionMs != null
 
-            if (wasLiveCapture) {
-                PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
-                val targetIndex = findLatestLearningSubtitleIndexAtOrBefore(cues, targetPositionMs)
-                if (targetIndex < 0) {
-                    pendingLiveSeekPositionMs = targetPositionMs
-                    waitingMarkerScrollPositionMs = null
-                    scrollAnchorCueKey = null
-                } else {
-                    pendingLiveSeekPositionMs = null
-                    waitingMarkerScrollPositionMs = null
-                    val targetCue = cues.getOrNull(targetIndex)
-                    if (targetCue != null) {
-                        scrollAnchorCueKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-                        listState.scrollToItem(targetIndex)
-                    }
-                }
-            } else {
-                val targetIndex = findLearningSubtitleScrollIndex(cues, targetPositionMs)
-                val targetCue = cues.getOrNull(targetIndex)
-                val timelineCoversTarget = PlayerLearningSubtitleState.status == LearningSubtitleStatus.READY ||
-                    (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= targetPositionMs
-                if (timelineCoversTarget && targetCue != null) {
-                    scrollAnchorCueKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-                    listState.scrollToItem(targetIndex)
-                }
-            }
-            return@LaunchedEffect
-        }
-
-        // The timeline slider's preview position is not the player's real position. Do not
-        // close live cues until the scrub is committed and the player reports its new position.
+    LaunchedEffect(cues, positionMs, isScrubbing, seekRequestId, seekRequestPositionMs, isLiveCapture, subtitleStatus) {
         if (isScrubbing) return@LaunchedEffect
+        val explicitSeek = seekRequestId != handledSeekRequestId && seekRequestPositionMs != null
         val previousPositionMs = lastObservedPositionMs
-        lastObservedPositionMs = positionMs
-        val isSeek = positionMs - previousPositionMs > 2_000L ||
-            previousPositionMs - positionMs > 2_000L
-
-        if (isSeek && PlayerLearningSubtitleState.isLiveCapture) {
-            val latestCapturedEndMs = cues.maxOfOrNull { it.endTimeMs } ?: Long.MIN_VALUE
-            // A cue that was active before the seek must not remain active after either a
-            // forward or backward seek, even when the destination is inside captured history.
+        val targetPositionMs = if (explicitSeek) {
+            handledSeekRequestId = seekRequestId
+            seekRequestPositionMs!!.coerceAtLeast(0L)
+        } else positionMs
+        val isSeek = explicitSeek || (
+            targetPositionMs != previousPositionMs &&
+                kotlin.math.abs(targetPositionMs - previousPositionMs) > 2_000L
+        )
+        if (isSeek && isLiveCapture) {
             PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
-            val targetIndex = findLatestLearningSubtitleIndexAtOrBefore(cues, positionMs)
-            if (targetIndex < 0) {
-                pendingLiveSeekPositionMs = positionMs
-                waitingMarkerScrollPositionMs = null
-                scrollAnchorCueKey = null
-                return@LaunchedEffect
-            }
+            pendingLiveSeekPositionMs = targetPositionMs
+            waitingMarkerScrollPositionMs = null
+        }
+        lastObservedPositionMs = targetPositionMs
 
-            // Even inside a silent gap, anchor to the last cue captured before playback time.
+        if (cues.isEmpty()) {
+            scrollAnchorCueKey = null
+            if (isLiveCapture && (isSeek || pendingLiveSeekPositionMs != null)) pendingLiveSeekPositionMs = targetPositionMs
+            return@LaunchedEffect
+        }
+
+        val effectivePositionMs = pendingLiveSeekPositionMs ?: targetPositionMs
+        val targetIndex = if (isLiveCapture) {
+            findLiveCaptureLearningSubtitleScrollIndex(cues, prefixMaxEndMs, effectivePositionMs)
+        } else findLearningSubtitleScrollIndex(cues, effectivePositionMs)
+        val targetCue = cues.getOrNull(targetIndex)
+
+        if (!isLiveCapture) {
+            val coversTarget = subtitleStatus == LearningSubtitleStatus.READY ||
+                (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= effectivePositionMs
+            if (!coversTarget) return@LaunchedEffect
             pendingLiveSeekPositionMs = null
             waitingMarkerScrollPositionMs = null
-            val targetCue = cues.getOrNull(targetIndex) ?: return@LaunchedEffect
-            val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-            scrollAnchorCueKey = targetKey
-            listState.animateScrollToItem(scrollTargetIndex)
-            return@LaunchedEffect
-        }
-
-        val pendingPositionMs = pendingLiveSeekPositionMs
-        if (pendingPositionMs != null && !PlayerLearningSubtitleState.isLiveCapture) {
-            // If complete extraction finished while waiting, switch to the now-known timeline.
-            val timelineCoversPosition = PlayerLearningSubtitleState.status == LearningSubtitleStatus.READY ||
-                (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
-            val targetIndex = findLearningSubtitleScrollIndex(cues, positionMs)
-            val targetCue = cues.getOrNull(targetIndex)
-            if (timelineCoversPosition && targetCue != null) {
-                val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-                scrollAnchorCueKey = targetKey
-                listState.scrollToItem(targetIndex)
-            }
+        } else if (pendingLiveSeekPositionMs != null && targetCue != null) {
             pendingLiveSeekPositionMs = null
             waitingMarkerScrollPositionMs = null
-            return@LaunchedEffect
         }
 
-        if (pendingPositionMs != null && PlayerLearningSubtitleState.isLiveCapture) {
-            val firstCueAfterSeek = cues.indexOfFirst { it.endTimeMs > pendingPositionMs }
-            if (firstCueAfterSeek >= 0) {
-                val targetCue = cues[firstCueAfterSeek]
-                val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-                scrollAnchorCueKey = targetKey
-                listState.scrollToItem(firstCueAfterSeek)
-                pendingLiveSeekPositionMs = null
-                waitingMarkerScrollPositionMs = null
-            } else if (
-                cues.isNotEmpty() &&
-                listState.layoutInfo.totalItemsCount > cues.size &&
-                waitingMarkerScrollPositionMs != pendingPositionMs
-            ) {
-                waitingMarkerScrollPositionMs = pendingPositionMs
-                listState.scrollToItem(cues.size)
-            }
-            return@LaunchedEffect
-        }
-
-        if (scrollAnchorCueKey == null) return@LaunchedEffect
-        val targetIndex = when {
-            activeIndex >= 0 -> activeIndex
-            isSeek -> scrollTargetIndex
-            else -> -1
-        }
-        val targetCue = cues.getOrNull(targetIndex) ?: return@LaunchedEffect
+        if (targetCue == null) return@LaunchedEffect
         val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
-        if (targetKey != scrollAnchorCueKey) {
+        if (targetKey != scrollAnchorCueKey || isSeek) {
             scrollAnchorCueKey = targetKey
-            listState.animateScrollToItem(targetIndex)
+            listState.scrollToItem(targetIndex.coerceIn(0, cues.lastIndex))
         }
     }
     LaunchedEffect(repeatCurrentCue, repeatCueStartMs, repeatCue?.endTimeMs, positionMs, isPlaying) {

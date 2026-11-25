@@ -853,6 +853,27 @@ internal fun findLearningSubtitleScrollIndex(
  * than the old 1.0..2.4 range. Clamping them to 2.4 made the video viewport disagree
  * with the PlayerView's own measured video bounds.
  */
+/**
+ * Live Capture navigation: active cue first, otherwise next captured cue; fall back
+ * to the last cue before playback only when no upcoming cue has been captured.
+ */
+internal fun findLiveCaptureLearningSubtitleScrollIndex(
+    cues: List<LearningSubtitleCue>,
+    prefixMaxEndMs: List<Long>,
+    positionMs: Long,
+): Int {
+    if (cues.isEmpty()) return -1
+    val activeIndex = findLearningSubtitleIndex(cues, prefixMaxEndMs, positionMs)
+    if (activeIndex >= 0) return activeIndex
+    var low = 0
+    var high = cues.size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (cues[middle].startTimeMs <= positionMs) low = middle + 1 else high = middle
+    }
+    return if (low < cues.size) low else cues.lastIndex
+}
+
 internal fun resolveLearningVideoAspectRatio(width: Int, height: Int): Float {
     if (width <= 0 || height <= 0) return 16f / 9f
     return (width.toFloat() / height.toFloat()).coerceIn(0.5f, 3.0f)
