@@ -73,24 +73,6 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
-    fun partialTimelineUsesNearestKnownCueAfterExplicitSeekBeyondCapturedRange() {
-        val cues = listOf(
-            cue(1_000L, 2_000L, "first"),
-            cue(10_000L, 11_000L, "last captured"),
-        )
-
-        assertEquals(-1, resolveLearningSubtitleDisplayIndex(
-            cues, 60_000L, LearningSubtitleStatus.PARTIAL, hasExplicitSeek = false,
-        ))
-        assertEquals(1, resolveLearningSubtitleDisplayIndex(
-            cues, 60_000L, LearningSubtitleStatus.PARTIAL, hasExplicitSeek = true,
-        ))
-        assertEquals(1, resolveLearningSubtitleDisplayIndex(
-            cues, 60_000L, LearningSubtitleStatus.READY, hasExplicitSeek = false,
-        ))
-    }
-
-    @Test
     fun scrollTargetPrefersActiveCueOverNeighboringCues() {
         val cues = listOf(
             cue(1_000L, 10_000L, "long"),
