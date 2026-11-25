@@ -12,16 +12,35 @@ import kotlinx.coroutines.withContext
  * into plain text before subtitle content is stored or rendered.
  */
 internal fun normalizeLearningSubtitleText(rawText: String): String {
-    val overrideTags = Regex("""\{\\+[^}]*}""")
-    val lineBreaks = Regex("""\\+N""")
-    val softLineBreaks = Regex("""\\+n""")
-    val hardSpaces = Regex("""\\+h""")
-    return rawText
-        .replace(overrideTags, "")
-        .replace(lineBreaks, "\n")
-        .replace(softLineBreaks, "\n")
-        .replace(hardSpaces, " ")
-        .trim()
+    val output = StringBuilder(rawText.length)
+    var index = 0
+    while (index < rawText.length) {
+        val current = rawText[index]
+        if (current == '{' && index + 1 < rawText.length && rawText[index + 1] == '\\') {
+            val closingBrace = rawText.indexOf('}', index + 2)
+            if (closingBrace >= 0) {
+                index = closingBrace + 1
+                continue
+            }
+        }
+        if (current == '\\' && index + 1 < rawText.length) {
+            when (rawText[index + 1]) {
+                'N', 'n' -> {
+                    output.append('\n')
+                    index += 2
+                    continue
+                }
+                'h' -> {
+                    output.append(' ')
+                    index += 2
+                    continue
+                }
+            }
+        }
+        output.append(current)
+        index += 1
+    }
+    return output.toString().trim()
 }
 
 data class LearningSubtitleCue(
