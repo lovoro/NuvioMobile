@@ -295,10 +295,42 @@ internal object DoubleSubtitlesLocalTranslator {
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
                     var responseItemCount = 0
+                    val requestStartedAtNanos = System.nanoTime()
                     client.newCall(request).execute().use { response ->
+                        val responseHeadersAtNanos = System.nanoTime()
+                        val headerWaitMs = (responseHeadersAtNanos - requestStartedAtNanos) / 1_000_000
+                        PlayerLearningSubtitleState.recordTranslationDiagnostic(
+                            "第 ${chunkIndex + 1}/${totalChunks} 批收到 HTTP 响应头",
+                            "HTTP ${response.code}，等待 ${headerWaitMs} ms"
+                        )
                         val responseText = response.body?.string().orEmpty()
-                        PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批收到 HTTP 响应", "HTTP ${response.code}")
-                        Log.i(TAG, "Translation HTTP response: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} http=${response.code} bodyChars=${responseText.length}")
+                        val bodyReadFinishedAtNanos = System.nanoTime()
+                        val bodyReadMs = (bodyReadFinishedAtNanos - responseHeadersAtNanos) / 1_000_000
+                        val totalRequestMs = (bodyReadFinishedAtNanos - requestStartedAtNanos) / 1_000_000
+                        PlayerLearningSubtitleState.recordTranslationDiagnostic(
+                            "第 ${chunkIndex + 1}/${totalChunks} 批读取响应体完成",
+                            "${responseText.length} 字符，读取 ${bodyReadMs} ms，总请求 ${totalRequestMs} ms"
+                        )
+                        PlayerLearningSubtitleState.enqueueTranslationRawResponse(
+                            TranslationRawResponse(
+                                batchNumber = chunkIndex + 1,
+                                totalBatches = totalChunks,
+                                cueCount = chunk.size,
+                                httpCode = response.code,
+                                headerWaitMs = headerWaitMs,
+                                bodyReadMs = bodyReadMs,
+                                totalRequestMs = totalRequestMs,
+                                body = responseText,
+                            )
+                        )
+                        Log.i(TAG, "Translation raw response captured: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} http=${response.code} headerWaitMs=${headerWaitMs} bodyReadMs=${bodyReadMs} totalMs=${totalRequestMs} bodyChars=${responseText.length}")
+                        if (PlayerLearningSubtitleState.rawResponseInspectionMode) {
+                            PlayerLearningSubtitleState.recordTranslationDiagnostic(
+                                "第 ${chunkIndex + 1}/${totalChunks} 批跳过响应解析",
+                                "已保留接口原始响应，未解析 JSON、未写缓存、未回写字幕"
+                            )
+                            return
+                        }
                         if (!response.isSuccessful) {
                             throw TranslationHttpException(response.code,
                                 "Double Subtitles returned HTTP ${response.code}: $responseText")

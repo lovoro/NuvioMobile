@@ -120,16 +120,36 @@ internal fun mergeLearningSubtitleCueLists(
 
 data class TranslationDiagnosticEvent(val label: String, val elapsedMs: Long, val detail: String = "")
 
+data class TranslationRawResponse(
+    val batchNumber: Int,
+    val totalBatches: Int,
+    val cueCount: Int,
+    val httpCode: Int,
+    val headerWaitMs: Long,
+    val bodyReadMs: Long,
+    val totalRequestMs: Long,
+    val body: String,
+)
+
 object PlayerLearningSubtitleState {
     var showTranslationDiagnostics by mutableStateOf(false)
     var translationDiagnosticEvents by mutableStateOf<List<TranslationDiagnosticEvent>>(emptyList())
         private set
+    var translationRawResponses by mutableStateOf<List<TranslationRawResponse>>(emptyList())
+        private set
+    private var currentRawResponseIndex by mutableStateOf(0)
+    val currentTranslationRawResponse: TranslationRawResponse?
+        get() = translationRawResponses.firstOrNull { it.batchNumber == currentRawResponseIndex + 1 }
+    // Temporary inspection mode: deliberately stop before parsing, caching, or applying translations.
+    val rawResponseInspectionMode: Boolean get() = true
     private var translationDiagnosticStart: TimeMark? = null
 
     fun startTranslationDiagnostics() {
         translationDiagnosticStart = TimeSource.Monotonic.markNow()
         translationDiagnosticEvents = emptyList()
-        showTranslationDiagnostics = true
+        translationRawResponses = emptyList()
+        currentRawResponseIndex = 0
+        showTranslationDiagnostics = false
         recordTranslationDiagnostic("点击翻译")
     }
 
@@ -140,8 +160,15 @@ object PlayerLearningSubtitleState {
             TranslationDiagnosticEvent(label, start.elapsedNow().inWholeMilliseconds, detail)
     }
 
+    fun enqueueTranslationRawResponse(response: TranslationRawResponse) {
+        translationRawResponses = (translationRawResponses.filterNot { it.batchNumber == response.batchNumber } + response)
+            .sortedBy { it.batchNumber }
+        if (currentTranslationRawResponse != null) showTranslationDiagnostics = true
+    }
+
     fun closeTranslationDiagnostics() {
-        showTranslationDiagnostics = false
+        currentRawResponseIndex += 1
+        showTranslationDiagnostics = currentTranslationRawResponse != null
     }
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
@@ -368,6 +395,11 @@ object PlayerLearningSubtitleState {
             }
             if (requestGeneration != translationGeneration) {
                 println("NuvioSubtitleUI: final result ignored as stale generation=${requestGeneration} currentGeneration=${translationGeneration}")
+                return
+            }
+            if (PlayerLearningSubtitleState.rawResponseInspectionMode) {
+                recordTranslationDiagnostic("原始响应检查结束", "已跳过 JSON 解析、缓存写入和字幕回写")
+                translationMessage = null
                 return
             }
             val finalTranslatedCount = translated.count { !it.translationText.isNullOrBlank() }

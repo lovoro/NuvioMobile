@@ -593,6 +593,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     }
 
     if (PlayerLearningSubtitleState.showTranslationDiagnostics) {
+        val rawResponse = PlayerLearningSubtitleState.currentTranslationRawResponse
         Dialog(onDismissRequest = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -603,14 +604,29 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     modifier = Modifier.fillMaxWidth().padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("翻译耗时诊断", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "从点击翻译开始计时；时间为累计耗时。",
+                        rawResponse?.let { "第 ${it.batchNumber}/${it.totalBatches} 批接口原始响应" } ?: "等待接口响应",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    if (rawResponse != null) {
+                        Text(
+                            "HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "等待响应头：${rawResponse.headerWaitMs} ms   读取响应体：${rawResponse.bodyReadMs} ms   请求总计：${rawResponse.totalRequestMs} ms",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        "从点击翻译开始计时；下面是累计耗时和接口原始返回。当前检查模式不会解析或应用译文。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().height(340.dp),
+                        modifier = Modifier.fillMaxWidth().height(360.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         itemsIndexed(PlayerLearningSubtitleState.translationDiagnosticEvents) { index, event ->
@@ -629,10 +645,20 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                                 }
                             }
                         }
+                        item {
+                            Text("接口返回原文", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                rawResponse?.body ?: "尚未收到该批次响应",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         androidx.compose.material3.TextButton(onClick = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
-                            Text("关闭")
+                            Text(
+                                if (rawResponse != null && rawResponse.batchNumber < rawResponse.totalBatches) "下一批" else "关闭"
+                            )
                         }
                     }
                 }
