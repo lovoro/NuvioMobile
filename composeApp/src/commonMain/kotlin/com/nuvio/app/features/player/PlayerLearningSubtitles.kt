@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * Removes ASS/SSA override blocks and converts ASS line-break/spacing escapes
@@ -116,7 +118,30 @@ internal fun mergeLearningSubtitleCueLists(
     return merged.sortedBy { it.startTimeMs }
 }
 
+data class TranslationDiagnosticEvent(val label: String, val elapsedMs: Long, val detail: String = "")
+
 object PlayerLearningSubtitleState {
+    var showTranslationDiagnostics by mutableStateOf(false)
+    var translationDiagnosticEvents by mutableStateOf<List<TranslationDiagnosticEvent>>(emptyList())
+        private set
+    private var translationDiagnosticStart: TimeMark? = null
+
+    fun startTranslationDiagnostics() {
+        translationDiagnosticStart = TimeSource.Monotonic.markNow()
+        translationDiagnosticEvents = emptyList()
+        showTranslationDiagnostics = true
+        recordTranslationDiagnostic("点击翻译")
+    }
+
+    fun recordTranslationDiagnostic(label: String, detail: String = "") {
+        val start = translationDiagnosticStart ?: return
+        translationDiagnosticEvents = translationDiagnosticEvents +
+            TranslationDiagnosticEvent(label, start.elapsedNow().inWholeMilliseconds, detail)
+    }
+
+    fun closeTranslationDiagnostics() {
+        showTranslationDiagnostics = false
+    }
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
     private var mutableStatus by mutableStateOf(LearningSubtitleStatus.NONE)
@@ -310,11 +335,13 @@ object PlayerLearningSubtitleState {
             showTranslationMessage("当前字幕暂时无法翻译，请重新选择字幕后重试。")
             return
         }
+        recordTranslationDiagnostic("检查翻译条件完成")
         val source = cues
         if (source.isEmpty()) {
             showTranslationMessage("字幕尚未加载完成，请稍后再试。")
             return
         }
+        recordTranslationDiagnostic("获取字幕快照", "共 ${source.size} 条，已有译文 ${source.count { !it.translationText.isNullOrBlank() }} 条")
         val requestGeneration = translationGeneration
         val startedAtMs = System.currentTimeMillis()
         println("NuvioSubtitleUI: manual translation started generation=${requestGeneration} cues=${source.size} translated=${source.count { !it.translationText.isNullOrBlank() }} positionMs=${currentPositionMs}")
@@ -322,7 +349,9 @@ object PlayerLearningSubtitleState {
         refreshTranslationProgress()
         translationMessage = null
         try {
+            recordTranslationDiagnostic("开始执行翻译任务")
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
+                recordTranslationDiagnostic("收到批次回调", "${batch.size} 条，译文 ${batch.count { !it.translationText.isNullOrBlank() }} 条")
                 val callbackTranslated = batch.count { !it.translationText.isNullOrBlank() }
                 println("NuvioSubtitleUI: batch callback received generation=${requestGeneration} currentGeneration=${translationGeneration} cues=${batch.size} translated=${callbackTranslated} range=${batch.minOfOrNull { it.startTimeMs }}..${batch.maxOfOrNull { it.startTimeMs }}")
                 // The Android translator performs network work on Dispatchers.IO and invokes
@@ -330,6 +359,7 @@ object PlayerLearningSubtitleState {
                 withContext(Dispatchers.Main.immediate) {
                     if (requestGeneration == translationGeneration) {
                         applyTranslations(batch)
+                        recordTranslationDiagnostic("批次回写完成", "当前已有 ${cues.count { !it.translationText.isNullOrBlank() }} 条译文")
                     } else {
                         println("NuvioSubtitleUI: batch callback ignored as stale generation=${requestGeneration} currentGeneration=${translationGeneration}")
                     }
@@ -343,15 +373,18 @@ object PlayerLearningSubtitleState {
             println("NuvioSubtitleUI: translator returned cues=${translated.size} translated=${finalTranslatedCount} elapsedMs=${System.currentTimeMillis()-startedAtMs}")
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
             applyTranslations(translated)
+            recordTranslationDiagnostic("最终结果回写完成", "译文 ${finalTranslatedCount} 条")
             translationMessage = null
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (requestGeneration == translationGeneration) {
                 showTranslationMessage(error.message?.takeIf(String::isNotBlank) ?: "翻译失败，请稍后重试。")
+                recordTranslationDiagnostic("翻译失败", error.message ?: "未知错误")
             }
         } finally {
             if (requestGeneration == translationGeneration) {
                 isTranslating = false
+                recordTranslationDiagnostic("翻译流程结束")
             }
         }
     }
