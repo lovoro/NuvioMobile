@@ -144,16 +144,29 @@ internal object DoubleSubtitlesLocalTranslator {
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
         // One track identity owns one JSON file beside its original ID.bin.
         // Endpoint hashes are buckets inside that JSON, keeping addon configurations isolated.
+        val cacheStartedAt = android.os.SystemClock.elapsedRealtime()
         val configId = sha256(endpoint)
         val cacheFile = cacheFile(context, trackCacheKey)
+        // Compute each cue identity once instead of recalculating SHA-256 in every cache pass.
+        val cueIds = cues.map { cueIdentity(it) }
+        val currentCueIds = cueIds.toHashSet()
+
+        val mainCacheStartedAt = android.os.SystemClock.elapsedRealtime()
+        val mainTranslations = readCache(cacheFile, configId)
+        val mainCacheReadMs = android.os.SystemClock.elapsedRealtime() - mainCacheStartedAt
+
+        // Probe legacy cache files only when they exist; avoid unnecessary legacy IO on cache misses.
+        val legacyStartedAt = android.os.SystemClock.elapsedRealtime()
         val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
+        val legacyTrackTranslations = if (legacyTrackFile.isFile) readCache(legacyTrackFile, configId) else emptyMap()
         val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
-        val currentCueIds = cues.mapTo(hashSetOf()) { cueIdentity(it) }
-        val legacyTrackTranslations = readCache(legacyTrackFile, configId)
-        val legacyEndpointTranslations = readCache(legacyEndpointFile, configId)
-            .filterKeys { it in currentCueIds }
+        val legacyEndpointTranslations = if (legacyEndpointFile.isFile) {
+            readCache(legacyEndpointFile, configId).filterKeys { it in currentCueIds }
+        } else emptyMap()
         val legacyTranslations = legacyTrackTranslations + legacyEndpointTranslations
-        val translations = readCache(cacheFile, configId).toMutableMap().apply {
+        val legacyReadMs = android.os.SystemClock.elapsedRealtime() - legacyStartedAt
+
+        val translations = mainTranslations.toMutableMap().apply {
             legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
         if (legacyTranslations.isNotEmpty()) {
@@ -164,28 +177,25 @@ internal object DoubleSubtitlesLocalTranslator {
         }
         // Upgrade legacy translation-only entries with the original cue data whenever available.
         var upgradedLegacyEntries = false
-        cues.forEach { cue ->
-            val id = cueIdentity(cue)
+        cues.forEachIndexed { index, cue ->
+            val id = cueIds[index]
             val cached = translations[id]
             if (cached != null && cached.originalText.isBlank()) {
-                translations[id] = cached.copy(
-                    startTimeMs = cue.startTimeMs,
-                    endTimeMs = cue.endTimeMs,
-                    originalText = cue.text,
-                )
+                translations[id] = cached.copy(startTimeMs = cue.startTimeMs, endTimeMs = cue.endTimeMs, originalText = cue.text)
                 upgradedLegacyEntries = true
             }
         }
         if (upgradedLegacyEntries) writeCache(cacheFile, translations, configId)
+        Log.i(TAG, "Translation cache timing: cueIds=${cueIds.size}, mainReadMs=$mainCacheReadMs, legacyReadMs=$legacyReadMs, totalMs=${android.os.SystemClock.elapsedRealtime() - cacheStartedAt}, mainFileExists=${cacheFile.isFile}, mainFileBytes=${if (cacheFile.isFile) cacheFile.length() else 0L}, legacyEntries=${legacyTranslations.size}, cachedEntries=${translations.size}")
         Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
         PlayerLearningSubtitleState.recordTranslationDiagnostic("读取翻译缓存完成", "缓存译文 ${translations.size} 条")
 
         // Restore cache hits immediately, before constructing or sending any translation
         // requests. Cached cues are excluded from the missing list below, so they are never
         // sent to the translation API again.
-        val cachedBatch = cues.mapNotNull { cue ->
-            if (!cue.translationText.isNullOrBlank()) return@mapNotNull null
-            translations[cueIdentity(cue)]?.translatedText
+        val cachedBatch = cues.mapIndexedNotNull { index, cue ->
+            if (!cue.translationText.isNullOrBlank()) return@mapIndexedNotNull null
+            translations[cueIds[index]]?.translatedText
                 ?.takeIf(String::isNotBlank)
                 ?.let { cue.copy(translationText = it) }
         }
@@ -194,9 +204,9 @@ internal object DoubleSubtitlesLocalTranslator {
             onBatchTranslated(cachedBatch)
         }
 
-        val missing = cues.filter { cue ->
+        val missing = cues.filterIndexed { index, cue ->
             cue.text.isNotBlank() &&
-                translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() &&
+                translations[cueIds[index]]?.translatedText.isNullOrBlank() &&
                 cue.translationText.isNullOrBlank()
         }
         val positionMs = priorityPositionMs
