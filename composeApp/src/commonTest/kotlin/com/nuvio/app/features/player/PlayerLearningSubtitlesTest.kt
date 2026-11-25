@@ -18,11 +18,32 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun displayTextAlwaysRemovesAssTagsFromSourceAndTranslation() {
+        val cue = LearningSubtitleCue(
+            0L,
+            2_000L,
+            """{\an8}Hello there""",
+            """{\pos(100,200)}First\NSecond""",
+        )
+        assertEquals("Hello there\nFirst\nSecond", cue.displayText)
+    }
+
+    @Test
+    fun partialCueAppendStoresCleanAssText() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.appendPartialCues(
+            listOf(cue(0L, 2_000L, """{\an8}Hello there"""))
+        )
+        assertEquals("Hello there", PlayerLearningSubtitleState.cues.single().text)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun liveCaptureStoresCleanedAssSubtitleText() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()
 
-        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("""{\\an8}Hello there"""), 1_000L)
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("""{\an8}Hello there"""), 1_000L)
 
         assertEquals("Hello there", PlayerLearningSubtitleState.cues.single().text)
         PlayerLearningSubtitleState.clear()
@@ -262,7 +283,7 @@ class PlayerLearningSubtitlesTest {
 
         assertEquals(listOf("First", "Second"), PlayerLearningSubtitleState.cues.map { it.text })
         assertEquals("第一条", PlayerLearningSubtitleState.cues.first().translationText)
-        assertEquals("First\\n第一条", PlayerLearningSubtitleState.cues.first().displayText)
+        assertEquals("First\n第一条", PlayerLearningSubtitleState.cues.first().displayText)
         PlayerLearningSubtitleState.clear()
     }
 
@@ -458,7 +479,7 @@ class PlayerLearningSubtitlesTest {
 \n
     @Test
     fun multilineSubtitleLineBreakDelaysHighlightingOfTheFollowingLine() {
-        val text = "We made some\\ngreat progress today."
+        val text = "We made some\ngreat progress today."
 
         // The break between spoken phrases reserves a brief pause. At this point
         // the highlight should still be on the second line's first word, not jump

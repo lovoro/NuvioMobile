@@ -7,6 +7,23 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Removes ASS/SSA override blocks and converts ASS line-break/spacing escapes
+ * into plain text before subtitle content is stored or rendered.
+ */
+internal fun normalizeLearningSubtitleText(rawText: String): String {
+    val overrideTags = Regex("""\{\\+[^}]*}""")
+    val lineBreaks = Regex("""\\+N""")
+    val softLineBreaks = Regex("""\\+n""")
+    val hardSpaces = Regex("""\\+h""")
+    return rawText
+        .replace(overrideTags, "")
+        .replace(lineBreaks, "\n")
+        .replace(softLineBreaks, "\n")
+        .replace(hardSpaces, " ")
+        .trim()
+}
+
 data class LearningSubtitleCue(
     val startTimeMs: Long,
     val endTimeMs: Long,
@@ -14,8 +31,10 @@ data class LearningSubtitleCue(
     val translationText: String? = null,
 ) {
     val displayText: String
-        get() = listOfNotNull(text.takeIf(String::isNotBlank), translationText?.takeIf(String::isNotBlank))
-            .joinToString("\n")
+        get() = listOfNotNull(
+            normalizeLearningSubtitleText(text).takeIf(String::isNotBlank),
+            translationText?.let(::normalizeLearningSubtitleText)?.takeIf(String::isNotBlank),
+        ).joinToString("\n")
 }
 
 enum class LearningSubtitleStatus {
@@ -36,6 +55,10 @@ internal fun mergeLearningSubtitleCueLists(
     vararg lists: List<LearningSubtitleCue>,
 ): List<LearningSubtitleCue> {
     val ordered = lists.asSequence().flatten()
+        .map { cue -> cue.copy(
+            text = normalizeLearningSubtitleText(cue.text),
+            translationText = cue.translationText?.let(::normalizeLearningSubtitleText),
+        ) }
         .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
         .sortedBy { it.startTimeMs }
         .toList()
@@ -355,7 +378,7 @@ object PlayerLearningSubtitleState {
     fun captureLiveCueGroup(texts: List<String>, positionMs: Long) {
         if (completeExtractionLoaded) return
         val timeMs = positionMs.coerceAtLeast(0L)
-        val visibleTexts = texts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val visibleTexts = texts.map(::normalizeLearningSubtitleText).filter { it.isNotEmpty() }.distinct()
         val visibleSet = visibleTexts.toSet()
         activeLiveCues.toMap().forEach { (text, startMs) ->
             if (text !in visibleSet) {
@@ -415,6 +438,10 @@ object PlayerLearningSubtitleState {
     fun appendPartialCues(newCues: List<LearningSubtitleCue>) {
         if (completeExtractionLoaded || newCues.isEmpty()) return
         val validNewCues = newCues
+            .map { cue -> cue.copy(
+                text = normalizeLearningSubtitleText(cue.text),
+                translationText = cue.translationText?.let(::normalizeLearningSubtitleText),
+            ) }
             .filter { it.text.isNotBlank() && it.endTimeMs > it.startTimeMs }
             .sortedBy { it.startTimeMs }
         if (validNewCues.isEmpty()) return
