@@ -102,6 +102,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     var showClearSubtitleCacheConfirmation by remember { mutableStateOf(false) }
     var isClearingSubtitleCache by remember { mutableStateOf(false) }
     var subtitleCacheClearMessage by remember { mutableStateOf<String?>(null) }
+    var learningSeekRequestId by remember { mutableStateOf(0L) }
+    var learningSeekTargetMs by remember { mutableStateOf<Long?>(null) }
     val settingsCoroutineScope = rememberCoroutineScope()
     val isInPip = rememberIsInPictureInPicture()
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
@@ -363,6 +365,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 positionMs = displayedPositionMs,
                 isPlaying = playbackSnapshot.isPlaying,
                 isScrubbing = scrubbingPositionMs != null,
+                seekRequestId = learningSeekRequestId,
+                seekRequestPositionMs = learningSeekTargetMs,
                 onCueClick = { cue ->
                     playerController?.seekTo(cue.startTimeMs)
                     scrubbingPositionMs = null
@@ -403,6 +407,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                                     scrubbingPositionMs = null
                                 } else {
                                     finishTimelineScrub(targetMs)
+                                    learningSeekTargetMs = targetMs
+                                    learningSeekRequestId += 1L
                                     playerController?.seekTo(targetMs)
                                     scheduleProgressSyncAfterSeek()
                                     publishPartyPlayback(positionMs = targetMs)
@@ -1180,6 +1186,8 @@ private fun LearningSubtitlePanel(
     positionMs: Long,
     isPlaying: Boolean,
     isScrubbing: Boolean,
+    seekRequestId: Long,
+    seekRequestPositionMs: Long?,
     onCueClick: (LearningSubtitleCue) -> Unit,
     onPlay: () -> Unit,
     onPause: () -> Unit,
@@ -1236,6 +1244,7 @@ private fun LearningSubtitlePanel(
     // Live capture can have no cues yet at a seek destination. Keep that destination pending
     // and anchor to the first cue actually captured after it, never to an unrelated old cue.
     var lastObservedPositionMs by remember { mutableStateOf(positionMs) }
+    var handledSeekRequestId by remember { mutableStateOf(seekRequestId) }
     var pendingLiveSeekPositionMs by remember { mutableStateOf<Long?>(null) }
     var waitingMarkerScrollPositionMs by remember { mutableStateOf<Long?>(null) }
     val isWaitingForLiveSubtitles =
@@ -1247,7 +1256,48 @@ private fun LearningSubtitlePanel(
         pendingLiveSeekPositionMs,
         PlayerLearningSubtitleState.isLiveCapture,
         isScrubbing,
+        seekRequestId,
+        seekRequestPositionMs,
     ) {
+        // An explicit seek request is authoritative. Position polling alone can miss a seek
+        // when the player snapshot jumps before this panel observes the pre-seek position.
+        if (seekRequestId != handledSeekRequestId && seekRequestPositionMs != null) {
+            handledSeekRequestId = seekRequestId
+            val targetPositionMs = seekRequestPositionMs.coerceAtLeast(0L)
+            val previousPositionMs = lastObservedPositionMs
+            lastObservedPositionMs = targetPositionMs
+            val wasLiveCapture = PlayerLearningSubtitleState.isLiveCapture
+            val latestCapturedEndMs = cues.maxOfOrNull { it.endTimeMs } ?: Long.MIN_VALUE
+
+            if (wasLiveCapture) {
+                PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
+                if (cues.isEmpty() || targetPositionMs > latestCapturedEndMs) {
+                    pendingLiveSeekPositionMs = targetPositionMs
+                    waitingMarkerScrollPositionMs = null
+                    scrollAnchorCueKey = null
+                } else {
+                    pendingLiveSeekPositionMs = null
+                    waitingMarkerScrollPositionMs = null
+                    val targetIndex = findLearningSubtitleScrollIndex(cues, targetPositionMs)
+                    val targetCue = cues.getOrNull(targetIndex)
+                    if (targetCue != null) {
+                        scrollAnchorCueKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+                        listState.scrollToItem(targetIndex)
+                    }
+                }
+            } else {
+                val targetIndex = findLearningSubtitleScrollIndex(cues, targetPositionMs)
+                val targetCue = cues.getOrNull(targetIndex)
+                val timelineCoversTarget = PlayerLearningSubtitleState.status == LearningSubtitleStatus.READY ||
+                    (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= targetPositionMs
+                if (timelineCoversTarget && targetCue != null) {
+                    scrollAnchorCueKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+                    listState.scrollToItem(targetIndex)
+                }
+            }
+            return@LaunchedEffect
+        }
+
         // The timeline slider's preview position is not the player's real position. Do not
         // close live cues until the scrub is committed and the player reports its new position.
         if (isScrubbing) return@LaunchedEffect
