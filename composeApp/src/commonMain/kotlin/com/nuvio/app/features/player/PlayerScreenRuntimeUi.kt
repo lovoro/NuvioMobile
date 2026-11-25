@@ -1207,12 +1207,19 @@ private fun LearningSubtitlePanel(
     // Highlighting and list navigation are separate: a subtitle gap has no active cue,
     // but playback still has a meaningful position in the subtitle timeline.
     val subtitleStatus = PlayerLearningSubtitleState.status
-    val scrollTargetIndex = remember(cues, positionMs) {
-        findLearningSubtitleScrollIndex(cues, positionMs)
+    val isLiveCapture = PlayerLearningSubtitleState.isLiveCapture
+    val scrollTargetIndex = remember(cues, positionMs, isLiveCapture) {
+        if (isLiveCapture) {
+            findLatestLearningSubtitleIndexAtOrBefore(cues, positionMs)
+        } else {
+            findLearningSubtitleScrollIndex(cues, positionMs)
+        }
     }
     val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
         (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
-    val displayLineIndex = scrollTargetIndex.takeIf { timelineCoversPosition && cues.isNotEmpty() }
+    val displayLineIndex = scrollTargetIndex.takeIf {
+        cues.isNotEmpty() && (isLiveCapture || timelineCoversPosition)
+    }
     val listState = rememberLazyListState()
     var scrollAnchorCueKey by remember { mutableStateOf<String?>(null) }
     val controlScope = rememberCoroutineScope()
@@ -1234,7 +1241,7 @@ private fun LearningSubtitlePanel(
             return@LaunchedEffect
         }
         if (scrollAnchorCueKey != null) return@LaunchedEffect
-        if (!timelineCoversPosition) return@LaunchedEffect
+        if (!timelineCoversPosition && !isLiveCapture) return@LaunchedEffect
         val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
         val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
         scrollAnchorCueKey = targetKey
@@ -1271,14 +1278,14 @@ private fun LearningSubtitlePanel(
 
             if (wasLiveCapture) {
                 PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
-                if (cues.isEmpty() || targetPositionMs > latestCapturedEndMs) {
+                val targetIndex = findLatestLearningSubtitleIndexAtOrBefore(cues, targetPositionMs)
+                if (targetIndex < 0) {
                     pendingLiveSeekPositionMs = targetPositionMs
                     waitingMarkerScrollPositionMs = null
                     scrollAnchorCueKey = null
                 } else {
                     pendingLiveSeekPositionMs = null
                     waitingMarkerScrollPositionMs = null
-                    val targetIndex = findLearningSubtitleScrollIndex(cues, targetPositionMs)
                     val targetCue = cues.getOrNull(targetIndex)
                     if (targetCue != null) {
                         scrollAnchorCueKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
@@ -1311,17 +1318,18 @@ private fun LearningSubtitlePanel(
             // A cue that was active before the seek must not remain active after either a
             // forward or backward seek, even when the destination is inside captured history.
             PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
-            if (cues.isEmpty() || positionMs > latestCapturedEndMs) {
+            val targetIndex = findLatestLearningSubtitleIndexAtOrBefore(cues, positionMs)
+            if (targetIndex < 0) {
                 pendingLiveSeekPositionMs = positionMs
                 waitingMarkerScrollPositionMs = null
                 scrollAnchorCueKey = null
                 return@LaunchedEffect
             }
 
-            // A seek within the already captured range can use its known timeline.
+            // Even inside a silent gap, anchor to the last cue captured before playback time.
             pendingLiveSeekPositionMs = null
             waitingMarkerScrollPositionMs = null
-            val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
+            val targetCue = cues.getOrNull(targetIndex) ?: return@LaunchedEffect
             val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
             scrollAnchorCueKey = targetKey
             listState.animateScrollToItem(scrollTargetIndex)

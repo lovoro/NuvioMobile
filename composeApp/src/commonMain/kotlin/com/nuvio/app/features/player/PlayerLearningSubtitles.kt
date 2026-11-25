@@ -798,6 +798,25 @@ internal fun findLearningSubtitleWordRange(
 }
 
 
+/** Returns the last captured cue whose start time is not after the playback position. */
+internal fun findLatestLearningSubtitleIndexAtOrBefore(
+    cues: List<LearningSubtitleCue>,
+    positionMs: Long,
+): Int {
+    if (cues.isEmpty()) return -1
+    var low = 0
+    var high = cues.size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (cues[middle].startTimeMs <= positionMs) {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    return low - 1
+}
+
 /**
  * Returns a useful list target for [positionMs], even when no subtitle cue is active.
  * During gaps, the closest neighboring cue is selected (preferring the upcoming cue on ties).
