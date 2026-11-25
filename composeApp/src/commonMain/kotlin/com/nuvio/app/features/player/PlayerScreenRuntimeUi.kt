@@ -627,6 +627,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                             androidx.compose.material3.TextButton(
                                 onClick = { clipboardManager.setText(AnnotatedString(rawResponse.requestUrl)) },
                             ) { Text("复制 URL") }
+                            androidx.compose.material3.TextButton(
+                                onClick = {
+                                    clipboardManager.setText(
+                                        AnnotatedString(PlayerLearningSubtitleState.buildTranslationDiagnosticsText())
+                                    )
+                                },
+                            ) { Text("复制全部诊断") }
                         }
                         Text(
                             "HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",

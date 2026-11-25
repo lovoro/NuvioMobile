@@ -144,8 +144,8 @@ object PlayerLearningSubtitleState {
     private var currentRawResponseIndex by mutableStateOf(0)
     val currentTranslationRawResponse: TranslationRawResponse?
         get() = translationRawResponses.firstOrNull { it.batchNumber == currentRawResponseIndex + 1 }
-    // Temporary inspection mode: deliberately stop before parsing, caching, or applying translations.
-    val rawResponseInspectionMode: Boolean get() = true
+    // Normal mode: parse responses, persist cache entries, and apply translated subtitles.
+    val rawResponseInspectionMode: Boolean get() = false
     private var translationDiagnosticStart: TimeMark? = null
 
     fun startTranslationDiagnostics() {
@@ -173,6 +173,35 @@ object PlayerLearningSubtitleState {
     fun showNextTranslationDiagnosticResponse() {
         currentRawResponseIndex += 1
         showTranslationDiagnostics = currentTranslationRawResponse != null
+    }
+
+    fun buildTranslationDiagnosticsText(): String = buildString {
+        appendLine("翻译耗时诊断")
+        appendLine("================================")
+        appendLine("诊断步骤：")
+        translationDiagnosticEvents.forEachIndexed { index, event ->
+            appendLine("${index + 1}. ${event.elapsedMs} ms | ${event.label}")
+            if (event.detail.isNotBlank()) appendLine("   ${event.detail}")
+        }
+        appendLine()
+        appendLine("接口请求与响应（共 ${translationRawResponses.size} 批）")
+        translationRawResponses.sortedBy { it.batchNumber }.forEach { response ->
+            appendLine()
+            appendLine("---------- 第 ${response.batchNumber}/${response.totalBatches} 批 ----------")
+            appendLine("URL: ${response.requestUrl}")
+            appendLine("Method: ${response.requestMethod}")
+            appendLine("HTTP: ${response.httpCode}")
+            appendLine("字幕条数: ${response.cueCount}")
+            appendLine("等待响应头: ${response.headerWaitMs} ms")
+            appendLine("读取响应体: ${response.bodyReadMs} ms")
+            appendLine("请求总计: ${response.totalRequestMs} ms")
+            appendLine("请求头：")
+            appendLine(response.requestHeaders)
+            appendLine("请求体：")
+            appendLine(response.requestBody)
+            appendLine("接口原始响应：")
+            appendLine(response.body)
+        }
     }
 
     fun closeTranslationDiagnostics() {
