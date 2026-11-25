@@ -37,6 +37,7 @@ data class PlayerSettingsUiState(
     val englishLearningEnabled: Boolean = true,
     val bilingualSubtitleMergeEnabled: Boolean = true,
     val automaticSubtitleTranslationEnabled: Boolean = false,
+    val showTranslationDiagnostics: Boolean = false,
     val showLoadingOverlay: Boolean = true,
     val showPlayerLoadingStatus: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
@@ -155,6 +156,7 @@ object PlayerSettingsRepository {
     private var englishLearningEnabled = true
     private var bilingualSubtitleMergeEnabled = true
     private var automaticSubtitleTranslationEnabled = false
+    private var showTranslationDiagnostics = false
     private var showLoadingOverlay = true
     private var showPlayerLoadingStatus = true
     private var pauseOverlayEnabled = true
@@ -260,6 +262,7 @@ object PlayerSettingsRepository {
         englishLearningEnabled = true
         bilingualSubtitleMergeEnabled = true
         automaticSubtitleTranslationEnabled = false
+        showTranslationDiagnostics = false
         showLoadingOverlay = true
         showPlayerLoadingStatus = true
         pauseOverlayEnabled = true
@@ -359,6 +362,7 @@ object PlayerSettingsRepository {
         englishLearningEnabled = PlayerSettingsStorage.loadEnglishLearningEnabled() ?: true
         bilingualSubtitleMergeEnabled = PlayerSettingsStorage.loadBilingualSubtitleMergeEnabled() ?: true
         automaticSubtitleTranslationEnabled = PlayerSettingsStorage.loadAutomaticSubtitleTranslationEnabled() ?: false
+        showTranslationDiagnostics = PlayerSettingsStorage.loadShowTranslationDiagnostics() ?: false
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
         showPlayerLoadingStatus = PlayerSettingsStorage.loadShowPlayerLoadingStatus() ?: true
         pauseOverlayEnabled = PlayerSettingsStorage.loadPauseOverlayEnabled() ?: true
@@ -572,6 +576,14 @@ object PlayerSettingsRepository {
         automaticSubtitleTranslationEnabled = enabled
         publish()
         PlayerSettingsStorage.saveAutomaticSubtitleTranslationEnabled(enabled)
+    }
+
+    fun setShowTranslationDiagnostics(enabled: Boolean) {
+        ensureLoaded()
+        if (showTranslationDiagnostics == enabled) return
+        showTranslationDiagnostics = enabled
+        publish()
+        PlayerSettingsStorage.saveShowTranslationDiagnostics(enabled)
     }
 
     fun setShowLoadingOverlay(enabled: Boolean) {
@@ -1410,6 +1422,7 @@ object PlayerSettingsRepository {
             englishLearningEnabled = englishLearningEnabled,
             bilingualSubtitleMergeEnabled = bilingualSubtitleMergeEnabled,
             automaticSubtitleTranslationEnabled = automaticSubtitleTranslationEnabled,
+            showTranslationDiagnostics = showTranslationDiagnostics,
             showLoadingOverlay = showLoadingOverlay,
             showPlayerLoadingStatus = showPlayerLoadingStatus,
             pauseOverlayEnabled = pauseOverlayEnabled,

@@ -149,6 +149,7 @@ object PlayerLearningSubtitleState {
     private var translationDiagnosticStart: TimeMark? = null
 
     fun startTranslationDiagnostics() {
+        PlayerSettingsRepository.ensureLoaded()
         translationDiagnosticStart = TimeSource.Monotonic.markNow()
         translationDiagnosticEvents = emptyList()
         translationRawResponses = emptyList()
@@ -167,7 +168,9 @@ object PlayerLearningSubtitleState {
     fun enqueueTranslationRawResponse(response: TranslationRawResponse) {
         translationRawResponses = (translationRawResponses.filterNot { it.batchNumber == response.batchNumber } + response)
             .sortedBy { it.batchNumber }
-        if (currentTranslationRawResponse != null) showTranslationDiagnostics = true
+        if (PlayerSettingsRepository.uiState.value.showTranslationDiagnostics && currentTranslationRawResponse != null) {
+            showTranslationDiagnostics = true
+        }
     }
 
     fun showNextTranslationDiagnosticResponse() {

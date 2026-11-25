@@ -15,6 +15,8 @@ internal expect object PlayerSettingsStorage {
     fun saveBilingualSubtitleMergeEnabled(enabled: Boolean)
     fun loadAutomaticSubtitleTranslationEnabled(): Boolean?
     fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean)
+    fun loadShowTranslationDiagnostics(): Boolean?
+    fun saveShowTranslationDiagnostics(enabled: Boolean)
     fun loadShowLoadingOverlay(): Boolean?
     fun saveShowLoadingOverlay(enabled: Boolean)
     fun loadAutoSwitchPlaybackEngineOnError(): Boolean?
