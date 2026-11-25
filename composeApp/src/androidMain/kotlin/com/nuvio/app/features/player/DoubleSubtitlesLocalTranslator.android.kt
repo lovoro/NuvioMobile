@@ -277,10 +277,13 @@ internal object DoubleSubtitlesLocalTranslator {
                         .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                     val request = Request.Builder().url(endpoint).header("Accept", "application/json")
                         .post(requestBody).build()
+                    Log.i(TAG, "Translation request started: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} cues=\${chunk.size} chars=\${chunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
+                    var responseItemCount = 0
                     client.newCall(request).execute().use { response ->
                         val responseText = response.body?.string().orEmpty()
+                        Log.i(TAG, "Translation HTTP response: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} http=\${response.code} bodyChars=\${responseText.length}")
                         if (!response.isSuccessful) {
                             throw TranslationHttpException(response.code,
                                 "Double Subtitles returned HTTP ${response.code}: $responseText")
@@ -290,6 +293,7 @@ internal object DoubleSubtitlesLocalTranslator {
                             error(payload.optString("error").ifBlank { "Translation request failed" })
                         }
                         val result = payload.optJSONArray("translations") ?: JSONArray()
+                        responseItemCount = result.length()
                         for (index in 0 until result.length()) {
                             val item = result.optJSONObject(index) ?: continue
                             val id = item.optString("id")
@@ -305,6 +309,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         }
                         if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
                     }
+                    Log.i(TAG, "Translation response parsed: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} responseItems=\${responseItemCount} matched=\${translatedInResponse} requested=\${chunk.size} missing=\${chunk.size-translatedInResponse}")
                     resultMutex.withLock {
                         translations.putAll(batchTranslations)
                         writeCache(cacheFile, translations.toMap(), configId)
@@ -312,7 +317,14 @@ internal object DoubleSubtitlesLocalTranslator {
                             translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)
                                 ?.let { cue.copy(translationText = it) }
                         }
-                        if (translatedBatch.isNotEmpty()) onBatchTranslated(translatedBatch)
+                        Log.i(TAG, "Translation cache updated: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} cacheEntries=\${translations.size} callbackCues=\${translatedBatch.size}")
+                        if (translatedBatch.isNotEmpty()) {
+                            Log.i(TAG, "Translation callback dispatching: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} translated=\${translatedBatch.size}")
+                            onBatchTranslated(translatedBatch)
+                            Log.i(TAG, "Translation callback completed: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId}")
+                        } else {
+                            Log.w(TAG, "Translation callback skipped: empty translated batch phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId}")
+                        }
                     }
                     val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
                     Log.i(TAG, "Translated embedded batch: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
