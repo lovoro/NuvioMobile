@@ -1255,6 +1255,12 @@ private fun LearningSubtitlePanel(
     // Highlighting and list navigation are separate: a subtitle gap has no active cue,
     // but playback still has a meaningful position in the subtitle timeline.
     val subtitleStatus = PlayerLearningSubtitleState.status
+    val translatedCueCount = cues.count { !it.translationText.isNullOrBlank() }
+    LaunchedEffect(translatedCueCount) {
+        if (translatedCueCount > 0) {
+            PlayerLearningSubtitleState.recordTranslationDiagnostic("首条中文显示", "当前已显示译文 ${translatedCueCount} 条")
+        }
+    }
     val isLiveCapture = PlayerLearningSubtitleState.isLiveCapture
     val scrollTargetIndex = remember(cues, positionMs, isLiveCapture, prefixMaxEndMs) {
         if (isLiveCapture) findLiveCaptureLearningSubtitleScrollIndex(cues, prefixMaxEndMs, positionMs)
