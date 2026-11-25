@@ -110,9 +110,11 @@ internal object DoubleSubtitlesLocalTranslator {
         requiredSourceLanguage: String? = null,
     ): List<LearningSubtitleCue> = withContext(Dispatchers.IO) {
         if (cues.isEmpty()) return@withContext cues
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("进入翻译器", "${cues.size} 条字幕")
         // Ensure the persisted addon list and its manifests have had a chance to load
         // before deciding that the user has not installed/enabled Double Subtitles.
         AddonRepository.initialize()
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("开始检查插件配置")
         val addonsState = AddonRepository.uiState.first { state ->
             state.addons.any { it.manifest?.id == ADDON_ID } ||
                 state.addons.none { it.isRefreshing }
@@ -131,6 +133,7 @@ internal object DoubleSubtitlesLocalTranslator {
             Log.i(TAG, "Translation skipped: selected subtitle language does not match the addon's configured first language")
             return@withContext cues
         }
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("插件配置就绪")
         val manifestUrl = addon.manifestUrl
         Log.i(TAG, "Double Subtitles addon is enabled; starting embedded translation batch (${cues.size} cues)")
         val cleanManifestUrl = manifestUrl.substringBefore("?")
@@ -175,6 +178,7 @@ internal object DoubleSubtitlesLocalTranslator {
         }
         if (upgradedLegacyEntries) writeCache(cacheFile, translations, configId)
         Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("读取翻译缓存完成", "缓存译文 ${translations.size} 条")
 
         // Restore cache hits immediately, before constructing or sending any translation
         // requests. Cached cues are excluded from the missing list below, so they are never
@@ -258,6 +262,7 @@ internal object DoubleSubtitlesLocalTranslator {
         val phaseOneName = if (isExternalSubtitle) "full-track" else "priority"
         val resultMutex = Mutex()
         val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("批次准备完成", "待翻译 ${missing.size} 条，首批队列 ${phaseOneBatches.sumOf { it.size }} 条，共 ${phaseOneBatches.size + phaseTwoBatches.size} 批")
         Log.i(TAG, "Translation schedule: scope=${if (isExternalSubtitle) "full-track" else "playback-window"} " +
             "currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
@@ -285,12 +290,14 @@ internal object DoubleSubtitlesLocalTranslator {
                         .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                     val request = Request.Builder().url(endpoint).header("Accept", "application/json")
                         .post(requestBody).build()
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${chunk.size} 条")
                     Log.i(TAG, "Translation request started: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cues=${chunk.size} chars=${chunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
                     var responseItemCount = 0
                     client.newCall(request).execute().use { response ->
                         val responseText = response.body?.string().orEmpty()
+                        PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批收到 HTTP 响应", "HTTP ${response.code}")
                         Log.i(TAG, "Translation HTTP response: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} http=${response.code} bodyChars=${responseText.length}")
                         if (!response.isSuccessful) {
                             throw TranslationHttpException(response.code,
@@ -317,6 +324,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         }
                         if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
                     }
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批解析响应完成", "匹配译文 ${translatedInResponse}/${chunk.size} 条")
                     Log.i(TAG, "Translation response parsed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} responseItems=${responseItemCount} matched=${translatedInResponse} requested=${chunk.size} missing=${chunk.size-translatedInResponse}")
                     resultMutex.withLock {
                         translations.putAll(batchTranslations)
@@ -329,6 +337,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         if (translatedBatch.isNotEmpty()) {
                             Log.i(TAG, "Translation callback dispatching: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} translated=${translatedBatch.size}")
                             onBatchTranslated(translatedBatch)
+                            PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批回调完成")
                             Log.i(TAG, "Translation callback completed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
                         } else {
                             Log.w(TAG, "Translation callback skipped: empty translated batch phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
