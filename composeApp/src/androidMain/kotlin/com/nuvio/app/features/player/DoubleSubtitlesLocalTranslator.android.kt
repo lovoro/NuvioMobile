@@ -199,10 +199,6 @@ internal object DoubleSubtitlesLocalTranslator {
                 translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() &&
                 cue.translationText.isNullOrBlank()
         }
-        // Sidecar/external subtitle cache keys use the "external|" prefix. These tracks
-        // are complete files, so every untranslated cue must be scheduled regardless of
-        // the current playback position. Embedded tracks keep their playback-window strategy.
-        val isExternalSubtitle = trackCacheKey.startsWith("external|")
         val positionMs = priorityPositionMs
         val activeCue = positionMs?.let { position ->
             missing.filter { it.startTimeMs <= position && it.endTimeMs > position }
@@ -247,23 +243,20 @@ internal object DoubleSubtitlesLocalTranslator {
             return result
         }
 
-        val phaseOneBatches = when {
-            isExternalSubtitle -> buildChunks(missing)
-            positionMs == null -> {
-                // Keep callers without a playback position compatible: translate their full cue list.
-                buildChunks(missing)
-            }
-            else -> buildList {
+        val phaseOneBatches = if (positionMs == null) {
+            // Keep callers without a playback position compatible: translate their full cue list.
+            buildChunks(missing)
+        } else {
+            buildList {
                 activeCue?.let { add(listOf(it)) }
                 addAll(buildChunks(firstMinute))
             }
         }
-        val phaseTwoBatches = if (isExternalSubtitle) emptyList() else buildChunks(backgroundWindow)
-        val phaseOneName = if (isExternalSubtitle) "full-track" else "priority"
+        val phaseTwoBatches = buildChunks(backgroundWindow)
         val resultMutex = Mutex()
         val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
         PlayerLearningSubtitleState.recordTranslationDiagnostic("批次准备完成", "待翻译 ${missing.size} 条，首批队列 ${phaseOneBatches.sumOf { it.size }} 条，共 ${phaseOneBatches.size + phaseTwoBatches.size} 批")
-        Log.i(TAG, "Translation schedule: scope=${if (isExternalSubtitle) "full-track" else "playback-window"} " +
+        Log.i(TAG, "Translation schedule: scope=playback-window " +
             "currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
             "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
@@ -413,14 +406,14 @@ internal object DoubleSubtitlesLocalTranslator {
         coroutineScope {
             val jobs = phaseOneBatches.mapIndexed { index, batch ->
                 async(Dispatchers.IO) {
-                    processBatch(batch, phaseOneName, index, phaseOneBatches.size)
+                    processBatch(batch, "priority", index, phaseOneBatches.size)
                 }
             } + phaseTwoBatches.mapIndexed { index, batch ->
                 async(Dispatchers.IO) {
                     processBatch(batch, "background", index, phaseTwoBatches.size)
                 }
             }
-            Log.i(TAG, "Translation parallel dispatch: scope=${if (isExternalSubtitle) "full-track" else "playback-window"} requests=${jobs.size} phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
+            Log.i(TAG, "Translation parallel dispatch: scope=playback-window requests=${jobs.size} phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
             jobs.awaitAll()
         }
         cues.map { cue ->
