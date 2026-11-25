@@ -170,9 +170,13 @@ object PlayerLearningSubtitleState {
         if (currentTranslationRawResponse != null) showTranslationDiagnostics = true
     }
 
-    fun closeTranslationDiagnostics() {
+    fun showNextTranslationDiagnosticResponse() {
         currentRawResponseIndex += 1
         showTranslationDiagnostics = currentTranslationRawResponse != null
+    }
+
+    fun closeTranslationDiagnostics() {
+        showTranslationDiagnostics = false
     }
     var cues by mutableStateOf<List<LearningSubtitleCue>>(emptyList())
         private set
