@@ -128,6 +128,10 @@ data class TranslationRawResponse(
     val headerWaitMs: Long,
     val bodyReadMs: Long,
     val totalRequestMs: Long,
+    val requestUrl: String,
+    val requestMethod: String,
+    val requestHeaders: String,
+    val requestBody: String,
     val body: String,
 )
 

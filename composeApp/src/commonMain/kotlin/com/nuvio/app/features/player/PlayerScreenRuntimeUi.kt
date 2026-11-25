@@ -610,7 +610,32 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     )
                     if (rawResponse != null) {
                         Text(
-                            "HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",
+                            "请求信息",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            "${rawResponse.requestMethod} ${rawResponse.requestUrl}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "请求头",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            rawResponse.requestHeaders.ifBlank { "(无额外请求头)" },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            "请求参数 / JSON Body",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            rawResponse.requestBody,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            "响应信息：HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

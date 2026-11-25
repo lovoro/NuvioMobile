@@ -286,10 +286,14 @@ internal object DoubleSubtitlesLocalTranslator {
                     }
                     val batchId = sha256("$trackCacheKey|$phase|$chunkIndex|" +
                         chunk.joinToString("|") { cueIdentity(it) }).take(32)
-                    val requestBody = JSONObject().put("batchId", batchId).put("subtitles", requestCues)
-                        .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                    val requestJson = JSONObject().put("batchId", batchId).put("subtitles", requestCues).toString()
+                    val requestBody = requestJson.toRequestBody("application/json; charset=utf-8".toMediaType())
                     val request = Request.Builder().url(endpoint).header("Accept", "application/json")
                         .post(requestBody).build()
+                    val requestUrl = request.url.toString()
+                    val requestHeaders = request.headers.toMultimap().entries.joinToString("\n") { (name, values) ->
+                        "$name: ${values.joinToString(", ")}"
+                    }
                     PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${chunk.size} 条")
                     Log.i(TAG, "Translation request started: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cues=${chunk.size} chars=${chunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
@@ -320,6 +324,10 @@ internal object DoubleSubtitlesLocalTranslator {
                                 headerWaitMs = headerWaitMs,
                                 bodyReadMs = bodyReadMs,
                                 totalRequestMs = totalRequestMs,
+                                requestUrl = requestUrl,
+                                requestMethod = request.method,
+                                requestHeaders = requestHeaders,
+                                requestBody = requestJson,
                                 body = responseText,
                             )
                         )
