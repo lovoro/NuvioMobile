@@ -6,6 +6,29 @@ import kotlin.test.assertEquals
 class PlayerLearningSubtitlesTest {
 
     @Test
+    fun stripsAssOverrideTagsButPreservesSubtitleTextAndMusicSymbols() {
+        assertEquals(
+            "♪ Hello, world! ♪",
+            normalizeLearningSubtitleText("""{\an8}♪ Hello, world! ♪{\c&HFFFFFF&}"""),
+        )
+        assertEquals(
+            "First line\nSecond line",
+            normalizeLearningSubtitleText("""{\pos(100,200)}First line\NSecond line"""),
+        )
+    }
+
+    @Test
+    fun liveCaptureStoresCleanedAssSubtitleText() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLiveCapture()
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("""{\\an8}Hello there"""), 1_000L)
+
+        assertEquals("Hello there", PlayerLearningSubtitleState.cues.single().text)
+        PlayerLearningSubtitleState.clear()
+    }
+
+    @Test
     fun findsCueAtItsStartAndTreatsEndAsExclusive() {
         val cues = listOf(
             cue(1_000L, 3_000L, "first"),
