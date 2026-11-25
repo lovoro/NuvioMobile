@@ -423,7 +423,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         kotlinx.coroutines.delay(delayMs)
                         continue
                     }
-                    val retryable = statusCode == 408 || statusCode in 500..599 || error is java.io.IOException
+                    val retryable = statusCode == 408 || (statusCode != null && statusCode in 500..599) || error is java.io.IOException
                     if (retryable && transientRetries < TRANSIENT_RETRY_DELAYS_MS.size) {
                         val delayMs = TRANSIENT_RETRY_DELAYS_MS[transientRetries++]
                         Log.w(TAG, "Translation batch transient failure: phase=$phase index=${chunkIndex + 1}/$totalChunks http=${statusCode ?: "network"} retry=$transientRetries/${TRANSIENT_RETRY_DELAYS_MS.size} retryInMs=$delayMs elapsedMs=$elapsedMs error=${error.message}")
