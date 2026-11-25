@@ -1202,7 +1202,7 @@ private fun LearningSubtitlePanel(
     }
     val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
         (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
-    val displayLineIndex = scrollTargetIndex.takeIf { timelineCoversPosition }
+    val displayLineIndex = scrollTargetIndex.takeIf { timelineCoversPosition && cues.isNotEmpty() }
     val listState = rememberLazyListState()
     var scrollAnchorCueKey by remember { mutableStateOf<String?>(null) }
     val controlScope = rememberCoroutineScope()
