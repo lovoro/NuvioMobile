@@ -65,6 +65,8 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -594,6 +596,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
 
     if (PlayerLearningSubtitleState.showTranslationDiagnostics) {
         val rawResponse = PlayerLearningSubtitleState.currentTranslationRawResponse
+        val clipboardManager = LocalClipboardManager.current
         Dialog(onDismissRequest = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -604,38 +607,29 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     modifier = Modifier.fillMaxWidth().padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    Text("翻译耗时诊断", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        rawResponse?.let { "第 ${it.batchNumber}/${it.totalBatches} 批接口原始响应" } ?: "等待接口响应",
-                        style = MaterialTheme.typography.titleLarge,
+                        "从点击翻译开始计时；时间为累计耗时。下面显示本次请求 URL 和接口原始返回。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (rawResponse != null) {
+                        Text("请求 URL", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "请求信息",
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            "${rawResponse.requestMethod} ${rawResponse.requestUrl}",
+                            rawResponse.requestUrl,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { clipboardManager.setText(AnnotatedString(rawResponse.requestUrl)) },
+                            ) { Text("复制 URL") }
+                        }
                         Text(
-                            "请求头",
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Text(
-                            rawResponse.requestHeaders.ifBlank { "(无额外请求头)" },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            "请求参数 / JSON Body",
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Text(
-                            rawResponse.requestBody,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            "响应信息：HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",
+                            "HTTP ${rawResponse.httpCode} · 字幕 ${rawResponse.cueCount} 条 · 响应体 ${rawResponse.body.length} 字符",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -645,13 +639,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    Text(
-                        "从点击翻译开始计时；下面是累计耗时和接口原始返回。当前检查模式不会解析或应用译文。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().height(360.dp),
+                        modifier = Modifier.fillMaxWidth().height(340.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         itemsIndexed(PlayerLearningSubtitleState.translationDiagnosticEvents) { index, event ->
@@ -679,12 +668,18 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                             )
                         }
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        androidx.compose.material3.TextButton(onClick = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
-                            Text(
-                                if (rawResponse != null && rawResponse.batchNumber < rawResponse.totalBatches) "下一批" else "关闭"
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        if (rawResponse != null && rawResponse.batchNumber < rawResponse.totalBatches) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { PlayerLearningSubtitleState.showNextTranslationDiagnosticResponse() },
+                            ) { Text("下一批") }
                         }
+                        androidx.compose.material3.TextButton(
+                            onClick = { PlayerLearningSubtitleState.closeTranslationDiagnostics() },
+                        ) { Text("关闭") }
                     }
                 }
             }
