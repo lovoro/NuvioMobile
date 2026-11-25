@@ -804,6 +804,23 @@ internal fun findLearningSubtitleScrollIndex(
 
 
 /**
+ * Shows the nearest known line after an explicit seek even when a partial live-capture
+ * timeline has not reached the playhead yet. Initial restore still waits for coverage.
+ */
+internal fun resolveLearningSubtitleDisplayIndex(
+    cues: List<LearningSubtitleCue>,
+    positionMs: Long,
+    status: LearningSubtitleStatus,
+    hasExplicitSeek: Boolean,
+): Int {
+    val targetIndex = findLearningSubtitleScrollIndex(cues, positionMs)
+    if (targetIndex < 0) return -1
+    val timelineCoversPosition = status == LearningSubtitleStatus.READY ||
+        (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
+    return targetIndex.takeIf { timelineCoversPosition || hasExplicitSeek } ?: -1
+}
+
+/**
  * Keeps the actual video aspect ratio for Language Learning layout.
  * Some sources (for example ultra-wide cinema and portrait clips) are wider/narrower
  * than the old 1.0..2.4 range. Clamping them to 2.4 made the video viewport disagree

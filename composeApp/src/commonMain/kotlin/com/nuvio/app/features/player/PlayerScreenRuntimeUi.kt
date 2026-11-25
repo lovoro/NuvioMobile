@@ -1200,9 +1200,10 @@ private fun LearningSubtitlePanel(
     val scrollTargetIndex = remember(cues, positionMs) {
         findLearningSubtitleScrollIndex(cues, positionMs)
     }
-    val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
-        (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
-    val displayLineIndex = scrollTargetIndex.takeIf { timelineCoversPosition }
+    var hasExplicitSeek by remember { mutableStateOf(false) }
+    val displayLineIndex = remember(cues, positionMs, subtitleStatus, hasExplicitSeek) {
+        resolveLearningSubtitleDisplayIndex(cues, positionMs, subtitleStatus, hasExplicitSeek)
+    }
     val listState = rememberLazyListState()
     var scrollAnchorCueKey by remember { mutableStateOf<String?>(null) }
     val controlScope = rememberCoroutineScope()
@@ -1239,19 +1240,25 @@ private fun LearningSubtitlePanel(
     LaunchedEffect(positionMs, activeIndex) {
         val previousPositionMs = lastObservedPositionMs
         lastObservedPositionMs = positionMs
-        if (scrollAnchorCueKey == null) return@LaunchedEffect
         val isSeek = positionMs - previousPositionMs > 2_000L ||
             previousPositionMs - positionMs > 2_000L
-        val targetIndex = when {
-            activeIndex >= 0 -> activeIndex
-            isSeek -> scrollTargetIndex
-            else -> -1
+        if (isSeek) hasExplicitSeek = true
+
+        // A seek is an explicit navigation request. It must be allowed to establish an
+        // anchor even when partial capture has not produced cues as far as the playhead.
+        if (isSeek) {
+            val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
+            val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+            scrollAnchorCueKey = targetKey
+            listState.animateScrollToItem(scrollTargetIndex)
+            return@LaunchedEffect
         }
-        val targetCue = cues.getOrNull(targetIndex) ?: return@LaunchedEffect
+        if (scrollAnchorCueKey == null) return@LaunchedEffect
+        val targetCue = cues.getOrNull(activeIndex) ?: return@LaunchedEffect
         val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
         if (targetKey != scrollAnchorCueKey) {
             scrollAnchorCueKey = targetKey
-            listState.animateScrollToItem(targetIndex)
+            listState.animateScrollToItem(activeIndex)
         }
     }
     LaunchedEffect(repeatCurrentCue, repeatCueStartMs, repeatCue?.endTimeMs, positionMs, isPlaying) {
