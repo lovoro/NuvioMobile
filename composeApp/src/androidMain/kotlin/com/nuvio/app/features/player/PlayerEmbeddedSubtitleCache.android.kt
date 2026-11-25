@@ -139,17 +139,6 @@ internal object PlayerEmbeddedSubtitleCache {
             "|$normalizedSourceLanguage|$normalizedTargetLanguage" +
             "|converter:$CONVERTER_VERSION|matching:$MATCHING_VERSION"
         val cacheKey = sha256(cacheKeySource)
-        val headerDiagnostics = stableHeaders.entries.joinToString(",") { (name, value) ->
-            "$name:valueSha256=${sha256(value.trim())}"
-        }.ifBlank { "none" }
-        Log.i(
-            TAG,
-            "Bilingual cache identity inputs: stableUrl=$stableUrl " +
-                "stableHeaders=[$headerDiagnostics] ignoredCredentialHeaderNames=${ignoredHeaderNames.joinToString(",").ifBlank { "none" }} " +
-                "videoIdentity=$videoIdentity sourceTrack=$sourceTrackNumber targetTrack=$targetTrackNumber " +
-                "sourceLanguage=$normalizedSourceLanguage targetLanguage=$normalizedTargetLanguage " +
-                "converter=$CONVERTER_VERSION matching=$MATCHING_VERSION cacheKey=$cacheKey",
-        )
         return cacheKey
     }
 
