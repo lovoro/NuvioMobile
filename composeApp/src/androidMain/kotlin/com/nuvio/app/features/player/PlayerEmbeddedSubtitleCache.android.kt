@@ -48,9 +48,8 @@ internal object PlayerEmbeddedSubtitleCache {
     fun videoIdentity(url: String, headers: Map<String, String>, stableIdentity: String? = null): String {
         val canonicalIdentity = stableIdentity?.trim()?.takeIf(String::isNotBlank)
         if (canonicalIdentity != null) return sha256("stable-playback-identity:$canonicalIdentity")
-        val canonicalIdentity = stableIdentity?.trim()?.takeIf(String::isNotBlank)
-        val stableUrl = canonicalIdentity?.let { "identity:$it" } ?: stablePlaybackUrl(url)
-        val stableHeaders = if (canonicalIdentity != null) emptyMap() else headers
+        val stableUrl = stablePlaybackUrl(url)
+        val stableHeaders = headers
             .filterNot { (name, _) -> isVolatileCredentialName(name) }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
         val source = buildString {
@@ -117,8 +116,9 @@ internal object PlayerEmbeddedSubtitleCache {
         stableIdentity: String? = null,
     ): String {
         fun normalizeLanguage(value: String): String = value.trim().replace('_', '-').lowercase()
-        val stableUrl = stablePlaybackUrl(url)
-        val stableHeaders = headers
+        val canonicalIdentity = stableIdentity?.trim()?.takeIf(String::isNotBlank)
+        val stableUrl = canonicalIdentity?.let { "identity:$it" } ?: stablePlaybackUrl(url)
+        val stableHeaders = if (canonicalIdentity != null) emptyMap() else headers
             .filterNot { (name, _) -> isVolatileCredentialName(name) }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
         val ignoredHeaderNames = headers.keys
