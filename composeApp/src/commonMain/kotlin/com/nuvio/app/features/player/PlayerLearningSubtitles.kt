@@ -135,6 +135,7 @@ object PlayerLearningSubtitleState {
 
     fun recordTranslationDiagnostic(label: String, detail: String = "") {
         val start = translationDiagnosticStart ?: return
+        if (label == "首条中文显示" && translationDiagnosticEvents.any { it.label == label }) return
         translationDiagnosticEvents = translationDiagnosticEvents +
             TranslationDiagnosticEvent(label, start.elapsedNow().inWholeMilliseconds, detail)
     }
