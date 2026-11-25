@@ -592,6 +592,54 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         }
     }
 
+    if (PlayerLearningSubtitleState.showTranslationDiagnostics) {
+        Dialog(onDismissRequest = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("翻译耗时诊断", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "从点击翻译开始计时；时间为累计耗时。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().height(340.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        itemsIndexed(PlayerLearningSubtitleState.translationDiagnosticEvents) { index, event ->
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    "${event.elapsedMs} ms",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.width(76.dp),
+                                )
+                                Column {
+                                    Text("${index + 1}. ${event.label}", style = MaterialTheme.typography.bodyMedium)
+                                    if (event.detail.isNotBlank()) {
+                                        Text(event.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        androidx.compose.material3.TextButton(onClick = { PlayerLearningSubtitleState.closeTranslationDiagnostics() }) {
+                            Text("关闭")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (showClearSubtitleCacheConfirmation) {
         Dialog(onDismissRequest = { if (!isClearingSubtitleCache) showClearSubtitleCacheConfirmation = false }) {
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
@@ -1575,6 +1623,7 @@ private fun LearningSubtitlePanel(
                     .size(40.dp)
                     .clip(CircleShape)
                     .clickable(enabled = cues.isNotEmpty() && !PlayerLearningSubtitleState.isTranslating) {
+                        PlayerLearningSubtitleState.startTranslationDiagnostics()
                         controlScope.launch { PlayerLearningSubtitleState.translateManually(positionMs) }
                     },
                 contentAlignment = Alignment.Center,
