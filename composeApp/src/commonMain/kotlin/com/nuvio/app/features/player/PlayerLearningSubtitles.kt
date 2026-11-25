@@ -81,6 +81,8 @@ object PlayerLearningSubtitleState {
     val status: LearningSubtitleStatus get() = mutableStatus
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
+    var isLiveCapture by mutableStateOf(false)
+        private set
     var isLoadingFromCache by mutableStateOf(false)
         private set
 
@@ -320,6 +322,7 @@ object PlayerLearningSubtitleState {
     fun beginLiveCapture(subtitleName: String? = null) {
         invalidatePartialCueIndex()
         setManualTranslationAction(null)
+        isLiveCapture = true
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
         cues = emptyList()
         refreshTranslationProgress()
@@ -328,6 +331,24 @@ object PlayerLearningSubtitleState {
         activeLiveCues.clear()
         completeExtractionLoaded = false
         mutableStatus = LearningSubtitleStatus.LOADING
+    }
+
+    /**
+     * Closes currently visible live cues at the pre-seek position so they cannot be stretched
+     * across an interval that was skipped and never captured.
+     */
+    fun finishLiveCaptureAt(positionMs: Long) {
+        if (!isLiveCapture || activeLiveCues.isEmpty()) return
+        val endMs = positionMs.coerceAtLeast(0L)
+        activeLiveCues.forEach { (text, startMs) ->
+            completedLiveCues += LearningSubtitleCue(
+                startTimeMs = startMs,
+                endTimeMs = maxOf(endMs, startMs + 1L),
+                text = text,
+            )
+        }
+        activeLiveCues.clear()
+        publishCombined(completedLiveCues)
     }
 
     /** Captures only cues actually emitted during playback; seeking can leave gaps. */
@@ -355,6 +376,7 @@ object PlayerLearningSubtitleState {
 
     fun setStatus(newStatus: LearningSubtitleStatus) {
         invalidatePartialCueIndex()
+        isLiveCapture = false
         mutableStatus = newStatus
         if (newStatus != LearningSubtitleStatus.LOADING) loadingSubtitleName = null
         if (newStatus != LearningSubtitleStatus.READY) {
@@ -365,6 +387,7 @@ object PlayerLearningSubtitleState {
 
     fun beginLoading(subtitleName: String? = null) {
         invalidatePartialCueIndex()
+        isLiveCapture = false
         // Loading a new cue batch does not own the translation action lifecycle.
         // The player registers/replaces the action when a subtitle is selected; clearing it
         // here can leave a successfully loaded Sidecar subtitle with no manual action.
@@ -424,6 +447,7 @@ object PlayerLearningSubtitleState {
 
     fun update(newCues: List<LearningSubtitleCue>) {
         invalidatePartialCueIndex()
+        isLiveCapture = false
         completeExtractionLoaded = true
         val translatedPartialCues = prefetchedCues
         prefetchedCues = emptyList()
@@ -438,6 +462,7 @@ object PlayerLearningSubtitleState {
     fun clear() {
         invalidatePartialCueIndex()
         setManualTranslationAction(null)
+        isLiveCapture = false
         manualTranslationEnabled = true
         manualTranslationDisabledMessage = null
         translationMessage = null

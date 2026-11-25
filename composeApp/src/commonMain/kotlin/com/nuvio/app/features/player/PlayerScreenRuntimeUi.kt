@@ -362,6 +362,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 subtitleStyle = playerSettingsUiState.subtitleStyle,
                 positionMs = displayedPositionMs,
                 isPlaying = playbackSnapshot.isPlaying,
+                isScrubbing = scrubbingPositionMs != null,
                 onCueClick = { cue ->
                     playerController?.seekTo(cue.startTimeMs)
                     scrubbingPositionMs = null
@@ -1178,6 +1179,7 @@ private fun LearningSubtitlePanel(
     subtitleStyle: SubtitleStyleState,
     positionMs: Long,
     isPlaying: Boolean,
+    isScrubbing: Boolean,
     onCueClick: (LearningSubtitleCue) -> Unit,
     onPlay: () -> Unit,
     onPause: () -> Unit,
@@ -1231,17 +1233,89 @@ private fun LearningSubtitlePanel(
         listState.animateScrollToItem(scrollTargetIndex)
     }
 
-    // While speaking, follow the active cue. During ordinary silence, keep the existing
-    // anchor: newly arriving cached cues must not change the target just because the nearest
-    // neighbor calculation changed. A large playback-position jump is treated as an explicit
-    // seek and may re-anchor to the nearest cue even when the seek lands in silence.
+    // Live capture can have no cues yet at a seek destination. Keep that destination pending
+    // and anchor to the first cue actually captured after it, never to an unrelated old cue.
     var lastObservedPositionMs by remember { mutableStateOf(positionMs) }
-    LaunchedEffect(positionMs, activeIndex) {
+    var pendingLiveSeekPositionMs by remember { mutableStateOf<Long?>(null) }
+    var waitingMarkerScrollPositionMs by remember { mutableStateOf<Long?>(null) }
+    val isWaitingForLiveSubtitles =
+        PlayerLearningSubtitleState.isLiveCapture && pendingLiveSeekPositionMs != null
+    LaunchedEffect(
+        positionMs,
+        activeIndex,
+        cues,
+        pendingLiveSeekPositionMs,
+        PlayerLearningSubtitleState.isLiveCapture,
+        isScrubbing,
+    ) {
+        // The timeline slider's preview position is not the player's real position. Do not
+        // close live cues until the scrub is committed and the player reports its new position.
+        if (isScrubbing) return@LaunchedEffect
         val previousPositionMs = lastObservedPositionMs
         lastObservedPositionMs = positionMs
-        if (scrollAnchorCueKey == null) return@LaunchedEffect
         val isSeek = positionMs - previousPositionMs > 2_000L ||
             previousPositionMs - positionMs > 2_000L
+
+        if (isSeek && PlayerLearningSubtitleState.isLiveCapture) {
+            val latestCapturedEndMs = cues.maxOfOrNull { it.endTimeMs } ?: Long.MIN_VALUE
+            // A cue that was active before the seek must not remain active after either a
+            // forward or backward seek, even when the destination is inside captured history.
+            PlayerLearningSubtitleState.finishLiveCaptureAt(previousPositionMs)
+            if (cues.isEmpty() || positionMs > latestCapturedEndMs) {
+                pendingLiveSeekPositionMs = positionMs
+                waitingMarkerScrollPositionMs = null
+                scrollAnchorCueKey = null
+                return@LaunchedEffect
+            }
+
+            // A seek within the already captured range can use its known timeline.
+            pendingLiveSeekPositionMs = null
+            waitingMarkerScrollPositionMs = null
+            val targetCue = cues.getOrNull(scrollTargetIndex) ?: return@LaunchedEffect
+            val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+            scrollAnchorCueKey = targetKey
+            listState.animateScrollToItem(scrollTargetIndex)
+            return@LaunchedEffect
+        }
+
+        val pendingPositionMs = pendingLiveSeekPositionMs
+        if (pendingPositionMs != null && !PlayerLearningSubtitleState.isLiveCapture) {
+            // If complete extraction finished while waiting, switch to the now-known timeline.
+            val timelineCoversPosition = PlayerLearningSubtitleState.status == LearningSubtitleStatus.READY ||
+                (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
+            val targetIndex = findLearningSubtitleScrollIndex(cues, positionMs)
+            val targetCue = cues.getOrNull(targetIndex)
+            if (timelineCoversPosition && targetCue != null) {
+                val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+                scrollAnchorCueKey = targetKey
+                listState.scrollToItem(targetIndex)
+            }
+            pendingLiveSeekPositionMs = null
+            waitingMarkerScrollPositionMs = null
+            return@LaunchedEffect
+        }
+
+        if (pendingPositionMs != null && PlayerLearningSubtitleState.isLiveCapture) {
+            val firstCueAfterSeek = cues.indexOfFirst { it.endTimeMs > pendingPositionMs }
+            if (firstCueAfterSeek >= 0) {
+                val targetCue = cues[firstCueAfterSeek]
+                val targetKey = "${targetCue.startTimeMs}-${targetCue.endTimeMs}-${targetCue.text}"
+                scrollAnchorCueKey = targetKey
+                listState.scrollToItem(firstCueAfterSeek)
+                pendingLiveSeekPositionMs = null
+                waitingMarkerScrollPositionMs = null
+            } else if (
+                cues.isNotEmpty() &&
+                listState.layoutInfo.totalItemsCount > cues.size &&
+                waitingMarkerScrollPositionMs != pendingPositionMs
+            ) {
+                waitingMarkerScrollPositionMs = pendingPositionMs
+                listState.scrollToItem(cues.size)
+            }
+            return@LaunchedEffect
+        }
+
+        if (scrollAnchorCueKey == null) return@LaunchedEffect
         val targetIndex = when {
             activeIndex >= 0 -> activeIndex
             isSeek -> scrollTargetIndex
@@ -1282,9 +1356,10 @@ private fun LearningSubtitlePanel(
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         val loadingSubtitleName = PlayerLearningSubtitleState.loadingSubtitleName
-        val emptyMessage = if (PlayerLearningSubtitleState.isLoadingFromCache) {
-            "Loading from cache..."
-        } else when (PlayerLearningSubtitleState.status) {
+        val emptyMessage = when {
+            isWaitingForLiveSubtitles -> "Waiting for subtitles..."
+            PlayerLearningSubtitleState.isLoadingFromCache -> "Loading from cache..."
+            else -> when (PlayerLearningSubtitleState.status) {
             LearningSubtitleStatus.NONE -> "Choose a subtitle in the player's subtitle menu. The list follows your selection."
             LearningSubtitleStatus.LOADING -> loadingSubtitleName?.let { "Loading subtitle: $it" }
                 ?: "Loading the selected subtitle..."
@@ -1292,9 +1367,11 @@ private fun LearningSubtitlePanel(
             LearningSubtitleStatus.PARTIAL -> ""
             LearningSubtitleStatus.UNSUPPORTED -> "The selected track cannot currently be extracted as a complete subtitle list. Try an SRT or VTT external subtitle."
             LearningSubtitleStatus.ERROR -> "The selected subtitle could not be read. Check the subtitle source and try selecting it again."
+            }
         }
         Text(
             text = when {
+                isWaitingForLiveSubtitles -> "Language Learning · Waiting for subtitles"
                 PlayerLearningSubtitleState.isLoadingFromCache -> "Language Learning · Loading from cache"
                 cues.isEmpty() && PlayerLearningSubtitleState.status == LearningSubtitleStatus.LOADING ->
                     "Language Learning · Loading: ${loadingSubtitleName ?: "subtitle"}"
@@ -1307,6 +1384,14 @@ private fun LearningSubtitlePanel(
             color = Color(0xFF262A30),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
         )
+        if (isWaitingForLiveSubtitles && cues.isNotEmpty()) {
+            Text(
+                text = "Waiting for subtitles at ${formatLearningSubtitleTime(pendingLiveSeekPositionMs ?: positionMs)}...",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF9299A3),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+            )
+        }
         if (cues.isEmpty()) {
             Text(
                 text = emptyMessage,
@@ -1421,6 +1506,16 @@ private fun LearningSubtitlePanel(
                                 }
                             }
                         }
+                    }
+                }
+                if (isWaitingForLiveSubtitles) {
+                    item(key = "live-capture-waiting") {
+                        Text(
+                            text = "Waiting for subtitles...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF9299A3),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        )
                     }
                 }
             }

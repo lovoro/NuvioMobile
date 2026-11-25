@@ -257,6 +257,28 @@ class PlayerLearningSubtitlesTest {
     }
 
     @Test
+    fun liveCaptureSeekClosesOldCueAndStartsSameTextAsANewCueAfterSeek() {
+        PlayerLearningSubtitleState.clear()
+        PlayerLearningSubtitleState.beginLiveCapture()
+        assertEquals(true, PlayerLearningSubtitleState.isLiveCapture)
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("Same subtitle"), 1_000L)
+        PlayerLearningSubtitleState.finishLiveCaptureAt(5_000L)
+        assertEquals(5_000L, PlayerLearningSubtitleState.cues.single().endTimeMs)
+
+        PlayerLearningSubtitleState.captureLiveCueGroup(listOf("Same subtitle"), 63_000L)
+
+        assertEquals(2, PlayerLearningSubtitleState.cues.size)
+        assertEquals(1_000L, PlayerLearningSubtitleState.cues[0].startTimeMs)
+        assertEquals(5_000L, PlayerLearningSubtitleState.cues[0].endTimeMs)
+        assertEquals(63_000L, PlayerLearningSubtitleState.cues[1].startTimeMs)
+        assertEquals(true, PlayerLearningSubtitleState.isLiveCapture)
+
+        PlayerLearningSubtitleState.clear()
+        assertEquals(false, PlayerLearningSubtitleState.isLiveCapture)
+    }
+
+    @Test
     fun liveCaptureKeepsEarlierCuesWhenLaterCuesArrive() {
         PlayerLearningSubtitleState.clear()
         PlayerLearningSubtitleState.beginLiveCapture()
