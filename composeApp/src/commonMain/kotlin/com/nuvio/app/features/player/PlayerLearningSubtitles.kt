@@ -317,30 +317,30 @@ object PlayerLearningSubtitleState {
         }
         val requestGeneration = translationGeneration
         val startedAtMs = System.currentTimeMillis()
-        println("NuvioSubtitleUI: manual translation started generation=\${requestGeneration} cues=\${source.size} translated=\${source.count { !it.translationText.isNullOrBlank() }} positionMs=\${currentPositionMs}")
+        println("NuvioSubtitleUI: manual translation started generation=${requestGeneration} cues=${source.size} translated=${source.count { !it.translationText.isNullOrBlank() }} positionMs=${currentPositionMs}")
         isTranslating = true
         refreshTranslationProgress()
         translationMessage = null
         try {
             val translated = action(source, currentPositionMs.coerceAtLeast(0L)) { batch ->
                 val callbackTranslated = batch.count { !it.translationText.isNullOrBlank() }
-                println("NuvioSubtitleUI: batch callback received generation=\${requestGeneration} currentGeneration=\${translationGeneration} cues=\${batch.size} translated=\${callbackTranslated} range=\${batch.minOfOrNull { it.startTimeMs }}..\${batch.maxOfOrNull { it.startTimeMs }}")
+                println("NuvioSubtitleUI: batch callback received generation=${requestGeneration} currentGeneration=${translationGeneration} cues=${batch.size} translated=${callbackTranslated} range=${batch.minOfOrNull { it.startTimeMs }}..${batch.maxOfOrNull { it.startTimeMs }}")
                 // The Android translator performs network work on Dispatchers.IO and invokes
                 // this callback from that dispatcher. Compose state must be published on Main.
                 withContext(Dispatchers.Main.immediate) {
                     if (requestGeneration == translationGeneration) {
                         applyTranslations(batch)
                     } else {
-                        println("NuvioSubtitleUI: batch callback ignored as stale generation=\${requestGeneration} currentGeneration=\${translationGeneration}")
+                        println("NuvioSubtitleUI: batch callback ignored as stale generation=${requestGeneration} currentGeneration=${translationGeneration}")
                     }
                 }
             }
             if (requestGeneration != translationGeneration) {
-                println("NuvioSubtitleUI: final result ignored as stale generation=\${requestGeneration} currentGeneration=\${translationGeneration}")
+                println("NuvioSubtitleUI: final result ignored as stale generation=${requestGeneration} currentGeneration=${translationGeneration}")
                 return
             }
             val finalTranslatedCount = translated.count { !it.translationText.isNullOrBlank() }
-            println("NuvioSubtitleUI: translator returned cues=\${translated.size} translated=\${finalTranslatedCount} elapsedMs=\${System.currentTimeMillis()-startedAtMs}")
+            println("NuvioSubtitleUI: translator returned cues=${translated.size} translated=${finalTranslatedCount} elapsedMs=${System.currentTimeMillis()-startedAtMs}")
             if (translated.none { !it.translationText.isNullOrBlank() }) error("没有获取到译文，请检查 Double Subtitles 插件是否启用及配置是否正确。")
             applyTranslations(translated)
             translationMessage = null
@@ -365,7 +365,7 @@ object PlayerLearningSubtitleState {
         prefetchedCues = mergeCueLists(prefetchedCues, translatedCues)
         refreshTranslationProgress()
         val afterTranslated = cues.count { !it.translationText.isNullOrBlank() }
-        println("NuvioSubtitleUI: applyTranslations incoming=\${translatedCues.size} incomingTranslated=\${incomingTranslated} cues=\${beforeCount}->\${cues.size} translated=\${beforeTranslated}->\${afterTranslated} progress=\${translationProgressPercent}")
+        println("NuvioSubtitleUI: applyTranslations incoming=${translatedCues.size} incomingTranslated=${incomingTranslated} cues=${beforeCount}->${cues.size} translated=${beforeTranslated}->${afterTranslated} progress=${translationProgressPercent}")
     }
 
     fun mergePrefetched(newCues: List<LearningSubtitleCue>) {

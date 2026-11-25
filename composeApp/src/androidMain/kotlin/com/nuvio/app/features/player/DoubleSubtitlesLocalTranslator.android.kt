@@ -195,6 +195,10 @@ internal object DoubleSubtitlesLocalTranslator {
                 translations[cueIdentity(cue)]?.translatedText.isNullOrBlank() &&
                 cue.translationText.isNullOrBlank()
         }
+        // Sidecar/external subtitle cache keys use the "external|" prefix. These tracks
+        // are complete files, so every untranslated cue must be scheduled regardless of
+        // the current playback position. Embedded tracks keep their playback-window strategy.
+        val isExternalSubtitle = trackCacheKey.startsWith("external|")
         val positionMs = priorityPositionMs
         val activeCue = positionMs?.let { position ->
             missing.filter { it.startTimeMs <= position && it.endTimeMs > position }
@@ -239,19 +243,23 @@ internal object DoubleSubtitlesLocalTranslator {
             return result
         }
 
-        val phaseOneBatches = if (positionMs == null) {
-            // Keep callers without a playback position compatible: translate their full cue list.
-            buildChunks(missing)
-        } else {
-            buildList {
+        val phaseOneBatches = when {
+            isExternalSubtitle -> buildChunks(missing)
+            positionMs == null -> {
+                // Keep callers without a playback position compatible: translate their full cue list.
+                buildChunks(missing)
+            }
+            else -> buildList {
                 activeCue?.let { add(listOf(it)) }
                 addAll(buildChunks(firstMinute))
             }
         }
-        val phaseTwoBatches = buildChunks(backgroundWindow)
+        val phaseTwoBatches = if (isExternalSubtitle) emptyList() else buildChunks(backgroundWindow)
+        val phaseOneName = if (isExternalSubtitle) "full-track" else "priority"
         val resultMutex = Mutex()
         val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
-        Log.i(TAG, "Translation schedule: currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
+        Log.i(TAG, "Translation schedule: scope=${if (isExternalSubtitle) "full-track" else "playback-window"} " +
+            "currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
             "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
 
@@ -277,13 +285,13 @@ internal object DoubleSubtitlesLocalTranslator {
                         .toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                     val request = Request.Builder().url(endpoint).header("Accept", "application/json")
                         .post(requestBody).build()
-                    Log.i(TAG, "Translation request started: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} cues=\${chunk.size} chars=\${chunk.sumOf { it.text.length }}")
+                    Log.i(TAG, "Translation request started: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cues=${chunk.size} chars=${chunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
                     var responseItemCount = 0
                     client.newCall(request).execute().use { response ->
                         val responseText = response.body?.string().orEmpty()
-                        Log.i(TAG, "Translation HTTP response: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} http=\${response.code} bodyChars=\${responseText.length}")
+                        Log.i(TAG, "Translation HTTP response: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} http=${response.code} bodyChars=${responseText.length}")
                         if (!response.isSuccessful) {
                             throw TranslationHttpException(response.code,
                                 "Double Subtitles returned HTTP ${response.code}: $responseText")
@@ -309,7 +317,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         }
                         if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
                     }
-                    Log.i(TAG, "Translation response parsed: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} responseItems=\${responseItemCount} matched=\${translatedInResponse} requested=\${chunk.size} missing=\${chunk.size-translatedInResponse}")
+                    Log.i(TAG, "Translation response parsed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} responseItems=${responseItemCount} matched=${translatedInResponse} requested=${chunk.size} missing=${chunk.size-translatedInResponse}")
                     resultMutex.withLock {
                         translations.putAll(batchTranslations)
                         writeCache(cacheFile, translations.toMap(), configId)
@@ -317,13 +325,13 @@ internal object DoubleSubtitlesLocalTranslator {
                             translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)
                                 ?.let { cue.copy(translationText = it) }
                         }
-                        Log.i(TAG, "Translation cache updated: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} cacheEntries=\${translations.size} callbackCues=\${translatedBatch.size}")
+                        Log.i(TAG, "Translation cache updated: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cacheEntries=${translations.size} callbackCues=${translatedBatch.size}")
                         if (translatedBatch.isNotEmpty()) {
-                            Log.i(TAG, "Translation callback dispatching: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId} translated=\${translatedBatch.size}")
+                            Log.i(TAG, "Translation callback dispatching: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} translated=${translatedBatch.size}")
                             onBatchTranslated(translatedBatch)
-                            Log.i(TAG, "Translation callback completed: phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId}")
+                            Log.i(TAG, "Translation callback completed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
                         } else {
-                            Log.w(TAG, "Translation callback skipped: empty translated batch phase=\${phase} index=\${chunkIndex + 1}/\${totalChunks} batchId=\${batchId}")
+                            Log.w(TAG, "Translation callback skipped: empty translated batch phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
                         }
                     }
                     val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
@@ -356,14 +364,14 @@ internal object DoubleSubtitlesLocalTranslator {
         coroutineScope {
             val jobs = phaseOneBatches.mapIndexed { index, batch ->
                 async(Dispatchers.IO) {
-                    processBatch(batch, "priority", index, phaseOneBatches.size)
+                    processBatch(batch, phaseOneName, index, phaseOneBatches.size)
                 }
             } + phaseTwoBatches.mapIndexed { index, batch ->
                 async(Dispatchers.IO) {
                     processBatch(batch, "background", index, phaseTwoBatches.size)
                 }
             }
-            Log.i(TAG, "Translation parallel dispatch: requests=${jobs.size} priority=${phaseOneBatches.size} background=${phaseTwoBatches.size}")
+            Log.i(TAG, "Translation parallel dispatch: scope=${if (isExternalSubtitle) "full-track" else "playback-window"} requests=${jobs.size} phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
             jobs.awaitAll()
         }
         cues.map { cue ->
