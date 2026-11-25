@@ -1197,6 +1197,8 @@ private fun LearningSubtitlePanel(
     // Highlighting and list navigation are separate: a subtitle gap has no active cue,
     // but playback still has a meaningful position in the subtitle timeline.
     val subtitleStatus = PlayerLearningSubtitleState.status
+    val timelineCoversPosition = subtitleStatus == LearningSubtitleStatus.READY ||
+        (cues.lastOrNull()?.endTimeMs ?: Long.MIN_VALUE) >= positionMs
     val scrollTargetIndex = remember(cues, positionMs) {
         findLearningSubtitleScrollIndex(cues, positionMs)
     }
