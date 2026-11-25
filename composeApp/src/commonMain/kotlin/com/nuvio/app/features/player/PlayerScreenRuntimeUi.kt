@@ -293,6 +293,14 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 }
                 PlatformPlayerSurface(
                     sourceUrl = playerSurfaceSourceUrl,
+                    stableCacheIdentity = activeTorrentInfoHash
+                        ?.trim()?.lowercase()?.takeIf(String::isNotBlank)
+                        ?.let { hash ->
+                            val fileIdentity = activeTorrentFileIdx?.let { "index:$it" }
+                                ?: activeTorrentFilename?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let { "name:$it" }
+                                ?: "index:unknown"
+                            "torrent:$hash:$fileIdentity"
+                        },
                     sourceAudioUrl = activeSourceAudioUrl,
                     sourceHeaders = activeSourceHeaders,
                     sourceResponseHeaders = activeSourceResponseHeaders,

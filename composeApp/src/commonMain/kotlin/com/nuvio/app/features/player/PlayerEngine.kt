@@ -82,6 +82,7 @@ internal fun sanitizePlaybackResponseHeaders(headers: Map<String, String>?): Map
 @Composable
 expect fun PlatformPlayerSurface(
     sourceUrl: String,
+    stableCacheIdentity: String? = null,
     sourceAudioUrl: String? = null,
     sourceHeaders: Map<String, String> = emptyMap(),
     sourceResponseHeaders: Map<String, String> = emptyMap(),

@@ -119,6 +119,7 @@ private class PlaybackDiagnostics {
 @Composable
 actual fun PlatformPlayerSurface(
     sourceUrl: String,
+    stableCacheIdentity: String?,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,
@@ -143,6 +144,7 @@ actual fun PlatformPlayerSurface(
     }
     val playerSourceKey = listOf(
         sourceUrl,
+        stableCacheIdentity.orEmpty(),
         sourceAudioUrl.orEmpty(),
         sanitizePlaybackHeaders(sourceHeaders),
         sanitizePlaybackResponseHeaders(sourceResponseHeaders),
@@ -158,6 +160,7 @@ actual fun PlatformPlayerSurface(
     when (activeEngine) {
         ResolvedAndroidPlaybackEngine.ExoPlayer -> ExoPlayerSurface(
             sourceUrl = sourceUrl,
+            stableCacheIdentity = stableCacheIdentity,
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = sourceHeaders,
             sourceResponseHeaders = sourceResponseHeaders,
@@ -217,6 +220,7 @@ private fun AndroidPlaybackEngine.initialAndroidEngine(): ResolvedAndroidPlaybac
 @Composable
 private fun ExoPlayerSurface(
     sourceUrl: String,
+    stableCacheIdentity: String?,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,
@@ -252,7 +256,7 @@ private fun ExoPlayerSurface(
         sanitizePlaybackHeaders(sourceHeaders)
     }
     PlayerEmbeddedSubtitleCapture.configureSource(
-        PlayerEmbeddedSubtitleCache.videoIdentity(sourceUrl, sanitizedSourceHeaders),
+        PlayerEmbeddedSubtitleCache.videoIdentity(sourceUrl, sanitizedSourceHeaders, stableCacheIdentity),
     )
     val sanitizedSourceResponseHeaders = remember(sourceResponseHeaders) {
         sanitizePlaybackResponseHeaders(sourceResponseHeaders)
@@ -768,7 +772,7 @@ private fun ExoPlayerSurface(
         val cacheTrackKey = format.id?.toIntOrNull()
             ?.let { "matroska-track:$it" }
             ?: "track:${format.id.orEmpty()}|${format.sampleMimeType.orEmpty()}"
-        val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, cacheTrackKey)
+        val cacheKey = PlayerEmbeddedSubtitleCache.cacheKey(sourceUrl, sanitizedSourceHeaders, cacheTrackKey, stableCacheIdentity)
         if (!sameTrack || !PlayerLearningSubtitleState.hasManualTranslationAction) {
             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                 if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
@@ -882,6 +886,7 @@ private fun ExoPlayerSurface(
             val bilingualCacheKey = PlayerEmbeddedSubtitleCache.bilingualCacheKey(
                 url = sourceUrl,
                 headers = sanitizedSourceHeaders,
+                stableIdentity = stableCacheIdentity,
                 sourceTrackNumber = selectedTrackNumber,
                 targetTrackNumber = targetTrackNumber,
                 sourceLanguage = languagePair.first,

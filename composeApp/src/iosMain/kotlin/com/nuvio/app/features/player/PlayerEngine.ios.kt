@@ -47,6 +47,7 @@ private const val TAG = "NuvioiOSPlayer"
 @Composable
 actual fun PlatformPlayerSurface(
     sourceUrl: String,
+    stableCacheIdentity: String?,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,

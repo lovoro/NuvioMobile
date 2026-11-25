@@ -45,9 +45,12 @@ internal object PlayerEmbeddedSubtitleCache {
      * Builds a playback identity that survives refreshed signed URLs and auth headers.
      * Keep content-identifying query parameters, but exclude short-lived credentials.
      */
-    fun videoIdentity(url: String, headers: Map<String, String>): String {
-        val stableUrl = stablePlaybackUrl(url)
-        val stableHeaders = headers
+    fun videoIdentity(url: String, headers: Map<String, String>, stableIdentity: String? = null): String {
+        val canonicalIdentity = stableIdentity?.trim()?.takeIf(String::isNotBlank)
+        if (canonicalIdentity != null) return sha256("stable-playback-identity:$canonicalIdentity")
+        val canonicalIdentity = stableIdentity?.trim()?.takeIf(String::isNotBlank)
+        val stableUrl = canonicalIdentity?.let { "identity:$it" } ?: stablePlaybackUrl(url)
+        val stableHeaders = if (canonicalIdentity != null) emptyMap() else headers
             .filterNot { (name, _) -> isVolatileCredentialName(name) }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
         val source = buildString {
@@ -93,8 +96,12 @@ internal object PlayerEmbeddedSubtitleCache {
             normalized.startsWith("x-ms-")
     }
 
-    fun cacheKey(url: String, headers: Map<String, String>, trackKey: String): String =
-        sha256(videoIdentity(url, headers) + "|" + trackKey)
+    fun cacheKey(
+        url: String,
+        headers: Map<String, String>,
+        trackKey: String,
+        stableIdentity: String? = null,
+    ): String = sha256(videoIdentity(url, headers, stableIdentity) + "|" + trackKey)
 
     /**
      * Separate identity for the official embedded bilingual merge. Track numbers, configured
@@ -107,6 +114,7 @@ internal object PlayerEmbeddedSubtitleCache {
         targetTrackNumber: Int,
         sourceLanguage: String,
         targetLanguage: String,
+        stableIdentity: String? = null,
     ): String {
         fun normalizeLanguage(value: String): String = value.trim().replace('_', '-').lowercase()
         val stableUrl = stablePlaybackUrl(url)
@@ -122,7 +130,11 @@ internal object PlayerEmbeddedSubtitleCache {
                 append('\n').append(name.lowercase()).append(':').append(value.trim())
             }
         }
-        val videoIdentity = sha256(identitySource)
+        val videoIdentity = if (canonicalIdentity != null) {
+            sha256("stable-playback-identity:$canonicalIdentity")
+        } else {
+            sha256(identitySource)
+        }
         val normalizedSourceLanguage = normalizeLanguage(sourceLanguage)
         val normalizedTargetLanguage = normalizeLanguage(targetLanguage)
         val cacheKeySource = videoIdentity +
