@@ -5,6 +5,9 @@ import android.util.Log
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.addonTransportBaseUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -252,15 +255,14 @@ internal object DoubleSubtitlesLocalTranslator {
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
             "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
 
-        var throttleDelayMs = 0L
-        var consecutiveRateLimits = 0
-
         suspend fun processBatch(
             chunk: List<LearningSubtitleCue>,
             phase: String,
             chunkIndex: Int,
             totalChunks: Int,
         ) {
+            var throttleDelayMs = 0L
+            var consecutiveRateLimits = 0
             while (true) {
                 val batchStartedAt = System.nanoTime()
                 try {
@@ -315,9 +317,7 @@ internal object DoubleSubtitlesLocalTranslator {
                     val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
                     Log.i(TAG, "Translated embedded batch: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
                         "cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
-                    if (consecutiveRateLimits > 0) Log.i(TAG, "Translation rate limit recovered; resetting batch delay")
-                    consecutiveRateLimits = 0
-                    throttleDelayMs = 0L
+                    if (consecutiveRateLimits > 0) Log.i(TAG, "Translation rate limit recovered for batch")
                     return
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
@@ -340,11 +340,19 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }
 
-        phaseOneBatches.forEachIndexed { index, batch ->
-            processBatch(batch, "priority", index, phaseOneBatches.size)
-        }
-        phaseTwoBatches.forEachIndexed { index, batch ->
-            processBatch(batch, "background", index, phaseTwoBatches.size)
+        // Submit all prepared batches immediately; priority requests are launched first.
+        coroutineScope {
+            val jobs = phaseOneBatches.mapIndexed { index, batch ->
+                async(Dispatchers.IO) {
+                    processBatch(batch, "priority", index, phaseOneBatches.size)
+                }
+            } + phaseTwoBatches.mapIndexed { index, batch ->
+                async(Dispatchers.IO) {
+                    processBatch(batch, "background", index, phaseTwoBatches.size)
+                }
+            }
+            Log.i(TAG, "Translation parallel dispatch: requests=${jobs.size} priority=${phaseOneBatches.size} background=${phaseTwoBatches.size}")
+            jobs.awaitAll()
         }
         cues.map { cue ->
             val translated = translations[cueIdentity(cue)]?.translatedText ?: cue.translationText
