@@ -31,6 +31,9 @@ internal object DoubleSubtitlesLocalTranslator {
     // Keep client batches aligned with the addon's Google batch envelope.
     private const val MAX_BATCH_CUES = 128
     private const val MAX_BATCH_CHARS = 5_000
+    private const val MAX_CONCURRENT_BATCHES = 3
+    private const val MAX_RATE_LIMIT_RETRIES = 5
+    private val TRANSIENT_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L, 7_000L)
     private const val PRIORITY_AHEAD_MS = 60_000L
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
     private class TranslationHttpException(val statusCode: Int, message: String) : Exception(message)
@@ -149,6 +152,9 @@ internal object DoubleSubtitlesLocalTranslator {
         val cacheFile = cacheFile(context, trackCacheKey)
         // Compute each cue identity once instead of recalculating SHA-256 in every cache pass.
         val cueIds = cues.map { cueIdentity(it) }
+        val cueIdByCue = java.util.IdentityHashMap<LearningSubtitleCue, String>(cues.size).apply {
+            cues.forEachIndexed { index, cue -> put(cue, cueIds[index]) }
+        }
         val currentCueIds = cueIds.toHashSet()
 
         val mainCacheStartedAt = android.os.SystemClock.elapsedRealtime()
@@ -253,8 +259,11 @@ internal object DoubleSubtitlesLocalTranslator {
             return result
         }
 
-        val phaseOneBatches = if (positionMs == null) {
-            // Keep callers without a playback position compatible: translate their full cue list.
+        // External subtitle files must be translated in full. Playback-window scheduling is
+        // reserved for embedded/live tracks so a manual request never silently omits later cues.
+        val isExternalTrack = trackCacheKey.startsWith("external|", ignoreCase = true)
+        val usePlaybackWindow = positionMs != null && !isExternalTrack
+        val phaseOneBatches = if (!usePlaybackWindow) {
             buildChunks(missing)
         } else {
             buildList {
@@ -262,11 +271,16 @@ internal object DoubleSubtitlesLocalTranslator {
                 addAll(buildChunks(firstMinute))
             }
         }
-        val phaseTwoBatches = buildChunks(backgroundWindow)
+        val phaseTwoBatches = if (usePlaybackWindow) buildChunks(backgroundWindow) else emptyList()
         val resultMutex = Mutex()
         val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
+        val scheduleScope = when {
+            isExternalTrack -> "full-track-external"
+            positionMs == null -> "full-track"
+            else -> "playback-window"
+        }
         PlayerLearningSubtitleState.recordTranslationDiagnostic("批次准备完成", "待翻译 ${missing.size} 条，首批队列 ${phaseOneBatches.sumOf { it.size }} 条，共 ${phaseOneBatches.size + phaseTwoBatches.size} 批")
-        Log.i(TAG, "Translation schedule: scope=playback-window " +
+        Log.i(TAG, "Translation schedule: scope=${scheduleScope} " +
             "currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
             "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
             "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
@@ -277,18 +291,24 @@ internal object DoubleSubtitlesLocalTranslator {
             chunkIndex: Int,
             totalChunks: Int,
         ) {
-            var throttleDelayMs = 0L
-            var consecutiveRateLimits = 0
-            while (true) {
+            var pendingChunk = chunk
+            var transientRetries = 0
+            var rateLimitRetries = 0
+            while (pendingChunk.isNotEmpty()) {
+                // Reuse identities computed during cache inspection. Response matching is O(1).
+                val chunkEntries = pendingChunk.map { cue ->
+                    cue to (cueIdByCue[cue] ?: cueIdentity(cue))
+                }
+                val sourceCuesById = chunkEntries.associate { (cue, id) -> id to cue }
+                val chunkIds = chunkEntries.map { it.second }
                 val batchStartedAt = System.nanoTime()
                 try {
                     val requestCues = JSONArray()
-                    chunk.forEach { cue ->
-                        requestCues.put(JSONObject().put("id", cueIdentity(cue))
+                    chunkEntries.forEach { (cue, id) ->
+                        requestCues.put(JSONObject().put("id", id)
                             .put("start", cue.startTimeMs).put("end", cue.endTimeMs).put("text", cue.text))
                     }
-                    val batchId = sha256("$trackCacheKey|$phase|$chunkIndex|" +
-                        chunk.joinToString("|") { cueIdentity(it) }).take(32)
+                    val batchId = sha256("$trackCacheKey|$phase|$chunkIndex|" + chunkIds.joinToString("|")).take(32)
                     val requestJson = JSONObject().put("batchId", batchId).put("subtitles", requestCues).toString()
                     val requestBody = requestJson.toRequestBody("application/json; charset=utf-8".toMediaType())
                     val request = Request.Builder().url(endpoint).header("Accept", "application/json")
@@ -297,8 +317,8 @@ internal object DoubleSubtitlesLocalTranslator {
                     val requestHeaders = request.headers.toMultimap().entries.joinToString("\n") { (name, values) ->
                         "$name: ${values.joinToString(", ")}"
                     }
-                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${chunk.size} 条")
-                    Log.i(TAG, "Translation request started: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cues=${chunk.size} chars=${chunk.sumOf { it.text.length }}")
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${pendingChunk.size} 条")
+                    Log.i(TAG, "Translation request started: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId cues=${pendingChunk.size} chars=${pendingChunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
                     var responseItemCount = 0
@@ -320,21 +340,13 @@ internal object DoubleSubtitlesLocalTranslator {
                         )
                         PlayerLearningSubtitleState.enqueueTranslationRawResponse(
                             TranslationRawResponse(
-                                batchNumber = chunkIndex + 1,
-                                totalBatches = totalChunks,
-                                cueCount = chunk.size,
-                                httpCode = response.code,
-                                headerWaitMs = headerWaitMs,
-                                bodyReadMs = bodyReadMs,
-                                totalRequestMs = totalRequestMs,
-                                requestUrl = requestUrl,
-                                requestMethod = request.method,
-                                requestHeaders = requestHeaders,
-                                requestBody = requestJson,
-                                body = responseText,
+                                batchNumber = chunkIndex + 1, totalBatches = totalChunks, cueCount = pendingChunk.size,
+                                httpCode = response.code, headerWaitMs = headerWaitMs, bodyReadMs = bodyReadMs,
+                                totalRequestMs = totalRequestMs, requestUrl = requestUrl, requestMethod = request.method,
+                                requestHeaders = requestHeaders, requestBody = requestJson, body = responseText,
                             )
                         )
-                        Log.i(TAG, "Translation raw response captured: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} http=${response.code} headerWaitMs=${headerWaitMs} bodyReadMs=${bodyReadMs} totalMs=${totalRequestMs} bodyChars=${responseText.length}")
+                        Log.i(TAG, "Translation raw response captured: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId http=${response.code} headerWaitMs=$headerWaitMs bodyReadMs=$bodyReadMs totalMs=$totalRequestMs bodyChars=${responseText.length}")
                         if (PlayerLearningSubtitleState.rawResponseInspectionMode) {
                             PlayerLearningSubtitleState.recordTranslationDiagnostic(
                                 "第 ${chunkIndex + 1}/${totalChunks} 批跳过响应解析",
@@ -343,8 +355,7 @@ internal object DoubleSubtitlesLocalTranslator {
                             return
                         }
                         if (!response.isSuccessful) {
-                            throw TranslationHttpException(response.code,
-                                "Double Subtitles returned HTTP ${response.code}: $responseText")
+                            throw TranslationHttpException(response.code, "Double Subtitles returned HTTP ${response.code}: $responseText")
                         }
                         val payload = JSONObject(responseText)
                         if (!payload.optBoolean("success", false)) {
@@ -356,78 +367,93 @@ internal object DoubleSubtitlesLocalTranslator {
                             val item = result.optJSONObject(index) ?: continue
                             val id = item.optString("id")
                             val translatedText = item.optString("text").trim()
-                            if (id.isNotBlank() && translatedText.isNotBlank()) {
-                                val sourceCue = chunk.firstOrNull { cueIdentity(it) == id }
-                                if (sourceCue != null) {
-                                    batchTranslations[id] = CachedSubtitle(sourceCue.startTimeMs,
-                                        sourceCue.endTimeMs, sourceCue.text, translatedText)
-                                    translatedInResponse++
-                                }
+                            val sourceCue = sourceCuesById[id]
+                            if (sourceCue != null && translatedText.isNotBlank()) {
+                                val previous = batchTranslations.put(id, CachedSubtitle(sourceCue.startTimeMs, sourceCue.endTimeMs, sourceCue.text, translatedText))
+                                if (previous == null) translatedInResponse++
                             }
                         }
                         if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
                     }
-                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批解析响应完成", "匹配译文 ${translatedInResponse}/${chunk.size} 条")
-                    Log.i(TAG, "Translation response parsed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} responseItems=${responseItemCount} matched=${translatedInResponse} requested=${chunk.size} missing=${chunk.size-translatedInResponse}")
-                    resultMutex.withLock {
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批解析响应完成", "匹配译文 $translatedInResponse/${pendingChunk.size} 条")
+                    Log.i(TAG, "Translation response parsed: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId responseItems=$responseItemCount matched=$translatedInResponse requested=${pendingChunk.size} missing=${pendingChunk.size-translatedInResponse}")
+                    val translatedBatch = resultMutex.withLock {
                         translations.putAll(batchTranslations)
                         writeCache(cacheFile, translations.toMap(), configId)
-                        val translatedBatch = chunk.mapNotNull { cue ->
-                            translations[cueIdentity(cue)]?.translatedText?.takeIf(String::isNotBlank)
-                                ?.let { cue.copy(translationText = it) }
-                        }
-                        Log.i(TAG, "Translation cache updated: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} cacheEntries=${translations.size} callbackCues=${translatedBatch.size}")
-                        if (translatedBatch.isNotEmpty()) {
-                            Log.i(TAG, "Translation callback dispatching: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId} translated=${translatedBatch.size}")
-                            onBatchTranslated(translatedBatch)
-                            PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批回调完成")
-                            Log.i(TAG, "Translation callback completed: phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
-                        } else {
-                            Log.w(TAG, "Translation callback skipped: empty translated batch phase=${phase} index=${chunkIndex + 1}/${totalChunks} batchId=${batchId}")
+                        chunkEntries.mapNotNull { (cue, id) ->
+                            batchTranslations[id]?.translatedText?.takeIf(String::isNotBlank)?.let { cue.copy(translationText = it) }
                         }
                     }
-                    val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
-                    Log.i(TAG, "Translated embedded batch: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
-                        "cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
-                    if (consecutiveRateLimits > 0) Log.i(TAG, "Translation rate limit recovered for batch")
-                    return
+                    if (translatedBatch.isNotEmpty()) {
+                        Log.i(TAG, "Translation callback dispatching: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId translated=${translatedBatch.size}")
+                        onBatchTranslated(translatedBatch)
+                        PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批回调完成")
+                        Log.i(TAG, "Translation callback completed: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId")
+                    } else {
+                        Log.w(TAG, "Translation callback skipped: empty translated batch phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId")
+                    }
+                    val missingCues = chunkEntries.filter { (_, id) -> id !in batchTranslations }.map { it.first }
+                    if (missingCues.isEmpty()) {
+                        val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
+                        Log.i(TAG, "Translated embedded batch: phase=$phase index=${chunkIndex + 1}/$totalChunks cues=${chunk.size} translated=$translatedInResponse elapsedMs=$elapsedMs")
+                        if (rateLimitRetries > 0) Log.i(TAG, "Translation rate limit recovered for batch")
+                        return
+                    }
+                    if (transientRetries >= TRANSIENT_RETRY_DELAYS_MS.size) {
+                        Log.w(TAG, "Translation batch partially completed after retries: phase=$phase index=${chunkIndex + 1}/$totalChunks translated=${chunk.size - missingCues.size} remaining=${missingCues.size}")
+                        return
+                    }
+                    val delayMs = TRANSIENT_RETRY_DELAYS_MS[transientRetries++]
+                    Log.w(TAG, "Translation batch returned partial results: phase=$phase index=${chunkIndex + 1}/$totalChunks translated=${chunk.size - missingCues.size} remaining=${missingCues.size} retryInMs=$delayMs")
+                    kotlinx.coroutines.delay(delayMs)
+                    pendingChunk = missingCues
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
                 } catch (error: Throwable) {
                     val elapsedMs = (System.nanoTime() - batchStartedAt) / 1_000_000
                     val statusCode = (error as? TranslationHttpException)?.statusCode
-                    if (statusCode == 403 || statusCode == 429) {
-                        consecutiveRateLimits++
-                        throttleDelayMs = if (throttleDelayMs == 0L) 3_000L
-                            else (throttleDelayMs * 2).coerceAtMost(60_000L)
-                        Log.w(TAG, "Translation rate limited: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
-                            "http=$statusCode consecutive=$consecutiveRateLimits retryInMs=$throttleDelayMs elapsedMs=$elapsedMs")
-                        kotlinx.coroutines.delay(throttleDelayMs)
+                    if (statusCode == 429) {
+                        if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
+                            Log.w(TAG, "Translation rate-limit retries exhausted: phase=$phase index=${chunkIndex + 1}/$totalChunks elapsedMs=$elapsedMs")
+                            return
+                        }
+                        val delayMs = (3_000L shl rateLimitRetries.coerceAtMost(4)).coerceAtMost(60_000L)
+                        rateLimitRetries++
+                        Log.w(TAG, "Translation rate limited: phase=$phase index=${chunkIndex + 1}/$totalChunks http=429 retry=$rateLimitRetries/$MAX_RATE_LIMIT_RETRIES retryInMs=$delayMs elapsedMs=$elapsedMs")
+                        kotlinx.coroutines.delay(delayMs)
                         continue
                     }
-                    Log.e(TAG, "Embedded subtitle batch failed: phase=$phase index=${chunkIndex + 1}/$totalChunks " +
-                        "cues=${chunk.size} elapsedMs=$elapsedMs error=${error.message}", error)
+                    val retryable = statusCode == 408 || statusCode in 500..599 || error is java.io.IOException
+                    if (retryable && transientRetries < TRANSIENT_RETRY_DELAYS_MS.size) {
+                        val delayMs = TRANSIENT_RETRY_DELAYS_MS[transientRetries++]
+                        Log.w(TAG, "Translation batch transient failure: phase=$phase index=${chunkIndex + 1}/$totalChunks http=${statusCode ?: "network"} retry=$transientRetries/${TRANSIENT_RETRY_DELAYS_MS.size} retryInMs=$delayMs elapsedMs=$elapsedMs error=${error.message}")
+                        kotlinx.coroutines.delay(delayMs)
+                        continue
+                    }
+                    Log.e(TAG, "Embedded subtitle batch failed: phase=$phase index=${chunkIndex + 1}/$totalChunks cues=${pendingChunk.size} elapsedMs=$elapsedMs retries=$transientRetries rateLimitRetries=$rateLimitRetries error=${error.message}", error)
                     return
                 }
             }
         }
-
-        // Submit all prepared batches immediately; priority requests are launched first.
-        coroutineScope {
-            val jobs = phaseOneBatches.mapIndexed { index, batch ->
-                async(Dispatchers.IO) {
-                    processBatch(batch, "priority", index, phaseOneBatches.size)
-                }
-            } + phaseTwoBatches.mapIndexed { index, batch ->
-                async(Dispatchers.IO) {
-                    processBatch(batch, "background", index, phaseTwoBatches.size)
+        // Process bounded waves. Complete current/priority work before background prefetch starts.
+        suspend fun processBatchPhase(batches: List<List<LearningSubtitleCue>>, phase: String) {
+            batches.withIndex().toList().chunked(MAX_CONCURRENT_BATCHES).forEach { wave ->
+                coroutineScope {
+                    wave.map { indexed ->
+                        async(Dispatchers.IO) {
+                            processBatch(indexed.value, phase, indexed.index, batches.size)
+                        }
+                    }.awaitAll()
                 }
             }
-            Log.i(TAG, "Translation parallel dispatch: scope=playback-window requests=${jobs.size} phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
-            jobs.awaitAll()
         }
-        cues.map { cue ->
-            val translated = translations[cueIdentity(cue)]?.translatedText ?: cue.translationText
+        coroutineScope {
+            Log.i(TAG, "Translation parallel dispatch: scope=$scheduleScope maxConcurrent=$MAX_CONCURRENT_BATCHES phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
+            processBatchPhase(phaseOneBatches, "priority")
+            processBatchPhase(phaseTwoBatches, "background")
+        }
+        cues.mapIndexed { index, cue ->
+            val translated = translations[cueIds[index]]?.translatedText ?: cue.translationText
             cue.copy(translationText = translated?.takeIf(String::isNotBlank))
         }
     }
