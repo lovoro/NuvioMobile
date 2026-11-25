@@ -36,6 +36,12 @@ internal object DoubleSubtitlesLocalTranslator {
     private val TRANSIENT_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L, 7_000L)
     private const val PRIORITY_AHEAD_MS = 60_000L
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
+    private const val MAX_MEMORY_CACHE_TRACKS = 6
+    private val memoryCache = object : java.util.LinkedHashMap<String, Map<String, CachedSubtitle>>(8, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, Map<String, CachedSubtitle>>?,
+        ): Boolean = size > MAX_MEMORY_CACHE_TRACKS
+    }
     private class TranslationHttpException(val statusCode: Int, message: String) : Exception(message)
 
     private data class CachedSubtitle(
@@ -158,16 +164,16 @@ internal object DoubleSubtitlesLocalTranslator {
         val currentCueIds = cueIds.toHashSet()
 
         val mainCacheStartedAt = android.os.SystemClock.elapsedRealtime()
-        val mainTranslations = readCache(cacheFile, configId)
+        val mainTranslations = readCachedBucket(cacheFile, configId)
         val mainCacheReadMs = android.os.SystemClock.elapsedRealtime() - mainCacheStartedAt
 
         // Probe legacy cache files only when they exist; avoid unnecessary legacy IO on cache misses.
         val legacyStartedAt = android.os.SystemClock.elapsedRealtime()
         val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
-        val legacyTrackTranslations = if (legacyTrackFile.isFile) readCache(legacyTrackFile, configId) else emptyMap()
+        val legacyTrackTranslations = if (legacyTrackFile.isFile) readCachedBucket(legacyTrackFile, configId) else emptyMap()
         val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
         val legacyEndpointTranslations = if (legacyEndpointFile.isFile) {
-            readCache(legacyEndpointFile, configId).filterKeys { it in currentCueIds }
+            readCachedBucket(legacyEndpointFile, configId).filterKeys { it in currentCueIds }
         } else emptyMap()
         val legacyTranslations = legacyTrackTranslations + legacyEndpointTranslations
         val legacyReadMs = android.os.SystemClock.elapsedRealtime() - legacyStartedAt
@@ -502,7 +508,9 @@ internal object DoubleSubtitlesLocalTranslator {
         val cacheFile = cacheFile(context, trackCacheKey)
         val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
         val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
-        val currentCueIds = cues.mapTo(hashSetOf()) { cueIdentity(it) }
+        // Keep cue identities for this restore pass; never recompute SHA-256 while matching.
+        val cueIds = cues.map { cueIdentity(it) }
+        val currentCueIds = cueIds.toHashSet()
         val fileSummary = runCatching {
             if (!cacheFile.isFile) "missing"
             else {
@@ -515,10 +523,10 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }.getOrElse { "unreadable error=${it.javaClass.simpleName}:${it.message}" }
         Log.i(TAG, "Cache restore inspect: trackKeyHash=${sha256(trackCacheKey)} file=${cacheFile.name} fileState={$fileSummary} configId=${configId.take(12)} currentCues=${cues.size} uniqueCueIds=${currentCueIds.size}")
-        val legacyTranslations = (readCache(legacyTrackFile, configId) +
-            readCache(legacyEndpointFile, configId))
+        val legacyTranslations = (readCachedBucket(legacyTrackFile, configId) +
+            readCachedBucket(legacyEndpointFile, configId))
             .filterKeys { it in currentCueIds }
-        val cache = readCache(cacheFile, configId).toMutableMap().apply {
+        val cache = readCachedBucket(cacheFile, configId).toMutableMap().apply {
             legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
         val matchedCueCount = currentCueIds.count { it in cache }
@@ -533,30 +541,50 @@ internal object DoubleSubtitlesLocalTranslator {
         }
 
         var upgradedLegacyEntries = false
-        // Prefer the exact identity, but tolerate small timing-end differences after
-        // resuming playback/re-extracting Matroska clusters. Match each cache entry at most once.
+        // Build one text index for legacy timing-tolerance matches. Each text bucket is
+        // sorted by start time, so a cue probes only the nearby timing window instead of
+        // scanning every cached subtitle for every current cue.
+        val fallbackIndex = cache.entries.asSequence()
+            .filter { it.value.originalText.isNotBlank() }
+            .groupBy({ it.value.originalText }, { it.key to it.value })
+            .mapValues { (_, entries) -> entries.sortedBy { it.second.startTimeMs } }
         val usedCacheIds = mutableSetOf<String>()
         var timingFallbackMatches = 0
-        val restored = cues.map { cue ->
-            if (!cue.translationText.isNullOrBlank()) return@map cue
-            val exactId = cueIdentity(cue)
-            val matched = cache[exactId]?.let { exactId to it }
-                ?: cache.entries.asSequence()
-                    .filter { (id, value) ->
-                        id !in usedCacheIds &&
-                            value.originalText.isNotBlank() &&
-                            value.originalText == cue.text &&
-                            kotlin.math.abs(value.startTimeMs - cue.startTimeMs) <= 1_500L &&
-                            kotlin.math.abs(value.endTimeMs - cue.endTimeMs) <= 3_000L
+        val restored = cues.mapIndexed { index, cue ->
+            if (!cue.translationText.isNullOrBlank()) return@mapIndexed cue
+            val exactId = cueIds[index]
+            val exact = cache[exactId]?.let { exactId to it }
+            val matched = exact ?: fallbackIndex[cue.text]
+                ?.let { entries ->
+                    var low = 0
+                    var high = entries.size
+                    val earliestStart = cue.startTimeMs - 1_500L
+                    while (low < high) {
+                        val middle = (low + high) ushr 1
+                        if (entries[middle].second.startTimeMs < earliestStart) low = middle + 1
+                        else high = middle
                     }
-                    .minByOrNull { (_, value) ->
-                        kotlin.math.abs(value.startTimeMs - cue.startTimeMs) * 2L +
+                    var best: Pair<String, CachedSubtitle>? = null
+                    var bestScore = Long.MAX_VALUE
+                    var index = low
+                    while (index < entries.size) {
+                        val entry = entries[index++]
+                        val value = entry.second
+                        if (value.startTimeMs > cue.startTimeMs + 1_500L) break
+                        if (entry.first in usedCacheIds ||
+                            kotlin.math.abs(value.endTimeMs - cue.endTimeMs) > 3_000L
+                        ) continue
+                        val score = kotlin.math.abs(value.startTimeMs - cue.startTimeMs) * 2L +
                             kotlin.math.abs(value.endTimeMs - cue.endTimeMs)
+                        if (score < bestScore) {
+                            best = entry
+                            bestScore = score
+                        }
                     }
-                    ?.let { it.key to it.value }
-                    ?.also { timingFallbackMatches++ }
-            val cached = matched?.second ?: return@map cue
-            matched.first.let(usedCacheIds::add)
+                    best?.also { timingFallbackMatches++ }
+                }
+            val cached = matched?.second ?: return@mapIndexed cue
+            usedCacheIds += matched.first
             if (cached.originalText.isBlank()) upgradedLegacyEntries = true
             cue.copy(translationText = cached.translatedText)
         }
@@ -565,9 +593,9 @@ internal object DoubleSubtitlesLocalTranslator {
         }
         if (upgradedLegacyEntries) {
             val upgraded = cache.toMutableMap()
-            cues.forEach { cue ->
-                val id = cueIdentity(cue)
-                val cached = upgraded[id] ?: return@forEach
+            cues.forEachIndexed { index, cue ->
+                val id = cueIds[index]
+                val cached = upgraded[id] ?: return@forEachIndexed
                 if (cached.originalText.isBlank()) {
                     upgraded[id] = cached.copy(
                         startTimeMs = cue.startTimeMs,
@@ -641,6 +669,25 @@ internal object DoubleSubtitlesLocalTranslator {
         }
     }.getOrDefault(emptyMap())
 
+    /**
+     * Reuses a recently loaded track/config bucket across playback entry and translation calls.
+     * The cache is deliberately bounded by track count so large subtitle tracks cannot grow
+     * process memory without limit.
+     */
+    private fun readCachedBucket(file: File, configId: String): Map<String, CachedSubtitle> {
+        val scopeKey = "${file.absolutePath}|$configId"
+        synchronized(file.absolutePath.intern()) {
+            synchronized(memoryCache) {
+                memoryCache[scopeKey]?.let { return it }
+            }
+            val loaded = readCache(file, configId)
+            synchronized(memoryCache) {
+                memoryCache[scopeKey] = loaded
+            }
+            return loaded
+        }
+    }
+
     private fun writeCache(file: File, values: Map<String, CachedSubtitle>, configId: String) {
         runCatching {
             synchronized(file.absolutePath.intern()) {
@@ -666,6 +713,10 @@ internal object DoubleSubtitlesLocalTranslator {
                 // File.renameTo maps to an atomic same-directory rename on Android/Linux.
                 // Do not delete the previous cache first: a failed rename must not destroy it.
                 if (!temporary.renameTo(file)) error("Unable to atomically replace translation cache")
+                val scopeKey = "${file.absolutePath}|$configId"
+                synchronized(memoryCache) {
+                    memoryCache[scopeKey] = merged.toMap()
+                }
             }
         }.onFailure { Log.w(TAG, "Unable to persist subtitle translation cache: ${file.name}", it) }
     }
