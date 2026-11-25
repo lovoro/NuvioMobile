@@ -119,7 +119,7 @@ internal object PlayerEmbeddedSubtitleCache {
         val identitySource = buildString {
             append(stableUrl)
             stableHeaders.forEach { (name, value) ->
-                append('\\n').append(name.lowercase()).append(':').append(value.trim())
+                append('\n').append(name.lowercase()).append(':').append(value.trim())
             }
         }
         val videoIdentity = sha256(identitySource)
