@@ -121,9 +121,6 @@ internal object PlayerEmbeddedSubtitleCache {
         val stableHeaders = if (canonicalIdentity != null) emptyMap() else headers
             .filterNot { (name, _) -> isVolatileCredentialName(name) }
             .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-        val ignoredHeaderNames = headers.keys
-            .filter(::isVolatileCredentialName)
-            .sortedBy(String::lowercase)
         val identitySource = buildString {
             append(stableUrl)
             stableHeaders.forEach { (name, value) ->
