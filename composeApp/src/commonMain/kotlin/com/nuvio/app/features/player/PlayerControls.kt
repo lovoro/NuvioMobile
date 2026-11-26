@@ -247,6 +247,8 @@ internal fun PlayerControlsShell(
                     onPartyClick = onPartyClick,
                     partyActive = partyActive,
                     onBack = onBack,
+                    onLearningModeClick = onLearningModeClick,
+                    learningTranslationService = learningTranslationService,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .fillMaxWidth()
@@ -428,6 +430,8 @@ private fun PlayerHeader(
     onPartyClick: (() -> Unit)?,
     partyActive: Boolean,
     onBack: () -> Unit,
+    onLearningModeClick: (() -> Unit)?,
+    learningTranslationService: String,
     modifier: Modifier = Modifier,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
@@ -574,6 +578,21 @@ private fun PlayerHeader(
                         iconSize = metrics.headerIconSize,
                         contentDescription = stringResource(Res.string.compose_player_close),
                     )
+                    if (onLearningModeClick != null) {
+                        PlayerAction(
+                            description = "Language Learning",
+                            painter = appIconPainter(
+                                when (learningTranslationService.uppercase()) {
+                                    "A" -> AppIconResource.LanguageLearningAI
+                                    "D" -> AppIconResource.LanguageLearningDeepL
+                                    else -> AppIconResource.LanguageLearningGoogle
+                                },
+                            ),
+                            onClick = onLearningModeClick,
+                            iconSize = metrics.headerIconSize,
+                            tint = Color.Unspecified,
+                        )
+                    }
                 }
             }
         }
