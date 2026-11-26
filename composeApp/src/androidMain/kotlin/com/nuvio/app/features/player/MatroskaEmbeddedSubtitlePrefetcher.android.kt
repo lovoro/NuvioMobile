@@ -184,6 +184,15 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             allSourceCues += sourceCues
             allTargetCues += targetCues
 
+            // Source-only extraction has no target cues to pair, but the selected subtitle
+            // still needs to populate the learning list incrementally.
+            if (targetTrackInfo == null && sourceCues.isNotEmpty()) {
+                val sourceBatch = deduplicateOverlappingCues(sourceCues)
+                withContext(Dispatchers.Main.immediate) {
+                    onPartialCues(sourceBatch, isPlaybackPriorityCluster)
+                }
+            }
+
             // Re-evaluate the accumulated tracks together. Pairing only the newly decoded
             // side allowed one target cue to be reused by several source cues.
             val availableSources = deduplicateOverlappingCues(allSourceCues).filterNot { source ->

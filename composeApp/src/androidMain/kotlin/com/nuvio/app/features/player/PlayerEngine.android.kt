@@ -788,11 +788,10 @@ private fun ExoPlayerSurface(
             Log.d(TAG, "Embedded subtitle prefetch already started for track=${format.id}; keeping current job and refreshing manual translation action")
             return
         }
-        if (!PlayerSettingsRepository.uiState.value.bilingualSubtitleMergeEnabled) {
-            Log.i(TAG, "Skipping embedded bilingual merge: disabled in global subtitle settings")
+        val bilingualMergeEnabled = PlayerSettingsRepository.uiState.value.bilingualSubtitleMergeEnabled
+        if (!bilingualMergeEnabled) {
+            Log.i(TAG, "Bilingual merge disabled; loading selected embedded source subtitle for learning list")
             PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
-            finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-            return
         }
         learningSubtitlePrefetchStartedForTrack = true
         val selectedTrackNumber = format.id?.toIntOrNull()
@@ -833,13 +832,49 @@ private fun ExoPlayerSurface(
                 manualTranslationBlockMessage,
             )
             val languagePair = configuredPair?.takeIf { sourceLanguageMatches }
-            if (languagePair == null) {
+
+            suspend fun loadSourceOnly() {
                 PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
-                finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-                Log.i(
-                    TAG,
-                    "Skipping embedded bilingual prefetch: plugin pair is unavailable or selected source language does not match",
+                val cachedSourceCues = runCatching { PlayerEmbeddedSubtitleCache.read(cacheKey) }.getOrNull()
+                if (!cachedSourceCues.isNullOrEmpty()) PlayerLearningSubtitleState.update(cachedSourceCues)
+                val sourceExtraction = MatroskaEmbeddedSubtitlePrefetcher.load(
+                    url = sourceUrl,
+                    headers = sanitizedSourceHeaders,
+                    selectedTrackNumber = selectedTrackNumber,
+                    targetTrackNumber = null,
+                    targetLanguage = null,
+                    currentPositionMs = { exoPlayer.currentPosition },
+                    onPartialCues = { partialCues, _ ->
+                        if (partialCues.isNotEmpty() &&
+                            learningSubtitleSelectionGeneration == selectionGeneration &&
+                            learningSubtitlePrefetchTrackKey == trackKey &&
+                            learningSubtitleSelectionUrl == null &&
+                            selectedExternalSubtitleMimeType == null
+                        ) PlayerLearningSubtitleState.mergePrefetched(partialCues)
+                    },
                 )
+                if (learningSubtitleSelectionGeneration != selectionGeneration ||
+                    learningSubtitlePrefetchTrackKey != trackKey ||
+                    learningSubtitleSelectionUrl != null ||
+                    selectedExternalSubtitleMimeType != null
+                ) return
+                if (sourceExtraction.cues.isNotEmpty()) {
+                    if (sourceExtraction.isComplete) {
+                        PlayerEmbeddedSubtitleCache.write(cacheKey, sourceExtraction.cues)
+                        PlayerLearningSubtitleState.update(sourceExtraction.cues)
+                    } else {
+                        PlayerLearningSubtitleState.mergePrefetched(sourceExtraction.cues)
+                        Log.w(TAG, "Embedded source subtitle extraction incomplete; kept ${sourceExtraction.cues.size} cues")
+                    }
+                } else if (cachedSourceCues.isNullOrEmpty()) {
+                    Log.w(TAG, "Embedded source-only extraction returned no cues for selected track=$selectedTrackNumber")
+                }
+            }
+
+            if (!bilingualMergeEnabled || languagePair == null) {
+                Log.i(TAG, "Loading embedded source-only subtitle; bilingual merge disabled or plugin/source language unmatched")
+                loadSourceOnly()
+                finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
                 return@launch
             }
             // Suppress source-only output while locating the configured native target track.
@@ -862,12 +897,9 @@ private fun ExoPlayerSurface(
             }
             val targetTrackNumber = targetFormat?.id?.toIntOrNull()
             if (targetTrackNumber == null) {
-                PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
+                Log.i(TAG, "No embedded target track for configured language=${languagePair.second}; falling back to source-only subtitle")
+                loadSourceOnly()
                 finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
-                Log.i(
-                    TAG,
-                    "Skipping embedded bilingual prefetch: no embedded target track for configured language=${languagePair.second}; sourceTrack=$selectedTrackNumber",
-                )
                 return@launch
             }
             PlayerEmbeddedSubtitleCapture.setTargetTrack(targetFormat, languagePair.second)
@@ -1032,6 +1064,7 @@ private fun ExoPlayerSurface(
                     PlayerEmbeddedSubtitleCapture.setTargetTrack(null, "")
                     PlayerLearningSubtitleState.clearTranslations()
                     finishEmbeddedSubtitleCacheLookup(useCachedTrack = false)
+                    selectedLearningSubtitleFormat?.let(::startEmbeddedSubtitlePrefetch)
                 } else {
                     selectedLearningSubtitleFormat?.let(::startEmbeddedSubtitlePrefetch)
                 }
