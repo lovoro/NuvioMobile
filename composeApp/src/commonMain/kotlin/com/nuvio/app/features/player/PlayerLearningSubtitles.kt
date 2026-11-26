@@ -930,8 +930,17 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
         Regex("[\\p{L}\\p{N}]+").containsMatchIn(textOutsideAnnotations)
     val excludedAnnotationRanges = buildList {
         if (hasWordsOutsideAnnotations) addAll(annotationMatches.map { it.range })
-        // Only recognize an uppercase speaker label at the very beginning of the cue,
-        // followed by a colon. Keep the original text and its character offsets unchanged.
+        // Recognize a titled speaker name in square brackets at the start of a cue,
+        // optionally preceded by the dialogue dash (for example "-[Dr. Garvin]").
+        // Require spoken text after the label so a label-only cue remains untouched.
+        Regex("""^[ \t]*-?[ \t]*(\[(?i:dr|doctor|prof|professor|mr|mrs|ms|miss|mx|rev)\.?[ \t]+[\p{Lu}][\p{L}'’\-]*(?:[ \t]+[\p{Lu}][\p{L}'’\-]*)*\])[ \t]+(?=\p{L})""")
+            .find(text)
+            ?.groups
+            ?.get(1)
+            ?.range
+            ?.let(::add)
+        // Also recognize an uppercase speaker label followed by a colon.
+        // Keep the original text and its character offsets unchanged.
         Regex("""^[ \\t]*[A-Z][A-Z0-9.]*(?:[ \\t]+[A-Z][A-Z0-9.]*){0,3}:[ \\t]*""")
             .find(text)
             ?.range
