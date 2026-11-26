@@ -1,7 +1,9 @@
 package com.nuvio.app.features.player
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,21 +45,43 @@ internal fun StyledSubtitleOverlay(cues: StyledSubtitleCues, style: SubtitleStyl
     BoxWithConstraints(modifier.fillMaxSize()) {
         val scale = (maxHeight / 360.dp).coerceAtMost(1f)
         val bottomInset = maxHeight * (0.0533f + style.bottomOffset.coerceIn(0, 200) / 1000f)
-        val subtitleLineHeight = with(LocalDensity.current) { (style.fontSizeSp * scale * 1.2f).sp.toDp() }
         val topInset = maxHeight * TOP_SUBTITLE_INSET_FRACTION
         val sideInset = maxWidth * SIDE_SUBTITLE_INSET_FRACTION
-        cues.blocks.forEach { block ->
-            val horizontalInset = 16.dp * scale + if (block.horizontal == SubtitleHorizontalPosition.CENTER) 0.dp else sideInset
+
+        // Bottom-aligned subtitle cues can arrive as separate blocks (for example, the
+        // original line and its live translation). Putting each in its own full-screen Box
+        // anchors every block to the exact same bottom point, so they overlap. Lay them out
+        // together in a bottom-anchored Column instead; Compose measures the real rendered
+        // height, including automatic wrapping, and moves the complete group upward.
+        val bottomBlocks = cues.blocks.filter { it.vertical == SubtitleVerticalPosition.BOTTOM }
+        if (bottomBlocks.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxSize().padding(bottom = bottomInset),
+                verticalArrangement = Arrangement.Bottom,
+            ) {
+                bottomBlocks.forEach { block ->
+                    val horizontalInset = 16.dp * scale +
+                        if (block.horizontal == SubtitleHorizontalPosition.CENTER) 0.dp else sideInset
+                    Box(
+                        Modifier.fillMaxWidth().padding(start = horizontalInset, end = horizontalInset),
+                        contentAlignment = block.horizontal.alignment(),
+                    ) {
+                        StyledSubtitleText(
+                            block.text, style, scale = scale, fontFamily = fontFamily, horizontal = block.horizontal,
+                        )
+                    }
+                }
+            }
+        }
+
+        cues.blocks.filter { it.vertical != SubtitleVerticalPosition.BOTTOM }.forEach { block ->
+            val horizontalInset = 16.dp * scale +
+                if (block.horizontal == SubtitleHorizontalPosition.CENTER) 0.dp else sideInset
             Box(
                 Modifier.fillMaxSize().padding(
                     start = horizontalInset,
                     end = horizontalInset,
                     top = if (block.vertical == SubtitleVerticalPosition.TOP) topInset else 0.dp,
-                    bottom = if (block.vertical == SubtitleVerticalPosition.BOTTOM) {
-                        // Keep bottom-aligned bilingual/multiline cues fully visible by lifting
-                        // the whole cue group by one line height for each additional line.
-                        bottomInset + subtitleLineHeight * (block.text.text.count { it == '\n' })
-                    } else 0.dp,
                 ),
                 contentAlignment = block.alignment(),
             ) {
@@ -67,6 +91,12 @@ internal fun StyledSubtitleOverlay(cues: StyledSubtitleCues, style: SubtitleStyl
             }
         }
     }
+}
+
+private fun SubtitleHorizontalPosition.alignment(): Alignment = when (this) {
+    SubtitleHorizontalPosition.START -> Alignment.CenterStart
+    SubtitleHorizontalPosition.CENTER -> Alignment.Center
+    SubtitleHorizontalPosition.END -> Alignment.CenterEnd
 }
 
 private fun StyledSubtitleBlock.alignment(): Alignment = when (vertical) {
