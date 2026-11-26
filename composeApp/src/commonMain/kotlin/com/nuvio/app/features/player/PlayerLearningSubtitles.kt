@@ -173,6 +173,11 @@ object PlayerLearningSubtitleState {
         }
     }
 
+    fun showPreviousTranslationDiagnosticResponse() {
+        currentRawResponseIndex = (currentRawResponseIndex - 1).coerceAtLeast(0)
+        showTranslationDiagnostics = currentTranslationRawResponse != null
+    }
+
     fun showNextTranslationDiagnosticResponse() {
         currentRawResponseIndex += 1
         showTranslationDiagnostics = currentTranslationRawResponse != null

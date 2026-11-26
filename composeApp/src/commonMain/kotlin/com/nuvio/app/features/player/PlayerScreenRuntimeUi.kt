@@ -733,6 +733,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
                     ) {
+                        if (rawResponse != null && rawResponse.batchNumber > 1) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { PlayerLearningSubtitleState.showPreviousTranslationDiagnosticResponse() },
+                            ) { Text("上一批") }
+                        }
                         if (rawResponse != null && rawResponse.batchNumber < rawResponse.totalBatches) {
                             androidx.compose.material3.TextButton(
                                 onClick = { PlayerLearningSubtitleState.showNextTranslationDiagnosticResponse() },
