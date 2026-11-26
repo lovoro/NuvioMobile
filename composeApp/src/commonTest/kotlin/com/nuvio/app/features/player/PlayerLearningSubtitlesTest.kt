@@ -1,7 +1,7 @@
 package com.nuvio.app.features.player
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertEquals\nimport kotlin.test.assertTrue
 
 class PlayerLearningSubtitlesTest {
 
@@ -492,6 +492,48 @@ class PlayerLearningSubtitlesTest {
             text.indexOf("progress")..text.indexOf("progress") + "progress".length - 1,
             findLearningSubtitleWordRange(text, 0L, 4_000L, 3_000L),
         )
+    }
+
+    @Test
+    fun multilineHighlightUsesStrongerPausesAfterSentenceBoundaries() {
+        val sentenceBreak = "I'm gonna put some music on.\\nNo, cam, I have to go to work."
+        val commaBreak = "I'm gonna put some music on,\\nNo, cam, I have to go to work."
+        val duration = 10_000L
+
+        fun firstTimeOnSecondLine(text: String): Long {
+            val target = text.indexOf("No,")
+            var low = 0L
+            var high = duration - 1
+            while (low < high) {
+                val middle = (low + high) / 2
+                val range = findLearningSubtitleWordRange(text, 0L, duration, middle)
+                if (range != null && range.first >= target) high = middle else low = middle + 1
+            }
+            return low
+        }
+
+        assertTrue(firstTimeOnSecondLine(sentenceBreak) > firstTimeOnSecondLine(commaBreak))
+    }
+
+    @Test
+    fun multilineHighlightDistributesProgressAcrossFourLines() {
+        val text = "I'm gonna put some music on.\\nNo, cam, I have to go to work.\\nMaybe we can talk tomorrow.\\nI'll call you later."
+        val duration = 12_000L
+        val lineStarts = listOf("I'm", "No,", "Maybe", "I'll").map(text::indexOf)
+
+        val transitionTimes = lineStarts.drop(1).map { target ->
+            var low = 0L
+            var high = duration - 1
+            while (low < high) {
+                val middle = (low + high) / 2
+                val range = findLearningSubtitleWordRange(text, 0L, duration, middle)
+                if (range != null && range.first >= target) high = middle else low = middle + 1
+            }
+            low
+        }
+
+        assertTrue(transitionTimes.zipWithNext().all { (first, second) -> second > first })
+        assertTrue(transitionTimes.all { it in 0L until duration })
     }
 
     private fun cue(start: Long, end: Long, text: String) =

@@ -923,18 +923,49 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
                 result += LearningSubtitleWord(
                     highlightRange = (tokenStart + wordStart)..(tokenStart + wordEnd - 1),
                     weightToken = token.substring(wordStart),
-                    // A real subtitle line break often marks a spoken phrase boundary.
-                    // Reserve a short pause so later lines do not get highlighted too early.
-                    pauseAfterWeight = if (
-                        tokenIndex < tokenMatches.lastIndex &&
-                        text.substring(tokenMatch.range.last + 1, tokenMatches[tokenIndex + 1].range.first).contains('\n')
-                    ) 1.15f else 0f,
+                    // Line breaks are not all equivalent: a completed sentence usually
+                    // has a longer spoken pause than a comma or a visual wrap without punctuation.
+                    pauseAfterWeight = if (tokenIndex < tokenMatches.lastIndex) {
+                        estimatedLearningLineBreakPause(
+                            text = text,
+                            currentWordEnd = tokenMatch.range.last,
+                            nextWordStart = tokenMatches[tokenIndex + 1].range.first,
+                        )
+                    } else 0f,
                 )
             }
             index = wordEnd
         }
     }
     return result
+}
+
+/**
+ * Estimates the pause represented by a subtitle line break.
+ *
+ * Sentence-ending punctuation indicates a stronger phrase boundary than a comma;
+ * an unpunctuated break is treated as a lighter visual/phrase break. Repeated newlines
+ * add a little extra pause without allowing malformed subtitle spacing to dominate timing.
+ */
+private fun estimatedLearningLineBreakPause(
+    text: String,
+    currentWordEnd: Int,
+    nextWordStart: Int,
+): Float {
+    val separator = text.substring(currentWordEnd + 1, nextWordStart)
+    val lineBreakCount = separator.count { it == '\n' }
+    if (lineBreakCount == 0) return 0f
+
+    val lineStart = text.lastIndexOf('\n', currentWordEnd).let { it + 1 }
+    val lineEnding = text.substring(lineStart, currentWordEnd + 1).trimEnd().lastOrNull()
+    val phrasePause = when (lineEnding) {
+        '.', '!', '?', '…' -> 2.2f
+        ',', ';', ':' -> 1.2f
+        '—', '–', '-' -> 1.0f
+        else -> 0.7f
+    }
+    val extraBlankLinePause = (lineBreakCount - 1).coerceAtMost(2) * 0.75f
+    return phrasePause + extraBlankLinePause
 }
 
 private fun Char.isSubtitleCombiningMark(): Boolean =
