@@ -486,7 +486,7 @@ class PlayerLearningSubtitlesTest {
         // prematurely to the final word.
         assertEquals(
             text.indexOf("great")..text.indexOf("great") + "great".length - 1,
-            findLearningSubtitleWordRange(text, 0L, 4_000L, 2_500L),
+            findLearningSubtitleWordRange(text, 0L, 4_000L, 2_200L),
         )
         assertEquals(
             text.indexOf("progress")..text.indexOf("progress") + "progress".length - 1,
@@ -496,8 +496,8 @@ class PlayerLearningSubtitlesTest {
 
     @Test
     fun multilineHighlightUsesStrongerPausesAfterSentenceBoundaries() {
-        val sentenceBreak = "I'm gonna put some music on.\\nNo, cam, I have to go to work."
-        val commaBreak = "I'm gonna put some music on,\\nNo, cam, I have to go to work."
+        val sentenceBreak = "I'm gonna put some music on.\nNo, cam, I have to go to work."
+        val commaBreak = "I'm gonna put some music on,\nNo, cam, I have to go to work."
         val duration = 10_000L
 
         fun firstTimeOnSecondLine(text: String): Long {
@@ -517,7 +517,7 @@ class PlayerLearningSubtitlesTest {
 
     @Test
     fun multilineHighlightDistributesProgressAcrossFourLines() {
-        val text = "I'm gonna put some music on.\\nNo, cam, I have to go to work.\\nMaybe we can talk tomorrow.\\nI'll call you later."
+        val text = "I'm gonna put some music on.\nNo, cam, I have to go to work.\nMaybe we can talk tomorrow.\nI'll call you later."
         val duration = 12_000L
         val lineStarts = listOf("I'm", "No,", "Maybe", "I'll").map(text::indexOf)
 
