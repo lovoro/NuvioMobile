@@ -217,7 +217,8 @@ object PlayerLearningSubtitleState {
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
     var isLiveCapture by mutableStateOf(false)
-        private set    var isLoadingFromCache by mutableStateOf(false)
+        private set
+    var isLoadingFromCache by mutableStateOf(false)
         private set
 
     fun updateCacheLoadingState(loading: Boolean) {
@@ -655,7 +656,8 @@ internal fun buildLearningSubtitlePrefixMaxEndMs(
     val prefixMaxEndMs = ArrayList<Long>(cues.size)
     var maxEndMs = Long.MIN_VALUE
     cues.forEach { cue ->
-        maxEndMs = maxOf(maxEndMs, cue.endTimeMs)        prefixMaxEndMs.add(maxEndMs)
+        maxEndMs = maxOf(maxEndMs, cue.endTimeMs)
+        prefixMaxEndMs.add(maxEndMs)
     }
     return prefixMaxEndMs
 }
@@ -818,7 +820,7 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val result = mutableListOf<LearningSubtitleWord>()
     // Only remove bracketed SDH-style annotations when the same cue also contains
     // spoken text. A cue consisting solely of "[chuckles]" remains highlightable.
-    val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text)
+    val annotationMatches = Regex("""\\[[^\\]\\r\\n]+\\]|\\([^\\)\\r\\n]+\\)|（[^）\\r\\n]+）""").findAll(text)
         .filter { isSubtitleAnnotation(it.value) }
         .toList()
     val textOutsideAnnotations = buildString {
@@ -872,7 +874,8 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
             }
 
             // Skip common UTF-8 decoding artifacts without discarding adjacent real words.
-            val artifactLength = when {                token.startsWith("â™ª", index) -> 3
+            val artifactLength = when {
+                token.startsWith("â™ª", index) -> 3
                 token.startsWith("â€™", index) || token.startsWith("â€œ", index) -> 3
                 token.startsWith("â€", index) || token.startsWith("ï¿½", index) -> 3
                 token.startsWith("Ã", index) || token.startsWith("Â", index) -> 2
