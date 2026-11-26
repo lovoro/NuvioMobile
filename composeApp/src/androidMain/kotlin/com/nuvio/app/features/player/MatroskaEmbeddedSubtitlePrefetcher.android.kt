@@ -1,5 +1,8 @@
 package com.nuvio.app.features.player
 
+import android.os.SystemClock
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -18,6 +21,7 @@ import kotlin.coroutines.resume
  * using bounded HTTP byte ranges; the media stream itself is never downloaded.
  */
 internal object MatroskaEmbeddedSubtitlePrefetcher {
+    private const val TAG = "MatroskaSubtitlePrefetch"
     private const val PROBE = 512 * 1024
     private const val TAIL = 16 * 1024 * 1024
     // Long films and high-bitrate video can have thousands of indexed clusters.
@@ -51,17 +55,31 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         currentPositionMs: () -> Long,
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
-        if (selectedTrackNumber == null || selectedTrackNumber <= 0 ||
-            !(url.startsWith("http://", true) || url.startsWith("https://", true))
-        ) return LoadResult(emptyList(), false)
+        val isHttp = url.startsWith("http://", true) || url.startsWith("https://", true)
+        if (selectedTrackNumber == null || selectedTrackNumber <= 0 || !isHttp) {
+            Log.w(TAG, "Skip extraction: invalid track or non-HTTP source")
+            return LoadResult(emptyList(), false)
+        }
+        val startedAt = SystemClock.elapsedRealtime()
+        Log.i(TAG, "Extraction started for track=" + selectedTrackNumber + ", targetTrack=" + targetTrackNumber)
         return withContext(Dispatchers.IO) {
-            withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
+            val result = withTimeoutOrNull(EXTRACTION_TIMEOUT_MS) {
                 try {
                     loadInternal(url, headers, selectedTrackNumber, targetTrackNumber, targetLanguage, currentPositionMs, onPartialCues)
-                } catch (_: Exception) {
+                } catch (cancelled: CancellationException) {
+                    Log.w(TAG, "Extraction cancelled")
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.e(TAG, "Extraction exception: " + error.javaClass.simpleName + ": " + error.message, error)
                     LoadResult(emptyList(), false)
                 }
-            } ?: LoadResult(emptyList(), false)
+            }
+            if (result == null) {
+                Log.e(TAG, "Extraction timed out")
+            } else {
+                Log.i(TAG, "Extraction finished: cues=" + result.cues.size + ", complete=" + result.isComplete + ", elapsedMs=" + (SystemClock.elapsedRealtime() - startedAt))
+            }
+            result ?: LoadResult(emptyList(), false)
         }
     }
 
@@ -75,18 +93,36 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         onPartialCues: (List<LearningSubtitleCue>, Boolean) -> Unit,
     ): LoadResult {
         val budget = Budget()
-        val initial = range(url, headers, 0L, PROBE, budget) ?: return LoadResult(emptyList(), false)
-        val segment = find(initial, ID_SEGMENT) ?: return LoadResult(emptyList(), false)
+        Log.d(TAG, "Step 1: requesting initial HTTP byte range")
+        val initial = range(url, headers, 0L, PROBE, budget) ?: run {
+            Log.w(TAG, "Failed at step 1: initial byte-range request returned no data")
+            return LoadResult(emptyList(), false)
+        }
+        Log.d(TAG, "Initial range received; bytes=" + initial.size + ", totalLength=" + budget.totalLength)
+        val segment = find(initial, ID_SEGMENT) ?: run {
+            Log.w(TAG, "Failed at step 2: Matroska Segment not found")
+            return LoadResult(emptyList(), false)
+        }
         val segmentData = segment.data.toLong()
         val top = children(initial, segment.data, segment.end)
+        Log.d(TAG, "Step 2: locating Matroska Tracks")
         val tracksElement = top.firstOrNull { it.id == ID_TRACKS }
             ?: seekElement(initial, top, ID_TRACKS, segmentData, url, headers, budget)
-            ?: return LoadResult(emptyList(), false)
-        val tracksBytes = elementBytes(initial, tracksElement, url, headers, budget)
-            ?: return LoadResult(emptyList(), false)
+            ?: run {
+                Log.w(TAG, "Failed at step 2: Tracks element not found")
+                return LoadResult(emptyList(), false)
+            }
+        val tracksBytes = elementBytes(initial, tracksElement, url, headers, budget) ?: run {
+            Log.w(TAG, "Failed at step 2: unable to read Tracks element")
+            return LoadResult(emptyList(), false)
+        }
         val trackNumbers = listOfNotNull(selectedTrack, targetTrack?.takeIf { it > 0 }).toSet()
         val trackInfos = parseTracks(tracksBytes, trackNumbers)
-        val sourceTrackInfo = trackInfos[selectedTrack] ?: return LoadResult(emptyList(), false)
+        Log.i(TAG, "Tracks parsed; requested=" + trackNumbers + ", matched=" + trackInfos.keys)
+        val sourceTrackInfo = trackInfos[selectedTrack] ?: run {
+            Log.w(TAG, "Failed at step 3: selected TrackNumber=" + selectedTrack + " is not a supported text track")
+            return LoadResult(emptyList(), false)
+        }
         val targetTrackInfo = targetTrack?.let(trackInfos::get)
         val scale = top.firstOrNull { it.id == ID_INFO }?.let {
             elementBytes(initial, it, url, headers, budget)?.let(::parseScale)
@@ -113,7 +149,11 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             .distinctBy { it.second }
             .sortedBy { it.first }
             .toMutableList()
-        if (pendingPositions.isEmpty()) return LoadResult(emptyList(), false)
+        Log.i(TAG, "Cues parsed; indexedClusters=" + pendingPositions.size)
+        if (pendingPositions.isEmpty()) {
+            Log.w(TAG, "Failed at step 4: Cues contain no usable Cluster positions")
+            return LoadResult(emptyList(), false)
+        }
         val allSourceCues = mutableListOf<LearningSubtitleCue>()
         val allTargetCues = mutableListOf<LearningSubtitleCue>()
         // Keep both tracks across Cluster boundaries and publish as soon as a counterpart arrives.
@@ -349,11 +389,19 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
         val bytes = suspendCancellableCoroutine<ByteArray?> { cont ->
             cont.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) { if (cont.isActive) cont.resume(null) }
+                override fun onFailure(call: Call, e: IOException) {
+                    if (budget.requests <= 12 && cont.isActive) Log.w(TAG, "HTTP range request failed: " + e.javaClass.simpleName + ": " + e.message)
+                    if (cont.isActive) cont.resume(null)
+                }
                 override fun onResponse(call: Call, response: Response) {
                     val value = runCatching {
                         response.use {
-                            if (it.code != 206 && !(it.code == 200 && start == 0L)) return@use null
+                            if (it.code != 206 && !(it.code == 200 && start == 0L)) {
+                                if (budget.requests <= 12 || start == 0L) {
+                                    Log.w(TAG, "HTTP range rejected; status=" + it.code + ", requestedStart=" + start + ", contentRange=" + it.header("Content-Range") + ", acceptRanges=" + it.header("Accept-Ranges"))
+                                }
+                                return@use null
+                            }
                             val body = it.body ?: return@use null
                             budget.totalLength = it.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
                                 ?: budget.totalLength
