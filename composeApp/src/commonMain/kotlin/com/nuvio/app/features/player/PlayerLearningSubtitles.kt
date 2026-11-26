@@ -834,10 +834,14 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     }
     val hasWordsOutsideAnnotations = annotationMatches.isNotEmpty() &&
         Regex("[\\p{L}\\p{N}]+").containsMatchIn(textOutsideAnnotations)
-    val excludedAnnotationRanges = if (hasWordsOutsideAnnotations) {
-        annotationMatches.map { it.range }
-    } else {
-        emptyList()
+    val excludedAnnotationRanges = buildList {
+        if (hasWordsOutsideAnnotations) addAll(annotationMatches.map { it.range })
+        // Only recognize an uppercase speaker label at the very beginning of the cue,
+        // followed by a colon. Keep the original text and its character offsets unchanged.
+        Regex("""^[ \\t]*[A-Z][A-Z0-9.]*(?:[ \\t]+[A-Z][A-Z0-9.]*){0,3}:[ \\t]*""")
+            .find(text)
+            ?.range
+            ?.let(::add)
     }
     val tokenMatches = Regex("\\S+").findAll(text).toList()
     tokenMatches.forEachIndexed { tokenIndex, tokenMatch ->

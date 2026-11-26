@@ -73,4 +73,32 @@ class LearningSubtitleAnnotationHighlightTest {
         assertEquals(1..1, findLearningSubtitleWordRange(text, 0L, 1_000L, 0L))
     }
 
+    @Test
+    fun skipsLeadingUppercaseSpeakerLabelBeforeColon() {
+        val nurse = "NURSE: Oxygen sats tanking."
+        assertEquals(
+            nurse.indexOf("Oxygen")..nurse.indexOf("Oxygen") + "Oxygen".lastIndex,
+            findLearningSubtitleWordRange(nurse, 0L, 1_000L, 0L),
+        )
+        assertEquals(
+            nurse.indexOf("tanking")..nurse.indexOf("tanking") + "tanking".lastIndex,
+            findLearningSubtitleWordRange(nurse, 0L, 1_000L, 999L),
+        )
+
+        val doctor = "DR. MELENDEZ: Up him to 100% O2."
+        assertEquals(
+            doctor.indexOf("Up")..doctor.indexOf("Up") + 1,
+            findLearningSubtitleWordRange(doctor, 0L, 1_000L, 0L),
+        )
+    }
+
+    @Test
+    fun onlySkipsSpeakerLabelAtBeginningOfCue() {
+        val text = "We called NURSE: Oxygen sats tanking."
+        assertEquals(
+            text.indexOf("We")..text.indexOf("We") + 1,
+            findLearningSubtitleWordRange(text, 0L, 1_000L, 0L),
+        )
+    }
+
 }
