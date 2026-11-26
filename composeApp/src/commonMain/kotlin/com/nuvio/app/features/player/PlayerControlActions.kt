@@ -104,16 +104,10 @@ internal fun PlayerToolbar(
         if (onLearningModeClick != null) {
             PlayerAction(
                 description = "Language Learning",
-                painter = appIconPainter(
-                    when (learningTranslationService.uppercase()) {
-                        "A" -> AppIconResource.LanguageLearningAI
-                        "D" -> AppIconResource.LanguageLearningDeepL
-                        else -> AppIconResource.LanguageLearningGoogle
-                    },
-                ),
+                painter = appIconPainter(AppIconResource.LanguageLearning),
                 onClick = onLearningModeClick,
                 iconSize = 24.dp,
-                tint = Color.Unspecified,
+                tint = Color.White,
             )
         }
     }
