@@ -546,7 +546,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                             icon = Icons.Rounded.Close,
                             contentDescription = "关闭",
                             modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.nuvio.colors.textPrimary,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             onClick = { showSubtitleAutomationSettingsDialog = false },
                         )
                     }
