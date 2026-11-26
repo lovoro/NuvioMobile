@@ -278,6 +278,7 @@ internal object DoubleSubtitlesLocalTranslator {
             chunkIndex: Int,
             totalChunks: Int,
         ) {
+            val phaseLabel = if (phase == "priority") "附近优先" else "后台翻译"
             var pendingChunk = chunk
             var transientRetries = 0
             var rateLimitRetries = 0
@@ -304,7 +305,7 @@ internal object DoubleSubtitlesLocalTranslator {
                     val requestHeaders = request.headers.toMultimap().entries.joinToString("\n") { (name, values) ->
                         "$name: ${values.joinToString(", ")}"
                     }
-                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${pendingChunk.size} 条")
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批发送请求", "${pendingChunk.size} 条")
                     Log.i(TAG, "Translation request started: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId cues=${pendingChunk.size} chars=${pendingChunk.sumOf { it.text.length }}")
                     val batchTranslations = linkedMapOf<String, CachedSubtitle>()
                     var translatedInResponse = 0
@@ -314,7 +315,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         val responseHeadersAtNanos = System.nanoTime()
                         val headerWaitMs = (responseHeadersAtNanos - requestStartedAtNanos) / 1_000_000
                         PlayerLearningSubtitleState.recordTranslationDiagnostic(
-                            "第 ${chunkIndex + 1}/${totalChunks} 批收到 HTTP 响应头",
+                            "$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批收到 HTTP 响应头",
                             "HTTP ${response.code}，等待 ${headerWaitMs} ms"
                         )
                         val responseText = response.body?.string().orEmpty()
@@ -322,7 +323,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         val bodyReadMs = (bodyReadFinishedAtNanos - responseHeadersAtNanos) / 1_000_000
                         val totalRequestMs = (bodyReadFinishedAtNanos - requestStartedAtNanos) / 1_000_000
                         PlayerLearningSubtitleState.recordTranslationDiagnostic(
-                            "第 ${chunkIndex + 1}/${totalChunks} 批读取响应体完成",
+                            "$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批读取响应体完成",
                             "${responseText.length} 字符，读取 ${bodyReadMs} ms，总请求 ${totalRequestMs} ms"
                         )
                         PlayerLearningSubtitleState.enqueueTranslationRawResponse(
@@ -336,7 +337,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         Log.i(TAG, "Translation raw response captured: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId http=${response.code} headerWaitMs=$headerWaitMs bodyReadMs=$bodyReadMs totalMs=$totalRequestMs bodyChars=${responseText.length}")
                         if (PlayerLearningSubtitleState.rawResponseInspectionMode) {
                             PlayerLearningSubtitleState.recordTranslationDiagnostic(
-                                "第 ${chunkIndex + 1}/${totalChunks} 批跳过响应解析",
+                                "$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批跳过响应解析",
                                 "已保留接口原始响应，未解析 JSON、未写缓存、未回写字幕"
                             )
                             return
@@ -362,7 +363,7 @@ internal object DoubleSubtitlesLocalTranslator {
                         }
                         if (translatedInResponse == 0) error("Translation API returned success but no usable translated cues")
                     }
-                    PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批解析响应完成", "匹配译文 $translatedInResponse/${pendingChunk.size} 条")
+                    PlayerLearningSubtitleState.recordTranslationDiagnostic("$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批解析响应完成", "匹配译文 $translatedInResponse/${pendingChunk.size} 条")
                     Log.i(TAG, "Translation response parsed: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId responseItems=$responseItemCount matched=$translatedInResponse requested=${pendingChunk.size} missing=${pendingChunk.size-translatedInResponse}")
                     val translatedBatch = resultMutex.withLock {
                         translations.putAll(batchTranslations)
@@ -374,7 +375,7 @@ internal object DoubleSubtitlesLocalTranslator {
                     if (translatedBatch.isNotEmpty()) {
                         Log.i(TAG, "Translation callback dispatching: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId translated=${translatedBatch.size}")
                         onBatchTranslated(translatedBatch)
-                        PlayerLearningSubtitleState.recordTranslationDiagnostic("第 ${chunkIndex + 1}/${totalChunks} 批回调完成")
+                        PlayerLearningSubtitleState.recordTranslationDiagnostic("$phaseLabel：第 ${chunkIndex + 1}/${totalChunks} 批回调完成")
                         Log.i(TAG, "Translation callback completed: phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId")
                     } else {
                         Log.w(TAG, "Translation callback skipped: empty translated batch phase=$phase index=${chunkIndex + 1}/$totalChunks batchId=$batchId")
