@@ -25,6 +25,7 @@ actual object PlayerSettingsStorage {
     private const val englishLearningEnabledKey = "english_learning_enabled"
     private const val bilingualSubtitleMergeEnabledKey = "bilingual_subtitle_merge_enabled"
     private const val automaticSubtitleTranslationEnabledKey = "automatic_subtitle_translation_enabled"
+    private const val realTimeSubtitleTranslationEnabledKey = "real_time_subtitle_translation_enabled"
     private const val showTranslationDiagnosticsKey = "show_translation_diagnostics"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
@@ -332,6 +333,15 @@ actual object PlayerSettingsStorage {
 
     actual fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean) {
         preferences?.edit()?.putBoolean(automaticSubtitleTranslationEnabledKey, enabled)?.apply()
+    }
+
+    actual fun loadRealTimeSubtitleTranslationEnabled(): Boolean? =
+        preferences?.let { prefs ->
+            if (prefs.contains(realTimeSubtitleTranslationEnabledKey)) prefs.getBoolean(realTimeSubtitleTranslationEnabledKey, false) else null
+        }
+
+    actual fun saveRealTimeSubtitleTranslationEnabled(enabled: Boolean) {
+        preferences?.edit()?.putBoolean(realTimeSubtitleTranslationEnabledKey, enabled)?.apply()
     }
 
     actual fun loadShowTranslationDiagnostics(): Boolean? =

@@ -604,6 +604,29 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("实时翻译", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "字幕逐条获取时自动翻译；默认关闭",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = playerSettingsUiState.realTimeSubtitleTranslationEnabled,
+                            onCheckedChange = { PlayerSettingsRepository.setRealTimeSubtitleTranslationEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = switchColors.onAccent,
+                                checkedTrackColor = switchColors.accent,
+                                uncheckedThumbColor = switchColors.textMuted,
+                                uncheckedTrackColor = switchColors.borderDefault,
+                            ),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("自动弹出翻译检测弹框", style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "翻译响应到达时自动打开检测弹框；关闭后仍会记录诊断数据。",

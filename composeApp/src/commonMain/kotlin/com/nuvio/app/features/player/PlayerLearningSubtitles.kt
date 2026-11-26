@@ -4,7 +4,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -250,6 +255,12 @@ object PlayerLearningSubtitleState {
         }
     }
     private var manualTranslationAction: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)? = null
+    private var realtimeTranslationAction: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)? = null
+    private val realtimeTranslationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var realtimeTranslationJob: Job? = null
+    private val realtimeTranslationQueue = mutableListOf<LearningSubtitleCue>()
+    private val realtimeTranslationQueuedKeys = HashSet<String>()
+    private var realtimeTranslationGeneration = 0L
     private var translationGeneration = 0L
     val hasManualTranslationAction: Boolean get() = manualTranslationAction != null
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
@@ -386,8 +397,78 @@ object PlayerLearningSubtitleState {
         }
     }
 
+    private fun resetRealtimeTranslationQueue(clearAction: Boolean = false) {
+        realtimeTranslationGeneration += 1L
+        realtimeTranslationJob?.cancel()
+        realtimeTranslationJob = null
+        realtimeTranslationQueue.clear()
+        realtimeTranslationQueuedKeys.clear()
+        if (clearAction) realtimeTranslationAction = null
+    }
+
+    fun onRealtimeTranslationSettingChanged(enabled: Boolean) {
+        if (!enabled) resetRealtimeTranslationQueue()
+    }
+
+    private fun enqueueRealtimeTranslations(newCues: List<LearningSubtitleCue>) {
+        if (!PlayerSettingsRepository.uiState.value.realTimeSubtitleTranslationEnabled) return
+        if (realtimeTranslationAction == null || newCues.isEmpty()) return
+        newCues.forEach { cue ->
+            if (cue.translationText.isNullOrBlank()) {
+                val normalized = cue.text.trim().replace(Regex("\\s+"), " ")
+                val key = "${cue.startTimeMs}|$normalized"
+                if (normalized.isNotBlank() && realtimeTranslationQueuedKeys.add(key)) {
+                    realtimeTranslationQueue += cue
+                }
+            }
+        }
+        if (realtimeTranslationQueue.isEmpty() || realtimeTranslationJob?.isActive == true) return
+        val generation = realtimeTranslationGeneration
+        realtimeTranslationJob = realtimeTranslationScope.launch {
+            try {
+                while (generation == realtimeTranslationGeneration &&
+                    PlayerSettingsRepository.uiState.value.realTimeSubtitleTranslationEnabled &&
+                    realtimeTranslationQueue.isNotEmpty()
+                ) {
+                    // Let adjacent cues accumulate, but never wait on the player's capture thread.
+                    delay(1_200L)
+                    if (generation != realtimeTranslationGeneration ||
+                        !PlayerSettingsRepository.uiState.value.realTimeSubtitleTranslationEnabled
+                    ) break
+                    if (isTranslating) {
+                        delay(300L)
+                        continue
+                    }
+                    val action = realtimeTranslationAction ?: break
+                    val batch = realtimeTranslationQueue.take(10)
+                    realtimeTranslationQueue.subList(0, batch.size).clear()
+                    if (batch.isEmpty()) continue
+                    val translated = action(batch, batch.first().startTimeMs) { translatedBatch ->
+                        withContext(Dispatchers.Main.immediate) {
+                            if (generation == realtimeTranslationGeneration &&
+                                PlayerSettingsRepository.uiState.value.realTimeSubtitleTranslationEnabled
+                            ) applyTranslations(translatedBatch)
+                        }
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (generation == realtimeTranslationGeneration &&
+                            PlayerSettingsRepository.uiState.value.realTimeSubtitleTranslationEnabled
+                        ) applyTranslations(translated)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                println("NuvioSubtitleUI: realtime translation failed: ${error.message}")
+            } finally {
+                if (generation == realtimeTranslationGeneration) realtimeTranslationJob = null
+            }
+        }
+    }
+
     fun setManualTranslationAction(action: (suspend (List<LearningSubtitleCue>, Long, suspend (List<LearningSubtitleCue>) -> Unit) -> List<LearningSubtitleCue>)?) {
         manualTranslationAction = action
+        if (action != null) realtimeTranslationAction = action
         translationGeneration += 1L
         isTranslating = false
         refreshTranslationProgress()
@@ -488,6 +569,7 @@ object PlayerLearningSubtitleState {
     /** Starts an explicitly partial capture for embedded tracks whose samples arrive during playback. */
     fun beginLiveCapture(subtitleName: String? = null) {
         invalidatePartialCueIndex()
+        resetRealtimeTranslationQueue()
         setManualTranslationAction(null)
         isLiveCapture = true
         loadingSubtitleName = subtitleName?.takeIf { it.isNotBlank() }
@@ -530,7 +612,11 @@ object PlayerLearningSubtitleState {
                 activeLiveCues.remove(text)
             }
         }
-        visibleTexts.forEach { text -> if (text !in activeLiveCues) activeLiveCues[text] = timeMs }
+        val newlyVisibleTexts = visibleTexts.filter { it !in activeLiveCues }
+        newlyVisibleTexts.forEach { text -> activeLiveCues[text] = timeMs }
+        enqueueRealtimeTranslations(newlyVisibleTexts.map { text ->
+            LearningSubtitleCue(timeMs, timeMs + 1_500L, text)
+        })
         val activeSnapshot = activeLiveCues.map { (text, startMs) ->
             LearningSubtitleCue(startMs, maxOf(timeMs + 1_500L, startMs + 1_500L), text)
         }
@@ -554,6 +640,7 @@ object PlayerLearningSubtitleState {
 
     fun beginLoading(subtitleName: String? = null) {
         invalidatePartialCueIndex()
+        resetRealtimeTranslationQueue(clearAction = true)
         isLiveCapture = false
         // Loading a new cue batch does not own the translation action lifecycle.
         // The player registers/replaces the action when a subtitle is selected; clearing it
@@ -598,6 +685,7 @@ object PlayerLearningSubtitleState {
         // is copied for publication. Existing entries are not re-merged or re-sorted.
         cues = partialCueEntries.map { it.cue }
         refreshTranslationProgress()
+        enqueueRealtimeTranslations(validNewCues)
         mutableStatus = LearningSubtitleStatus.PARTIAL
         loadingSubtitleName = null
     }
@@ -632,6 +720,7 @@ object PlayerLearningSubtitleState {
 
     fun clear() {
         invalidatePartialCueIndex()
+        resetRealtimeTranslationQueue(clearAction = true)
         setManualTranslationAction(null)
         isLiveCapture = false
         manualTranslationEnabled = true

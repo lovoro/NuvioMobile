@@ -23,6 +23,7 @@ actual object PlayerSettingsStorage {
     private const val englishLearningEnabledKey = "english_learning_enabled"
     private const val bilingualSubtitleMergeEnabledKey = "bilingual_subtitle_merge_enabled"
     private const val automaticSubtitleTranslationEnabledKey = "automatic_subtitle_translation_enabled"
+    private const val realTimeSubtitleTranslationEnabledKey = "real_time_subtitle_translation_enabled"
     private const val showTranslationDiagnosticsKey = "show_translation_diagnostics"
     private const val showLoadingOverlayKey = "show_loading_overlay"
     private const val showPlayerLoadingStatusKey = "show_player_loading_status"
@@ -329,6 +330,17 @@ actual object PlayerSettingsStorage {
 
     actual fun saveAutomaticSubtitleTranslationEnabled(enabled: Boolean) {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = automaticSubtitleTranslationEnabledKey)
+    }
+
+    actual fun loadRealTimeSubtitleTranslationEnabled(): Boolean? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        return if (defaults.objectForKey(realTimeSubtitleTranslationEnabledKey) != null) {
+            defaults.boolForKey(realTimeSubtitleTranslationEnabledKey)
+        } else null
+    }
+
+    actual fun saveRealTimeSubtitleTranslationEnabled(enabled: Boolean) {
+        NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = realTimeSubtitleTranslationEnabledKey)
     }
 
     actual fun loadShowTranslationDiagnostics(): Boolean? {
