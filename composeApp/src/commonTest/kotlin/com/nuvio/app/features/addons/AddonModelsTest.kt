@@ -84,6 +84,31 @@ class AddonModelsTest {
             listOf(disabledFailure, resolvedFailure, unresolvedFailure).firstEnabledManifestError(),
         )
     }
+
+    @Test
+    fun `translation provider letter follows Double Subtitles manifest description`() {
+        fun addon(description: String, enabled: Boolean = true) = ManagedAddon(
+            manifestUrl = "https://double-subtitles.example/manifest.json",
+            manifest = AddonManifest(
+                id = "stremio-double-subtitles",
+                name = "Double Subtitles",
+                description = description,
+                version = "1.0.0",
+                resources = emptyList(),
+                types = emptyList(),
+                transportUrl = "https://double-subtitles.example/manifest.json",
+            ),
+            enabled = enabled,
+        )
+
+        assertEquals("G", resolveLearningTranslationServiceLetter(listOf(addon("via Google"))))
+        assertEquals("A", resolveLearningTranslationServiceLetter(listOf(addon("via Custom AI"))))
+        assertEquals("D", resolveLearningTranslationServiceLetter(listOf(addon("via DeepL"))))
+        assertEquals("G", resolveLearningTranslationServiceLetter(listOf(addon("unknown backend"))))
+        assertEquals("G", resolveLearningTranslationServiceLetter(listOf(addon("via DeepL", enabled = false))))
+        assertEquals("G", resolveLearningTranslationServiceLetter(emptyList()))
+    }
+
 }
 
 private fun manifest(id: String = "addon") = AddonManifest(

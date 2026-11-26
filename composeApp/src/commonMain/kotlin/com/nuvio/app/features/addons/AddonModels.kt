@@ -121,3 +121,25 @@ sealed interface AddAddonResult {
     data class TrackingConsentRequired(val manifest: AddonManifest) : AddAddonResult
     data class Error(val message: String) : AddAddonResult
 }
+
+
+/**
+ * Detects the translation backend advertised by the installed Double Subtitles addon.
+ * Unknown or missing metadata intentionally falls back to Google (G).
+ */
+internal fun resolveLearningTranslationServiceLetter(addons: List<ManagedAddon>): String {
+    val doubleSubtitlesAddon = addons.firstOrNull { addon ->
+        if (!addon.enabled) return@firstOrNull false
+        val manifest = addon.manifest ?: return@firstOrNull false
+        val identity = "${manifest.id} ${manifest.name}".lowercase()
+        identity.contains("double") && identity.contains("subtitle")
+    } ?: return "G"
+
+    val description = doubleSubtitlesAddon.manifest?.description.orEmpty()
+    return when {
+        Regex("""\bvia\s+custom\s+ai\b""", RegexOption.IGNORE_CASE).containsMatchIn(description) -> "A"
+        Regex("""\bvia\s+deepl\b""", RegexOption.IGNORE_CASE).containsMatchIn(description) -> "D"
+        Regex("""\bvia\s+google\b""", RegexOption.IGNORE_CASE).containsMatchIn(description) -> "G"
+        else -> "G"
+    }
+}

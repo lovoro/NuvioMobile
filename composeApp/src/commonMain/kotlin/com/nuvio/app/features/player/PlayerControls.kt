@@ -125,6 +125,7 @@ internal fun PlayerControlsShell(
     onSubmitIntroClick: (() -> Unit)? = null,
     onSwitchEngineClick: (() -> Unit)? = null,
     onLearningModeClick: (() -> Unit)? = null,
+    learningTranslationService: String = "G",
     onStreamInfoClick: () -> Unit = {},
     parentalWarnings: List<ParentalWarning> = emptyList(),
     showParentalGuide: Boolean = false,
@@ -266,6 +267,7 @@ internal fun PlayerControlsShell(
                         partyActive = partyActive,
                         onSwitchEngineClick = onSwitchEngineClick,
                         onLearningModeClick = onLearningModeClick,
+                        learningTranslationService = learningTranslationService,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))

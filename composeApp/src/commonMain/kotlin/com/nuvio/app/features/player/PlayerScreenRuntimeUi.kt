@@ -76,6 +76,7 @@ import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.addons.resolveLearningTranslationServiceLetter
 import com.nuvio.app.core.ui.LocalFold
 import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.party.PartyRepository
@@ -909,6 +910,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             } else {
                 null
             },
+            learningTranslationService = resolveLearningTranslationServiceLetter(addonsUiState.addons),
             onLearningModeClick = if (
                 !isIos &&
                 !playerSettingsUiState.externalPlayerEnabled &&
