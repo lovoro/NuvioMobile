@@ -522,6 +522,22 @@ private fun PlayerHeader(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Keep this action first so it cannot be clipped at the trailing edge.
+                    if (onLearningModeClick != null) {
+                        PlayerAction(
+                            description = "Language Learning",
+                            painter = appIconPainter(
+                                when (learningTranslationService.uppercase()) {
+                                    "A" -> AppIconResource.LanguageLearningAI
+                                    "D" -> AppIconResource.LanguageLearningDeepL
+                                    else -> AppIconResource.LanguageLearningGoogle
+                                },
+                            ),
+                            onClick = onLearningModeClick,
+                            iconSize = metrics.headerIconSize,
+                            tint = Color.Unspecified,
+                        )
+                    }
                     if (onSubmitIntroClick != null) {
                         PlayerHeaderIconButton(
                             icon = Icons.Rounded.Flag,
@@ -578,21 +594,6 @@ private fun PlayerHeader(
                         iconSize = metrics.headerIconSize,
                         contentDescription = stringResource(Res.string.compose_player_close),
                     )
-                    if (onLearningModeClick != null) {
-                        PlayerAction(
-                            description = "Language Learning",
-                            painter = appIconPainter(
-                                when (learningTranslationService.uppercase()) {
-                                    "A" -> AppIconResource.LanguageLearningAI
-                                    "D" -> AppIconResource.LanguageLearningDeepL
-                                    else -> AppIconResource.LanguageLearningGoogle
-                                },
-                            ),
-                            onClick = onLearningModeClick,
-                            iconSize = metrics.headerIconSize,
-                            tint = Color.Unspecified,
-                        )
-                    }
                 }
             }
         }
