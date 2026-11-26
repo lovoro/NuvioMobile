@@ -43,6 +43,7 @@ internal fun StyledSubtitleOverlay(cues: StyledSubtitleCues, style: SubtitleStyl
     BoxWithConstraints(modifier.fillMaxSize()) {
         val scale = (maxHeight / 360.dp).coerceAtMost(1f)
         val bottomInset = maxHeight * (0.0533f + style.bottomOffset.coerceIn(0, 200) / 1000f)
+        val subtitleLineHeight = with(LocalDensity.current) { (style.fontSizeSp * scale * 1.2f).sp.toDp() }
         val topInset = maxHeight * TOP_SUBTITLE_INSET_FRACTION
         val sideInset = maxWidth * SIDE_SUBTITLE_INSET_FRACTION
         cues.blocks.forEach { block ->
@@ -52,7 +53,11 @@ internal fun StyledSubtitleOverlay(cues: StyledSubtitleCues, style: SubtitleStyl
                     start = horizontalInset,
                     end = horizontalInset,
                     top = if (block.vertical == SubtitleVerticalPosition.TOP) topInset else 0.dp,
-                    bottom = if (block.vertical == SubtitleVerticalPosition.BOTTOM) bottomInset else 0.dp,
+                    bottom = if (block.vertical == SubtitleVerticalPosition.BOTTOM) {
+                        // Keep bottom-aligned bilingual/multiline cues fully visible by lifting
+                        // the whole cue group by one line height for each additional line.
+                        bottomInset + subtitleLineHeight * (block.text.text.count { it == '\n' })
+                    } else 0.dp,
                 ),
                 contentAlignment = block.alignment(),
             ) {
