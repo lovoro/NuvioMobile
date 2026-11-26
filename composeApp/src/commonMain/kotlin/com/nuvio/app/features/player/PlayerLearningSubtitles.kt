@@ -217,8 +217,7 @@ object PlayerLearningSubtitleState {
     var loadingSubtitleName by mutableStateOf<String?>(null)
         private set
     var isLiveCapture by mutableStateOf(false)
-        private set
-    var isLoadingFromCache by mutableStateOf(false)
+        private set    var isLoadingFromCache by mutableStateOf(false)
         private set
 
     fun updateCacheLoadingState(loading: Boolean) {
@@ -437,8 +436,7 @@ object PlayerLearningSubtitleState {
                 println("NuvioSubtitleUI: final result ignored as stale generation=${requestGeneration} currentGeneration=${translationGeneration}")
                 return
             }
-            if (PlayerLearningSubtitleState.rawResponseInspectionMode) {
-                recordTranslationDiagnostic("原始响应检查结束", "已跳过 JSON 解析、缓存写入和字幕回写")
+            if (PlayerLearningSubtitleState.rawResponseInspectionMode) {                recordTranslationDiagnostic("原始响应检查结束", "已跳过 JSON 解析、缓存写入和字幕回写")
                 translationMessage = null
                 return
             }
@@ -657,8 +655,7 @@ internal fun buildLearningSubtitlePrefixMaxEndMs(
     val prefixMaxEndMs = ArrayList<Long>(cues.size)
     var maxEndMs = Long.MIN_VALUE
     cues.forEach { cue ->
-        maxEndMs = maxOf(maxEndMs, cue.endTimeMs)
-        prefixMaxEndMs.add(maxEndMs)
+        maxEndMs = maxOf(maxEndMs, cue.endTimeMs)        prefixMaxEndMs.add(maxEndMs)
     }
     return prefixMaxEndMs
 }
@@ -801,30 +798,28 @@ private data class LearningSubtitleWord(
     val pauseAfterWeight: Float = 0f,
 )
 
-/** Conservative vocabulary cues for bracketed sound-effect captions. */
-private fun isLikelyNonSpeechCaption(annotation: String): Boolean {
-    val words = annotation.lowercase().filter { it.isLetterOrDigit() || it.isWhitespace() }
-    val cues = listOf(
-        "whistle", "whistles", "whistling", "phone rings", "phone ringing", "cellphone",
-        "ringing", "buzzing", "vibrating", "alarm", "door", "footsteps", "footstep",
-        "keys jingling", "jingling", "music", "laughs", "laughing", "chuckles",
-        "sighs", "sighing", "coughs", "coughing", "sobbing", "crying", "gasps",
-        "thunder", "rain", "wind", "engine", "car horn", "horn honks", "honking",
-        "glass breaking", "shattering", "explosion", "gunshot", "birds chirping",
-        "dog barking", "cat meowing", "applause", "cheering", "crowd", "static",
-    )
-    return cues.any { cue -> words.contains(cue) }
+/**
+ * Recognizes the shape of common SDH annotations without maintaining a vocabulary list.
+ * Multi-word annotations are conventionally lowercase (for example "speaking softly");
+ * a capitalized single word (for example "Chuckles") is also accepted. A normal sentence
+ * such as "[I don't know]" is therefore not mistaken for an annotation.
+ */
+private fun isSubtitleAnnotation(match: String): Boolean {
+    val content = match.drop(1).dropLast(1).trim()
+    if (content.isEmpty() || content.any { it.isDigit() || it in ".,!?;:" }) return false
+    val words = Regex("[\\p{L}]+(?:['’\\-][\\p{L}]+)*").findAll(content).map { it.value }.toList()
+    if (words.isEmpty() || words.size > 8) return false
+    val lettersOnly = content.filter { it.isLetter() }
+    return lettersOnly == lettersOnly.lowercase() || words.size == 1
 }
 
 /** Finds lexical words rather than treating every non-whitespace token as a word. */
 private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val result = mutableListOf<LearningSubtitleWord>()
-    // In a mixed cue, bracketed sound-effect captions should not consume the
-    // estimated speaking-time budget. A cue made entirely of a sound caption
-    // remains highlightable, which is useful for learning vocabulary such as
-    // "whistles", "footsteps", or "phone rings".
+    // Only remove bracketed SDH-style annotations when the same cue also contains
+    // spoken text. A cue consisting solely of "[chuckles]" remains highlightable.
     val annotationMatches = Regex("\\[[^\\]\\r\\n]+\\]").findAll(text)
-        .filter { isLikelyNonSpeechCaption(it.value) }
+        .filter { isSubtitleAnnotation(it.value) }
         .toList()
     val textOutsideAnnotations = buildString {
         var cursor = 0
@@ -877,8 +872,7 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
             }
 
             // Skip common UTF-8 decoding artifacts without discarding adjacent real words.
-            val artifactLength = when {
-                token.startsWith("â™ª", index) -> 3
+            val artifactLength = when {                token.startsWith("â™ª", index) -> 3
                 token.startsWith("â€™", index) || token.startsWith("â€œ", index) -> 3
                 token.startsWith("â€", index) || token.startsWith("ï¿½", index) -> 3
                 token.startsWith("Ã", index) || token.startsWith("Â", index) -> 2
