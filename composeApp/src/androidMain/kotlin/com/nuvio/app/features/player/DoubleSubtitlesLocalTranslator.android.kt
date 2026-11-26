@@ -34,7 +34,7 @@ internal object DoubleSubtitlesLocalTranslator {
     private const val MAX_CONCURRENT_BATCHES = 3
     private const val MAX_RATE_LIMIT_RETRIES = 5
     private val TRANSIENT_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L, 7_000L)
-    private const val PRIORITY_AHEAD_MS = 60_000L
+    private const val PRIORITY_CUE_COUNT = 50
     private const val CACHE_DIRECTORY = "embedded_learning_subtitles"
     private const val MAX_MEMORY_CACHE_TRACKS = 6
     private val memoryCache = object : java.util.LinkedHashMap<String, Map<String, CachedSubtitle>>(8, 0.75f, true) {
@@ -151,90 +151,84 @@ internal object DoubleSubtitlesLocalTranslator {
         if (baseUrl.isBlank()) return@withContext cues
         val query = manifestUrl.substringAfter("?", "")
         val endpoint = "$baseUrl/api/v1/translate" + if (query.isBlank()) "" else "?$query"
-        // One track identity owns one JSON file beside its original ID.bin.
-        // Endpoint hashes are buckets inside that JSON, keeping addon configurations isolated.
+        // Open cache buckets once, but calculate cue IDs only when each phase is prepared.
         val cacheStartedAt = android.os.SystemClock.elapsedRealtime()
         val configId = sha256(endpoint)
         val cacheFile = cacheFile(context, trackCacheKey)
-        // Compute each cue identity once instead of recalculating SHA-256 in every cache pass.
-        val cueIds = cues.map { cueIdentity(it) }
-        val cueIdByCue = java.util.IdentityHashMap<LearningSubtitleCue, String>(cues.size).apply {
-            cues.forEachIndexed { index, cue -> put(cue, cueIds[index]) }
-        }
-        val currentCueIds = cueIds.toHashSet()
-
-        val mainCacheStartedAt = android.os.SystemClock.elapsedRealtime()
-        val mainTranslations = readCachedBucket(cacheFile, configId)
-        val mainCacheReadMs = android.os.SystemClock.elapsedRealtime() - mainCacheStartedAt
-
-        // Probe legacy cache files only when they exist; avoid unnecessary legacy IO on cache misses.
-        val legacyStartedAt = android.os.SystemClock.elapsedRealtime()
         val legacyTrackFile = legacyCacheFile(context, trackCacheKey, endpoint)
-        val legacyTrackTranslations = if (legacyTrackFile.isFile) readCachedBucket(legacyTrackFile, configId) else emptyMap()
         val legacyEndpointFile = legacyEndpointCacheFile(context, endpoint)
-        val legacyEndpointTranslations = if (legacyEndpointFile.isFile) {
-            readCachedBucket(legacyEndpointFile, configId).filterKeys { it in currentCueIds }
-        } else emptyMap()
-        val legacyTranslations = legacyTrackTranslations + legacyEndpointTranslations
-        val legacyReadMs = android.os.SystemClock.elapsedRealtime() - legacyStartedAt
-
+        val mainTranslations = if (cacheFile.isFile) readCachedBucket(cacheFile, configId) else emptyMap()
+        val legacyTrackTranslations = if (legacyTrackFile.isFile) readCachedBucket(legacyTrackFile, configId) else emptyMap()
+        val legacyEndpointTranslations = if (legacyEndpointFile.isFile) readCachedBucket(legacyEndpointFile, configId) else emptyMap()
         val translations = mainTranslations.toMutableMap().apply {
-            legacyTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
+            legacyTrackTranslations.forEach { (id, value) -> putIfAbsent(id, value) }
         }
-        if (legacyTranslations.isNotEmpty()) {
+        if (legacyTrackTranslations.isNotEmpty()) {
             writeCache(cacheFile, translations, configId)
-            if (legacyTrackFile.isFile &&
-                readCache(cacheFile, configId).keys.containsAll(legacyTrackTranslations.keys)
-            ) legacyTrackFile.delete()
+            if (readCache(cacheFile, configId).keys.containsAll(legacyTrackTranslations.keys)) legacyTrackFile.delete()
         }
-        // Upgrade legacy translation-only entries with the original cue data whenever available.
-        var upgradedLegacyEntries = false
-        cues.forEachIndexed { index, cue ->
-            val id = cueIds[index]
-            val cached = translations[id]
-            if (cached != null && cached.originalText.isBlank()) {
-                translations[id] = cached.copy(startTimeMs = cue.startTimeMs, endTimeMs = cue.endTimeMs, originalText = cue.text)
-                upgradedLegacyEntries = true
+        val resultMutex = Mutex()
+        val cueIdByCue = java.util.concurrent.ConcurrentHashMap<LearningSubtitleCue, String>()
+        Log.i(TAG, "Translation cache opened: mainExists=${cacheFile.isFile} mainBytes=${if (cacheFile.isFile) cacheFile.length() else 0L} legacyTrackExists=${legacyTrackFile.isFile} legacyEndpointExists=${legacyEndpointFile.isFile} mainEntries=${mainTranslations.size} legacyTrackEntries=${legacyTrackTranslations.size} elapsedMs=${android.os.SystemClock.elapsedRealtime() - cacheStartedAt}")
+        PlayerLearningSubtitleState.recordTranslationDiagnostic("读取翻译缓存完成", "主缓存 ${mainTranslations.size} 条，旧缓存 ${legacyTrackTranslations.size} 条")
+
+        suspend fun prepareCuePhase(source: List<LearningSubtitleCue>, phase: String): List<LearningSubtitleCue> {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val missing = mutableListOf<LearningSubtitleCue>()
+            val restored = mutableListOf<LearningSubtitleCue>()
+            var legacyMatches = 0
+            var upgraded = false
+            source.forEach { cue ->
+                if (cue.text.isBlank()) return@forEach
+                val id = cueIdentity(cue)
+                cueIdByCue[cue] = id
+                val cached = resultMutex.withLock {
+                    val value = translations[id] ?: legacyEndpointTranslations[id]?.also {
+                        translations[id] = it
+                        legacyMatches++
+                    }
+                    if (value != null && value.originalText.isBlank()) {
+                        translations[id] = value.copy(startTimeMs = cue.startTimeMs, endTimeMs = cue.endTimeMs, originalText = cue.text)
+                        upgraded = true
+                    }
+                    value
+                }
+                if (!cue.translationText.isNullOrBlank()) return@forEach
+                if (!cached?.translatedText.isNullOrBlank()) restored += cue.copy(translationText = cached!!.translatedText)
+                else missing += cue
             }
-        }
-        if (upgradedLegacyEntries) writeCache(cacheFile, translations, configId)
-        Log.i(TAG, "Translation cache timing: cueIds=${cueIds.size}, mainReadMs=$mainCacheReadMs, legacyReadMs=$legacyReadMs, totalMs=${android.os.SystemClock.elapsedRealtime() - cacheStartedAt}, mainFileExists=${cacheFile.isFile}, mainFileBytes=${if (cacheFile.isFile) cacheFile.length() else 0L}, legacyEntries=${legacyTranslations.size}, cachedEntries=${translations.size}")
-        Log.i(TAG, "Translation endpoint prepared; cached subtitle pairs=${translations.size}")
-        PlayerLearningSubtitleState.recordTranslationDiagnostic("读取翻译缓存完成", "缓存译文 ${translations.size} 条")
-
-        // Restore cache hits immediately, before constructing or sending any translation
-        // requests. Cached cues are excluded from the missing list below, so they are never
-        // sent to the translation API again.
-        val cachedBatch = cues.mapIndexedNotNull { index, cue ->
-            if (!cue.translationText.isNullOrBlank()) return@mapIndexedNotNull null
-            translations[cueIds[index]]?.translatedText
-                ?.takeIf(String::isNotBlank)
-                ?.let { cue.copy(translationText = it) }
-        }
-        if (cachedBatch.isNotEmpty()) {
-            Log.i(TAG, "Restored ${cachedBatch.size} subtitle translations from local cache")
-            onBatchTranslated(cachedBatch)
+            if (legacyMatches > 0 || upgraded) {
+                resultMutex.withLock { writeCache(cacheFile, translations.toMap(), configId) }
+            }
+            if (restored.isNotEmpty()) onBatchTranslated(restored)
+            Log.i(TAG, "Translation phase prepared: phase=$phase input=${source.size} missing=${missing.size} cacheHits=${restored.size} legacyMatches=$legacyMatches elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt}")
+            PlayerLearningSubtitleState.recordTranslationDiagnostic(
+                if (phase == "priority") "附近字幕准备完成" else "后台字幕准备完成",
+                "待翻译 ${missing.size} 条，缓存命中 ${restored.size} 条"
+            )
+            return missing
         }
 
-        val missing = cues.filterIndexed { index, cue ->
-            cue.text.isNotBlank() &&
-                translations[cueIds[index]]?.translatedText.isNullOrBlank() &&
-                cue.translationText.isNullOrBlank()
-        }
         val positionMs = priorityPositionMs
-        val activeCue = positionMs?.let { position ->
-            missing.filter { it.startTimeMs <= position && it.endTimeMs > position }
-                .maxByOrNull { it.startTimeMs }
+        val isExternalTrack = trackCacheKey.startsWith("external|", ignoreCase = true)
+        val usePriorityWindow = positionMs != null && !isExternalTrack
+        val priorityCues: List<LearningSubtitleCue>
+        val backgroundCues: List<LearningSubtitleCue>
+        if (usePriorityWindow) {
+            val eligible = cues.filter { it.text.isNotBlank() && it.translationText.isNullOrBlank() }
+            val selected = eligible.sortedBy { kotlin.math.abs(it.startTimeMs - positionMs!!) }
+                .take(PRIORITY_CUE_COUNT).toSet()
+            priorityCues = cues.filter { it in selected }.sortedBy { it.startTimeMs }
+            backgroundCues = cues.filter { it !in selected }
+        } else {
+            priorityCues = cues
+            backgroundCues = emptyList()
         }
-        val firstMinute = if (positionMs != null) missing.filter { cue ->
-            cue !== activeCue && cue.startTimeMs > positionMs &&
-                cue.startTimeMs <= positionMs + PRIORITY_AHEAD_MS
-        }.sortedBy { it.startTimeMs } else emptyList()
-        val backgroundWindow = if (positionMs != null) missing.filter { cue ->
-            cue !== activeCue && cue.startTimeMs > positionMs + PRIORITY_AHEAD_MS &&
-                cue.startTimeMs <= positionMs + 5 * 60_000L
-        }.sortedBy { it.startTimeMs } else emptyList()
-
+        PlayerLearningSubtitleState.recordTranslationDiagnostic(
+            "优先字幕范围确定",
+            if (usePriorityWindow) "附近优先 ${priorityCues.size} 条，后台剩余 ${backgroundCues.size} 条" else "全轨处理 ${priorityCues.size} 条"
+        )
+        val priorityMissing = prepareCuePhase(priorityCues, "priority")
         fun buildChunks(source: List<LearningSubtitleCue>): List<List<LearningSubtitleCue>> {
             val result = mutableListOf<List<LearningSubtitleCue>>()
             var current = mutableListOf<LearningSubtitleCue>()
@@ -265,31 +259,18 @@ internal object DoubleSubtitlesLocalTranslator {
             return result
         }
 
-        // External subtitle files must be translated in full. Playback-window scheduling is
-        // reserved for embedded/live tracks so a manual request never silently omits later cues.
-        val isExternalTrack = trackCacheKey.startsWith("external|", ignoreCase = true)
-        val usePlaybackWindow = positionMs != null && !isExternalTrack
-        val phaseOneBatches = if (!usePlaybackWindow) {
-            buildChunks(missing)
-        } else {
-            buildList {
-                activeCue?.let { add(listOf(it)) }
-                addAll(buildChunks(firstMinute))
-            }
-        }
-        val phaseTwoBatches = if (usePlaybackWindow) buildChunks(backgroundWindow) else emptyList()
-        val resultMutex = Mutex()
-        val scheduledCount = phaseOneBatches.sumOf { it.size } + phaseTwoBatches.sumOf { it.size }
+        // External subtitle files retain full-track ordering; embedded tracks prioritize 50 nearby cues.
+        val phaseOneBatches = buildChunks(priorityMissing)
         val scheduleScope = when {
             isExternalTrack -> "full-track-external"
-            positionMs == null -> "full-track"
-            else -> "playback-window"
+            usePriorityWindow -> "nearby-50-first"
+            else -> "full-track"
         }
-        PlayerLearningSubtitleState.recordTranslationDiagnostic("批次准备完成", "待翻译 ${missing.size} 条，首批队列 ${phaseOneBatches.sumOf { it.size }} 条，共 ${phaseOneBatches.size + phaseTwoBatches.size} 批")
-        Log.i(TAG, "Translation schedule: scope=${scheduleScope} " +
-            "currentCue=${activeCue != null} phase1Batches=${phaseOneBatches.size} " +
-            "phase1Cues=${phaseOneBatches.sumOf { it.size }} phase2Batches=${phaseTwoBatches.size} " +
-            "phase2Cues=${phaseTwoBatches.sumOf { it.size }} deferredCues=${missing.size - scheduledCount}")
+        PlayerLearningSubtitleState.recordTranslationDiagnostic(
+            "批次准备完成",
+            "附近待翻译 ${priorityMissing.size} 条，首批队列 ${phaseOneBatches.sumOf { it.size }} 条"
+        )
+        Log.i(TAG, "Translation schedule: scope=$scheduleScope priorityCues=${priorityCues.size} priorityMissing=${priorityMissing.size} backgroundCues=${backgroundCues.size} priorityBatches=${phaseOneBatches.size}")
 
         suspend fun processBatch(
             chunk: List<LearningSubtitleCue>,
@@ -441,7 +422,7 @@ internal object DoubleSubtitlesLocalTranslator {
                 }
             }
         }
-        // Process bounded waves. Complete current/priority work before background prefetch starts.
+        // Prepare the rest of the track while Google is processing the nearby priority batches.
         suspend fun processBatchPhase(batches: List<List<LearningSubtitleCue>>, phase: String) {
             batches.withIndex().toList().chunked(MAX_CONCURRENT_BATCHES).forEach { wave ->
                 coroutineScope {
@@ -454,12 +435,24 @@ internal object DoubleSubtitlesLocalTranslator {
             }
         }
         coroutineScope {
-            Log.i(TAG, "Translation parallel dispatch: scope=$scheduleScope maxConcurrent=$MAX_CONCURRENT_BATCHES phase1=${phaseOneBatches.size} phase2=${phaseTwoBatches.size}")
+            Log.i(TAG, "Translation parallel dispatch: scope=$scheduleScope maxConcurrent=$MAX_CONCURRENT_BATCHES priorityBatches=${phaseOneBatches.size}")
+            val backgroundPreparation = if (backgroundCues.isNotEmpty()) {
+                async(Dispatchers.Default) { prepareCuePhase(backgroundCues, "background") }
+            } else null
             processBatchPhase(phaseOneBatches, "priority")
-            processBatchPhase(phaseTwoBatches, "background")
+            val backgroundMissing = backgroundPreparation?.await().orEmpty()
+            val backgroundBatches = buildChunks(backgroundMissing)
+            PlayerLearningSubtitleState.recordTranslationDiagnostic(
+                "后台翻译队列就绪",
+                "剩余待翻译 ${backgroundMissing.size} 条，共 ${backgroundBatches.size} 批"
+            )
+            Log.i(TAG, "Background translation queue ready: missing=${backgroundMissing.size} batches=${backgroundBatches.size}")
+            processBatchPhase(backgroundBatches, "background")
         }
-        cues.mapIndexed { index, cue ->
-            val translated = translations[cueIds[index]]?.translatedText ?: cue.translationText
+        cues.map { cue ->
+            val translated = cueIdByCue[cue]?.let { id ->
+                synchronized(translations) { translations[id]?.translatedText }
+            } ?: cue.translationText
             cue.copy(translationText = translated?.takeIf(String::isNotBlank))
         }
     }
