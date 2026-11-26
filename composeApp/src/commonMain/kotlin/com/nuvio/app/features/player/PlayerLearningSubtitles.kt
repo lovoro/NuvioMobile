@@ -820,7 +820,7 @@ private fun learningSubtitleWords(text: String): List<LearningSubtitleWord> {
     val result = mutableListOf<LearningSubtitleWord>()
     // Only remove bracketed SDH-style annotations when the same cue also contains
     // spoken text. A cue consisting solely of "[chuckles]" remains highlightable.
-    val annotationMatches = Regex("""\\[[^\\]\\r\\n]+\\]|\\([^\\)\\r\\n]+\\)|（[^）\\r\\n]+）""").findAll(text)
+    val annotationMatches = Regex("""\[[^\]\r\n]+\]|\([^\)\r\n]+\)|（[^）\r\n]+）""").findAll(text)
         .filter { isSubtitleAnnotation(it.value) }
         .toList()
     val textOutsideAnnotations = buildString {
