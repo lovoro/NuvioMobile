@@ -364,6 +364,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
 
         if (learningMode && fold == null && !isInPip) {
             LearningSubtitlePanel(
+                translationService = resolveLearningTranslationServiceLetter(addonsUiState.addons),
                 cues = PlayerLearningSubtitleState.cues,
                 subtitleStyle = playerSettingsUiState.subtitleStyle,
                 positionMs = displayedPositionMs,
@@ -1315,6 +1316,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
 
 @Composable
 private fun LearningSubtitlePanel(
+    translationService: String,
     cues: List<LearningSubtitleCue>,
     subtitleStyle: SubtitleStyleState,
     positionMs: Long,
@@ -1741,10 +1743,17 @@ private fun LearningSubtitlePanel(
                         )
                     }
                 } else {
-                    TranslationGlyph(
+                    Icon(
+                        painter = appIconPainter(
+                            when (translationService.uppercase()) {
+                                "A" -> AppIconResource.LanguageLearningAI
+                                "D" -> AppIconResource.LanguageLearningDeepL
+                                else -> AppIconResource.LanguageLearningGoogle
+                            },
+                        ),
+                        contentDescription = "Translate subtitles",
+                        tint = Color.Unspecified,
                         modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        surface = MaterialTheme.colorScheme.surface,
                     )
                 }
             }
