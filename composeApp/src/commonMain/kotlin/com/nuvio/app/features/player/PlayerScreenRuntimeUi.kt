@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.NuvioStatusModal
+import com.nuvio.app.core.ui.NuvioIconActionButton
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.addons.resolveLearningTranslationServiceLetter
 import com.nuvio.app.core.ui.LocalFold
@@ -541,14 +542,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("字幕设置", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier.size(40.dp).clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { showSubtitleAutomationSettingsDialog = false },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(imageVector = Icons.Rounded.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                        }
+                        NuvioIconActionButton(
+                            icon = Icons.Rounded.Close,
+                            contentDescription = "关闭",
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.nuvio.colors.textPrimary,
+                            onClick = { showSubtitleAutomationSettingsDialog = false },
+                        )
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
