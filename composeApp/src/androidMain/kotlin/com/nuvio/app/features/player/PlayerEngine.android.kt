@@ -3894,7 +3894,12 @@ private class CueNormalizingTextOutput(
 
     @Deprecated("Uses the deprecated Media3 callback for text outputs.")
     override fun onCues(cues: List<Cue>) {
-        delegate.onCues(presentCues(cues.mapNotNull(::processCue)))
+        // Legacy Media3 renderers may still deliver this callback. Capture these cues too;
+        // unlike CueGroup, the legacy callback has no presentation timestamp, so the
+        // capture callback falls back to the current ExoPlayer playhead position.
+        val processed = cues.mapNotNull(::processCue)
+        captureLearningCues(processed, C.TIME_UNSET)
+        delegate.onCues(presentCues(processed))
     }
 
     private fun processCue(cue: Cue): Cue? {
