@@ -38,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -74,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.AppIconResource
+import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioIconActionButton
@@ -528,6 +530,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
     }
 
     if (showSubtitleAutomationSettingsDialog) {
+        val switchColors = MaterialTheme.nuvio.colors
         Dialog(onDismissRequest = { showSubtitleAutomationSettingsDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -565,6 +568,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         Switch(
                             checked = playerSettingsUiState.bilingualSubtitleMergeEnabled,
                             onCheckedChange = { PlayerSettingsRepository.setBilingualSubtitleMergeEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = switchColors.onAccent,
+                                checkedTrackColor = switchColors.accent,
+                                uncheckedThumbColor = switchColors.textMuted,
+                                uncheckedTrackColor = switchColors.borderDefault,
+                            ),
                         )
                     }
                     Row(
@@ -582,6 +591,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         Switch(
                             checked = playerSettingsUiState.automaticSubtitleTranslationEnabled,
                             onCheckedChange = { PlayerSettingsRepository.setAutomaticSubtitleTranslationEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = switchColors.onAccent,
+                                checkedTrackColor = switchColors.accent,
+                                uncheckedThumbColor = switchColors.textMuted,
+                                uncheckedTrackColor = switchColors.borderDefault,
+                            ),
                         )
                     }
                     Row(
@@ -599,6 +614,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         Switch(
                             checked = playerSettingsUiState.showTranslationDiagnostics,
                             onCheckedChange = PlayerSettingsRepository::setShowTranslationDiagnostics,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = switchColors.onAccent,
+                                checkedTrackColor = switchColors.accent,
+                                uncheckedThumbColor = switchColors.textMuted,
+                                uncheckedTrackColor = switchColors.borderDefault,
+                            ),
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
