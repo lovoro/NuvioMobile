@@ -777,7 +777,7 @@ private fun ExoPlayerSurface(
             PlayerLearningSubtitleState.setManualTranslationAction { selectedCues, priorityPositionMs, onBatchTranslated ->
                 if (learningSubtitleSelectionGeneration != selectionGeneration || learningSubtitlePrefetchTrackKey != trackKey || learningSubtitleSelectionUrl != null || selectedExternalSubtitleMimeType != null) emptyList()
                 else {
-                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs, onBatchTranslated = { batch ->
+                    val translated = DoubleSubtitlesLocalTranslator.translate(context, cacheKey, selectedCues, priorityPositionMs = priorityPositionMs, requiredSourceLanguage = format.language.orEmpty(), onBatchTranslated = { batch ->
                         if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) onBatchTranslated(batch)
                     })
                     if (learningSubtitleSelectionGeneration == selectionGeneration && learningSubtitlePrefetchTrackKey == trackKey && learningSubtitleSelectionUrl == null && selectedExternalSubtitleMimeType == null) translated else emptyList()
@@ -1083,7 +1083,7 @@ private fun ExoPlayerSurface(
                             context,
                             "external|$selectedUrl",
                             cues,
-                            
+                            requiredSourceLanguage = selectedSourceLanguage,
                         )
                         // Keep manual translation disabled until the existing cache has been
                         // restored. Otherwise a fast tap can start a second translation while
@@ -1101,10 +1101,7 @@ private fun ExoPlayerSurface(
                                 translationBlockMessage == null,
                                 translationBlockMessage,
                             )
-                            if (
-                                PlayerSettingsRepository.uiState.value.automaticSubtitleTranslationEnabled &&
-                                DoubleSubtitlesLocalTranslator.isSourceLanguageAllowed(context, selectedSourceLanguage)
-                            ) {
+                            if (PlayerSettingsRepository.uiState.value.automaticSubtitleTranslationEnabled) {
                                 PlayerLearningSubtitleState.translateManually(exoPlayer.currentPosition)
                             }
                         }
@@ -1139,7 +1136,7 @@ private fun ExoPlayerSurface(
                                         sidecarControllerRef?.activeSidecarSubtitleKey == url
                                     ) onBatchTranslated(batch)
                                 },
-                                
+                                requiredSourceLanguage = selectedSubtitleLanguage,
                             )
                             if (
                                 sidecarLearningSelectionGeneration == generation &&
@@ -1724,7 +1721,7 @@ private fun ExoPlayerSurface(
                                                 learningSubtitleSelectionUrl == null
                                             ) onBatchTranslated(batch)
                                         },
-                                        
+                                        requiredSourceLanguage = selectedFormat?.language,
                                     )
                                     if (
                                         learningSubtitleSelectionGeneration == selectionGeneration &&
@@ -1783,7 +1780,7 @@ private fun ExoPlayerSurface(
                                 onBatchTranslated = { batch ->
                                     if (learningSubtitleSelectionUrl == url) onBatchTranslated(batch)
                                 },
-                                
+                                requiredSourceLanguage = selectedSubtitleLanguage,
                             )
                             if (learningSubtitleSelectionUrl == url) translated else emptyList()
                         }
@@ -1810,7 +1807,7 @@ private fun ExoPlayerSurface(
                                         context,
                                         "external|$url",
                                         parsed,
-                                        
+                                        requiredSourceLanguage = selectedSubtitleLanguage,
                                     )
                                     if (learningSubtitleSelectionUrl == url) {
                                         PlayerLearningSubtitleState.update(restored)
@@ -2627,7 +2624,7 @@ private class NuvioLibmpvView(
                     onBatchTranslated = { batch ->
                         if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) onBatchTranslated(batch)
                     },
-                    
+                    requiredSourceLanguage = selectedSubtitleLanguage,
                 )
                 if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) translated else emptyList()
             }
@@ -2649,7 +2646,7 @@ private class NuvioLibmpvView(
                             context,
                             "external|$url",
                             parsed,
-                            
+                            requiredSourceLanguage = selectedSubtitleLanguage,
                         )
                         if (learningSubtitleGeneration == generation && learningSubtitleSelectionUrl == url) {
                             PlayerLearningSubtitleState.update(restored)
