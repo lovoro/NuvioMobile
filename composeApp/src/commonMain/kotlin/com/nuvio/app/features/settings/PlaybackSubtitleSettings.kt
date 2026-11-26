@@ -115,21 +115,6 @@ internal fun PlaybackSubtitleSettings(
         }
 
         SettingsSection(
-            title = "Diagnostics",
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = "Show translation diagnostics popup",
-                    description = "Automatically open the detection popup when translation responses arrive.",
-                    checked = settings.showTranslationDiagnostics,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setShowTranslationDiagnostics,
-                )
-            }
-        }
-
-        SettingsSection(
             title = stringResource(Res.string.settings_playback_section_subtitle_rendering),
             isTablet = isTablet,
         ) {

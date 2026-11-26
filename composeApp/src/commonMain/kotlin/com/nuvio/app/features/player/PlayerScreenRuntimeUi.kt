@@ -568,6 +568,23 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                             onCheckedChange = { PlayerSettingsRepository.setAutomaticSubtitleTranslationEnabled(it) },
                         )
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("自动弹出翻译检测弹框", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "翻译响应到达时自动打开检测弹框；关闭后仍会记录诊断数据。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = playerSettingsUiState.showTranslationDiagnostics,
+                            onCheckedChange = PlayerSettingsRepository::setShowTranslationDiagnostics,
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("字幕缓存", style = MaterialTheme.typography.titleMedium)
                         Text(
