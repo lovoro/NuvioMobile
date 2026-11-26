@@ -989,14 +989,23 @@ internal fun findLearningSubtitleWordRange(
     }
     val totalWeight = weights.sum()
     if (totalWeight <= 0f) return null
-    val progress = ((positionMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs).toFloat())
-        .coerceIn(0f, 0.999999f)
-    val targetWeight = progress * totalWeight
-    var consumedWeight = 0f
+
+    // Playback position updates are discrete (and may arrive 100–250 ms apart).
+    // Purely proportional weights can give short words such a tiny time slice that
+    // the player jumps over them entirely. Reserve a small minimum slice for every
+    // word, then distribute the remaining cue duration by pronunciation/pause weight.
+    val cueDurationMs = (endTimeMs - startTimeMs).toFloat()
+    val minimumWordDurationMs = minOf(120f, cueDurationMs / words.size)
+    val distributableDurationMs =
+        (cueDurationMs - minimumWordDurationMs * words.size).coerceAtLeast(0f)
+    val elapsedMs = (positionMs - startTimeMs).toFloat().coerceAtLeast(0f)
+    var consumedDurationMs = 0f
     words.forEachIndexed { index, word ->
-        val nextWeight = consumedWeight + weights[index]
-        if (targetWeight < nextWeight) return word.highlightRange
-        consumedWeight = nextWeight
+        val wordDurationMs = minimumWordDurationMs +
+            distributableDurationMs * (weights[index] / totalWeight)
+        val nextDurationMs = consumedDurationMs + wordDurationMs
+        if (elapsedMs < nextDurationMs) return word.highlightRange
+        consumedDurationMs = nextDurationMs
     }
     return words.last().highlightRange
 }
