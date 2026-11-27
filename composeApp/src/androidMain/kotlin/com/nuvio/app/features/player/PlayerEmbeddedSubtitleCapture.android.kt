@@ -498,9 +498,27 @@ internal object PlayerEmbeddedSubtitleCapture {
         val isSourceTrack = selectedTrackKey == key
         val isTargetTrack = targetTrackKey == key
         if (!isSourceTrack && !isTargetTrack) return
-        val startUs = parsed.startTimeUs
-        val endUs = parsed.endTimeUs
-        if (startUs == C.TIME_UNSET || endUs == C.TIME_UNSET || endUs <= startUs) return
+        val parsedStartUs = parsed.startTimeUs
+        val parsedEndUs = parsed.endTimeUs
+        if (
+            parsedStartUs == C.TIME_UNSET ||
+            parsedEndUs == C.TIME_UNSET ||
+            parsedEndUs <= parsedStartUs
+        ) return
+
+        // Media3 marks sample-relative subtitle timestamps with OFFSET_SAMPLE_RELATIVE.
+        // The parser wrapper does not receive the parent sample timestamp, so use the
+        // current playback position as the live-capture base instead of publishing every
+        // sample-relative cue near 00:00. For normal offsets, apply the declared offset.
+        val timestampBaseUs = if (format.subsampleOffsetUs == C.OFFSET_SAMPLE_RELATIVE) {
+            val playheadMs = playbackPositionMsProvider?.invoke()?.coerceAtLeast(0L) ?: return
+            playheadMs * 1_000L
+        } else {
+            format.subsampleOffsetUs
+        }
+        val startUs = parsedStartUs + timestampBaseUs
+        val endUs = parsedEndUs + timestampBaseUs
+        if (endUs <= startUs) return
 
         // Parser timestamps and TextOutput presentation timestamps may use different time
         // bases. Log a small sample before converting parser times into learning cue times.
