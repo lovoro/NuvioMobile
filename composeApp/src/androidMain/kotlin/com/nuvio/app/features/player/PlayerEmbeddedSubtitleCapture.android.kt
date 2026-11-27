@@ -59,6 +59,8 @@ internal object PlayerEmbeddedSubtitleCapture {
     private val parserEntryLogged = ConcurrentHashMap.newKeySet<String>()
     private val parserSampleLogged = ConcurrentHashMap.newKeySet<String>()
     private val cueCaptureLogged = ConcurrentHashMap.newKeySet<String>()
+    private val conversionDecisionLogged = ConcurrentHashMap.newKeySet<String>()
+    private val activeLiveSourceCues = LinkedHashMap<String, LearningSubtitleCue>()
     @Volatile private var activeSourceIdentity: String = ""
     @Volatile private var selectionGeneration: Long = 0L
     @Volatile private var selectedTrackKey: String? = null
@@ -74,6 +76,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         val lock: Any = Any(),
         val cues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
         val pendingCues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
+        var parserCapturedCueCount: Int = 0,
     )
 
     fun configureSource(sourceIdentity: String) {
@@ -89,6 +92,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         parserEntryLogged.clear()
         parserSampleLogged.clear()
         cueCaptureLogged.clear()
+        conversionDecisionLogged.clear()
+        activeLiveSourceCues.clear()
     }
 
     fun reset() {
@@ -105,12 +110,16 @@ internal object PlayerEmbeddedSubtitleCapture {
         parserEntryLogged.clear()
         parserSampleLogged.clear()
         cueCaptureLogged.clear()
+        conversionDecisionLogged.clear()
+        activeLiveSourceCues.clear()
     }
 
     fun hasSelectedTrackCues(): Boolean {
         val key = selectedTrackKey ?: return false
         val entry = tracks[key] ?: return false
-        return synchronized(entry.lock) { entry.cues.isNotEmpty() }
+        // TextOutput fallback cues must not disable themselves. Only a cue parsed from the
+        // selected embedded track proves that the timed parser path is actually working.
+        return synchronized(entry.lock) { entry.parserCapturedCueCount > 0 }
     }
 
     fun selectTrack(format: Format?, playbackPositionMs: (() -> Long)? = null) {
@@ -133,6 +142,16 @@ internal object PlayerEmbeddedSubtitleCapture {
             configuredTargetLanguage = ""
         }
         selectedTrackKey = key
+        if (previousKey != key) activeLiveSourceCues.clear()
+        if (key != null && format != null) {
+            tracks.putIfAbsent(
+                key,
+                TrackCues(
+                    language = format.language?.takeIf { it.isNotBlank() },
+                    label = format.label?.toString()?.takeIf { it.isNotBlank() },
+                ),
+            )
+        }
         playbackPositionMsProvider = if (key == null) null else playbackPositionMs
         lastLoggedCueCount = 0
         lastLoggedCueEndMs = Long.MIN_VALUE
@@ -402,6 +421,68 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
 
+    /**
+     * Feeds TextOutput-only source cues into the same timeline used by parser-captured target
+     * cues. Their end time is inferred from visibility changes, then target-track arrival can
+     * re-publish the same source interval with its matched translation.
+     */
+    fun captureLiveSourceCueGroup(texts: List<String>, positionMs: Long) {
+        if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
+        val key = selectedTrackKey ?: return
+        val timeMs = positionMs.coerceAtLeast(0L)
+        val visibleTexts = texts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val entry = tracks[key] ?: return
+        val changed = synchronized(entry.lock) {
+            var updated = false
+            val visibleSet = visibleTexts.toSet()
+            activeLiveSourceCues.toMap().forEach { (text, activeCue) ->
+                if (text !in visibleSet) {
+                    val activeKey = "${activeCue.startTimeMs}|${activeCue.endTimeMs}|${activeCue.text}"
+                    entry.cues.remove(activeKey)
+                    entry.pendingCues.remove(activeKey)
+                    val completed = activeCue.copy(endTimeMs = timeMs.coerceAtLeast(activeCue.startTimeMs + 1L))
+                    val completedKey = "${completed.startTimeMs}|${completed.endTimeMs}|${completed.text}"
+                    entry.cues[completedKey] = completed
+                    entry.pendingCues[completedKey] = completed
+                    activeLiveSourceCues.remove(text)
+                    updated = true
+                }
+            }
+            visibleTexts.forEach { text ->
+                val previous = activeLiveSourceCues[text]
+                val startMs = previous?.startTimeMs ?: timeMs
+                val next = LearningSubtitleCue(
+                    startTimeMs = startMs,
+                    endTimeMs = maxOf(timeMs + 1_500L, startMs + 1_500L),
+                    text = text,
+                )
+                if (previous != next) {
+                    if (previous != null) {
+                        val previousKey = "${previous.startTimeMs}|${previous.endTimeMs}|${previous.text}"
+                        entry.cues.remove(previousKey)
+                        entry.pendingCues.remove(previousKey)
+                    }
+                    val nextKey = "${next.startTimeMs}|${next.endTimeMs}|${next.text}"
+                    entry.cues[nextKey] = next
+                    entry.pendingCues[nextKey] = next
+                    activeLiveSourceCues[text] = next
+                    updated = true
+                }
+            }
+            while (entry.cues.size > MAX_CUES_PER_TRACK) {
+                val firstKey = entry.cues.keys.firstOrNull() ?: break
+                entry.cues.remove(firstKey)
+                entry.pendingCues.remove(firstKey)
+            }
+            updated
+        }
+        if (changed) {
+            val snapshot = synchronized(entry.lock) { entry.cues.values.sortedBy { it.startTimeMs } }
+            val ready = displayableCues(snapshot)
+            if (ready.isNotEmpty()) PlayerLearningSubtitleState.updatePartial(ready)
+        }
+    }
+
     private fun capture(key: String, parsed: CuesWithTiming) {
         if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
         val isSourceTrack = selectedTrackKey == key
@@ -435,15 +516,25 @@ internal object PlayerEmbeddedSubtitleCapture {
                 endTimeMs = endMs,
                 text = if (isTargetTrack) {
                     val track = tracks[key]
-                    OpenCcSubtitleTextConverter.toSimplifiedIfTraditional(
+                    val converted = OpenCcSubtitleTextConverter.toSimplifiedIfTraditional(
                         text = text,
                         trackLanguage = track?.language,
                         trackLabel = track?.label,
                     )
+                    if (conversionDecisionLogged.add(key)) {
+                        Log.i(
+                            TAG,
+                            "target subtitle script: language=${track?.language} label=${track?.label} " +
+                                "traditionalDetected=${OpenCcSubtitleTextConverter.isTraditionalTrack(text, track?.language, track?.label)} " +
+                                "converted=${converted != text}",
+                        )
+                    }
+                    converted
                 } else text,
             )
         }
         val cueAdded = synchronized(entry.lock) {
+            if (isSourceTrack) entry.parserCapturedCueCount += capturedCues.size
             var added = false
             capturedCues.forEach { cue ->
                 val cueKey = "${cue.startTimeMs}|${cue.endTimeMs}|${cue.text}"

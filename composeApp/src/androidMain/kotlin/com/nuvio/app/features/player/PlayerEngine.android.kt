@@ -499,6 +499,10 @@ private fun ExoPlayerSurface(
                                 texts = texts,
                                 positionMs = cuePositionMs,
                             )
+                            PlayerEmbeddedSubtitleCapture.captureLiveSourceCueGroup(
+                                texts = texts,
+                                positionMs = cuePositionMs,
+                            )
                         }
                     }
                 }
@@ -736,6 +740,10 @@ private fun ExoPlayerSurface(
                 embeddedSubtitleCacheRestored.set(false)
                 embeddedSubtitleLiveCueBuffer.forEach { (positionMs, texts) ->
                     PlayerLearningSubtitleState.captureLiveCueGroup(
+                        texts = texts,
+                        positionMs = positionMs,
+                    )
+                    PlayerEmbeddedSubtitleCapture.captureLiveSourceCueGroup(
                         texts = texts,
                         positionMs = positionMs,
                     )
