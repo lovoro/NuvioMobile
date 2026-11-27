@@ -47,6 +47,8 @@ internal fun ExoPlayer.Builder.buildWithAssSupportCompat(
         dataSourceFactory,
         assExtractorsFactory
     )
+    // Matroska parses text tracks during extraction, including tracks not selected for display.
+    // Wrap the libass parser factory so those samples can also feed bilingual learning capture.
     mediaSourceFactory.setSubtitleParserFactory(
         PlayerEmbeddedSubtitleCapture.createParserFactory(
             playbackParserFactory = assSubtitleParserFactory,
