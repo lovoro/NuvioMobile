@@ -351,7 +351,12 @@ internal object PlayerEmbeddedSubtitleCapture {
                 startTimeMs = startMs,
                 endTimeMs = endMs,
                 text = if (isTargetTrack) {
-                    OpenCcSubtitleTextConverter.convert(text, configuredTargetLanguage)
+                    val track = tracks[key]
+                    OpenCcSubtitleTextConverter.toSimplifiedIfTraditional(
+                        text = text,
+                        trackLanguage = track?.language,
+                        trackLabel = track?.label,
+                    )
                 } else text,
             )
         }

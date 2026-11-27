@@ -9,28 +9,33 @@ import com.github.houbb.opencc4j.util.ZhTwConverterUtil
  * The source-language cues and externally selected subtitle files are never modified.
  */
 internal object OpenCcSubtitleTextConverter {
-    fun convert(text: String, targetLanguage: String?): String {
+    /**
+     * The merged learning subtitle is normalized to Simplified Chinese.
+     * Simplified tracks pass through untouched; only an explicitly Traditional
+     * target track is converted, using its own metadata rather than the add-on
+     * target setting (which may describe the preferred track, not its actual script).
+     */
+    fun toSimplifiedIfTraditional(
+        text: String,
+        trackLanguage: String?,
+        trackLabel: String?,
+    ): String {
         if (text.isBlank() || !containsChinese(text)) return text
-        val tag = targetLanguage
-            ?.trim()
-            ?.replace('_', '-')
-            ?.lowercase()
-            ?: return text
-        val parts = tag.split('-')
-        if (parts.firstOrNull() != "zh") return text
+        val metadata = listOfNotNull(trackLanguage, trackLabel)
+            .joinToString(" ")
+            .trim()
+            .lowercase()
+            .replace('_', '-')
+        if (!isTraditionalTrack(metadata)) return text
 
-        return runCatching {
-            when {
-                parts.any { it == "hant" } || parts.any { it == "tw" } ->
-                    ZhTwConverterUtil.toTraditional(text)
-                parts.any { it == "hk" || it == "mo" } ->
-                    ZhHkConverterUtil.toTraditional(text)
-                parts.any { it == "hans" } || parts.any { it == "cn" || it == "sg" } ->
-                    ZhConverterUtil.toSimple(text)
-                else -> text
-            }
-        }.getOrElse { text }
+        return runCatching { ZhConverterUtil.toSimple(text) }.getOrElse { text }
     }
+
+    private fun isTraditionalTrack(metadata: String): Boolean =
+        Regex("""(^|[^a-z])(hant|tw|hk|mo|traditional)([^a-z]|$)""")
+            .containsMatchIn(metadata) ||
+            listOf("繁體", "繁体", "台灣", "台湾", "香港", "澳門", "澳门")
+                .any(metadata::contains)
 
     private fun containsChinese(text: String): Boolean =
         text.any { character ->
