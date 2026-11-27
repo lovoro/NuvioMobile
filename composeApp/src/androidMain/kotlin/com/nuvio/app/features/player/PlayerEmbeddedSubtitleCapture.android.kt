@@ -56,6 +56,9 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
     private val tracks = ConcurrentHashMap<String, TrackCues>()
+    private val parserEntryLogged = ConcurrentHashMap.newKeySet<String>()
+    private val parserSampleLogged = ConcurrentHashMap.newKeySet<String>()
+    private val cueCaptureLogged = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var activeSourceIdentity: String = ""
     @Volatile private var selectionGeneration: Long = 0L
     @Volatile private var selectedTrackKey: String? = null
@@ -83,6 +86,9 @@ internal object PlayerEmbeddedSubtitleCapture {
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
         tracks.clear()
+        parserEntryLogged.clear()
+        parserSampleLogged.clear()
+        cueCaptureLogged.clear()
     }
 
     fun reset() {
@@ -96,6 +102,9 @@ internal object PlayerEmbeddedSubtitleCapture {
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
         tracks.clear()
+        parserEntryLogged.clear()
+        parserSampleLogged.clear()
+        cueCaptureLogged.clear()
     }
 
     fun hasSelectedTrackCues(): Boolean {
@@ -266,62 +275,117 @@ internal object PlayerEmbeddedSubtitleCapture {
         }?.language?.lowercase()
     }
 
-    fun createParserFactory(): SubtitleParser.Factory {
-        val delegate = DefaultSubtitleParserFactory()
+
+    fun createParserFactory(
+        playbackParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory(),
+        captureParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory(),
+    ): SubtitleParser.Factory {
         return object : SubtitleParser.Factory {
-            override fun supportsFormat(format: Format): Boolean = delegate.supportsFormat(format)
+            override fun supportsFormat(format: Format): Boolean =
+                playbackParserFactory.supportsFormat(format) ||
+                    captureParserFactory.supportsFormat(format)
 
             override fun getCueReplacementBehavior(format: Format): Int =
-                delegate.getCueReplacementBehavior(format)
+                if (playbackParserFactory.supportsFormat(format)) {
+                    playbackParserFactory.getCueReplacementBehavior(format)
+                } else {
+                    captureParserFactory.getCueReplacementBehavior(format)
+                }
 
             override fun create(format: Format): SubtitleParser {
-                val parser = delegate.create(format)
-                // The playback parser may intentionally emit only cues near the current position.
-                // A second stateful parser requests all cues from the same samples for learning.
-                // Keeping parser instances separate prevents the full-track scan from changing
-                // the cues and timing behavior delivered to ExoPlayer.
-                val captureParser = delegate.create(format)
-                val key = trackKey(format)
-                tracks.putIfAbsent(key, TrackCues(
-                    language = format.language?.takeIf { it.isNotBlank() },
-                    label = format.label?.toString()?.takeIf { it.isNotBlank() },
-                ))
-                return object : SubtitleParser {
-                    override fun getCueReplacementBehavior(): Int =
-                        parser.cueReplacementBehavior
-
-                    override fun parse(
-                        data: ByteArray,
-                        offset: Int,
-                        length: Int,
-                        outputOptions: SubtitleParser.OutputOptions,
-                        output: Consumer<CuesWithTiming>,
-                    ) {
-                        if (
-                            PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
-                            (selectedTrackKey == key || targetTrackKey == key)
-                        ) {
-                            val captureOptions = if (outputOptions.outputAllCues) {
-                                outputOptions
-                            } else {
-                                SubtitleParser.OutputOptions.allCues()
-                            }
-                            captureParser.parse(
-                                data,
-                                offset,
-                                length,
-                                captureOptions,
-                                Consumer { parsed -> capture(key, parsed) },
-                            )
-                        }
-                        parser.parse(data, offset, length, outputOptions, output)
-                    }
-
-                    override fun reset() {
-                        parser.reset()
-                        captureParser.reset()
-                    }
+                val playbackFactory = if (playbackParserFactory.supportsFormat(format)) {
+                    playbackParserFactory
+                } else {
+                    captureParserFactory
                 }
+                val captureFactory = if (captureParserFactory.supportsFormat(format)) {
+                    captureParserFactory
+                } else {
+                    playbackFactory
+                }
+                return wrapParser(
+                    format = format,
+                    parser = playbackFactory.create(format),
+                    captureParser = captureFactory.create(format),
+                )
+            }
+        }
+    }
+
+    /**
+     * Adds learning capture around the parser used by the active playback pipeline.
+     * This also lets the libass pipeline retain its ASS parser while learning capture uses
+     * Media3's default parser as an independent, all-cues reader.
+     */
+    fun wrapParser(
+        format: Format,
+        parser: SubtitleParser,
+        captureParser: SubtitleParser,
+    ): SubtitleParser {
+        val key = trackKey(format)
+        tracks.putIfAbsent(
+            key,
+            TrackCues(
+                language = format.language?.takeIf { it.isNotBlank() },
+                label = format.label?.toString()?.takeIf { it.isNotBlank() },
+            ),
+        )
+        return object : SubtitleParser {
+            override fun getCueReplacementBehavior(): Int =
+                parser.cueReplacementBehavior
+
+            override fun parse(
+                data: ByteArray,
+                offset: Int,
+                length: Int,
+                outputOptions: SubtitleParser.OutputOptions,
+                output: Consumer<CuesWithTiming>,
+            ) {
+                if (parserSampleLogged.add(key)) {
+                    Log.i(
+                        TAG,
+                        "subtitle parser sample received: track=${format.id} " +
+                            "mime=${format.sampleMimeType} language=${format.language} " +
+                            "label=${format.label}",
+                    )
+                }
+                val isSourceTrack = selectedTrackKey == key
+                val isTargetTrack = targetTrackKey == key
+                if (
+                    PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
+                    (isSourceTrack || isTargetTrack)
+                ) {
+                    val isTargetOnly = isTargetTrack && !isSourceTrack
+                    val captureOptions = if (outputOptions.outputAllCues) {
+                        outputOptions
+                    } else {
+                        SubtitleParser.OutputOptions.allCues()
+                    }
+                    if (parserEntryLogged.add(key)) {
+                        Log.i(
+                            TAG,
+                            "subtitle parser capture active: track=${format.id} " +
+                                "role=${if (isTargetOnly) "target" else "source"} " +
+                                "language=${format.language} label=${format.label}",
+                        )
+                    }
+                    captureParser.parse(
+                        data,
+                        offset,
+                        length,
+                        captureOptions,
+                        Consumer { parsed -> capture(key, parsed) },
+                    )
+                    // Keep the target track as a capture-only source. Forwarding its cues
+                    // would render a second subtitle line over the selected source track.
+                    if (isTargetOnly) return
+                }
+                parser.parse(data, offset, length, outputOptions, output)
+            }
+
+            override fun reset() {
+                parser.reset()
+                captureParser.reset()
             }
         }
     }
@@ -340,6 +404,13 @@ internal object PlayerEmbeddedSubtitleCapture {
             .filter { it.isNotEmpty() }
             .distinct()
         if (texts.isEmpty()) return
+        if (cueCaptureLogged.add(key)) {
+            Log.i(
+                TAG,
+                "subtitle cues captured: role=${if (isTargetTrack) "target" else "source"} " +
+                    "track=$key cueCount=${texts.size}",
+            )
+        }
 
         val startMs = startUs / 1_000L
         val endMs = endUs / 1_000L

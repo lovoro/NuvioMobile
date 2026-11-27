@@ -47,7 +47,11 @@ internal fun ExoPlayer.Builder.buildWithAssSupportCompat(
         dataSourceFactory,
         assExtractorsFactory
     )
-    mediaSourceFactory.setSubtitleParserFactory(assSubtitleParserFactory)
+    mediaSourceFactory.setSubtitleParserFactory(
+        PlayerEmbeddedSubtitleCapture.createParserFactory(
+            playbackParserFactory = assSubtitleParserFactory,
+        ),
+    )
 
     // Wrap the renderers factory with AssRenderersFactory to add a
     // NoSampleRenderer-based position fallback for tunneled playback.

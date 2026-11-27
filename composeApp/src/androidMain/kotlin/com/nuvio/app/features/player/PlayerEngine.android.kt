@@ -3681,6 +3681,7 @@ private fun ExoPlayer.extractSubtitleTracks(context: Context): List<SubtitleTrac
     return tracks
 }
 
+
 private fun ExoPlayer.selectTrackByIndex(trackType: Int, targetIndex: Int): Boolean {
     return selectTrackByPredicate(trackType, "index=$targetIndex") { idx, _ ->
         idx == targetIndex
