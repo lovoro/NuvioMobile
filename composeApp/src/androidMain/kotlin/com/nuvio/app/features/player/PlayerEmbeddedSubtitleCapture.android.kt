@@ -364,35 +364,18 @@ internal object PlayerEmbeddedSubtitleCapture {
                 }
 
             override fun create(format: Format): SubtitleParser {
-                val playbackFactory = if (playbackParserFactory.supportsFormat(format)) {
+                val parserFactory = if (playbackParserFactory.supportsFormat(format)) {
                     playbackParserFactory
                 } else {
                     captureParserFactory
                 }
-                val captureFactory = if (captureParserFactory.supportsFormat(format)) {
-                    captureParserFactory
-                } else {
-                    playbackFactory
-                }
-                return wrapParser(
-                    format = format,
-                    parser = playbackFactory.create(format),
-                    captureParser = captureFactory.create(format),
-                )
+                return wrapParser(format = format, parser = parserFactory.create(format))
             }
         }
     }
 
-    /**
-     * Adds learning capture around the parser used by the active playback pipeline.
-     * This also lets the libass pipeline retain its ASS parser while learning capture uses
-     * Media3's default parser as an independent, all-cues reader.
-     */
-    fun wrapParser(
-        format: Format,
-        parser: SubtitleParser,
-        captureParser: SubtitleParser,
-    ): SubtitleParser {
+    /** Registers track identity and forwards parsing unchanged; timestamps are captured downstream. */
+    fun wrapParser(format: Format, parser: SubtitleParser): SubtitleParser {
         val key = trackKey(format)
         tracks.putIfAbsent(
             key,
@@ -402,8 +385,7 @@ internal object PlayerEmbeddedSubtitleCapture {
             ),
         )
         return object : SubtitleParser {
-            override fun getCueReplacementBehavior(): Int =
-                parser.cueReplacementBehavior
+            override fun getCueReplacementBehavior(): Int = parser.cueReplacementBehavior
 
             override fun parse(
                 data: ByteArray,
@@ -412,53 +394,22 @@ internal object PlayerEmbeddedSubtitleCapture {
                 outputOptions: SubtitleParser.OutputOptions,
                 output: Consumer<CuesWithTiming>,
             ) {
-                val isSourceTrack = selectedTrackKey == key
-                val isTargetTrack = targetTrackKey == key
+                val role = when {
+                    selectedTrackKey == key -> "source"
+                    targetTrackKey == key -> "target"
+                    else -> "other"
+                }
                 if (parserSampleLogged.add(key)) {
                     Log.i(
                         TAG,
-                        "subtitle parser sample received: track=${format.id} " +
-                            "role=${if (isSourceTrack) "source" else if (isTargetTrack) "target" else "other"} " +
-                            "mime=${format.sampleMimeType} language=${format.language} " +
-                            "label=${format.label}",
+                        "subtitle parser sample received: track=${format.id} role=$role " +
+                            "mime=${format.sampleMimeType} language=${format.language} label=${format.label}",
                     )
-                }
-                if (
-                    PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
-                    (isSourceTrack || isTargetTrack)
-                ) {
-                    val isTargetOnly = isTargetTrack && !isSourceTrack
-                    val captureOptions = if (outputOptions.outputAllCues) {
-                        outputOptions
-                    } else {
-                        SubtitleParser.OutputOptions.allCues()
-                    }
-                    if (parserEntryLogged.add(key)) {
-                        Log.i(
-                            TAG,
-                            "subtitle parser capture active: track=${format.id} " +
-                                "role=${if (isTargetOnly) "target" else "source"} " +
-                                "language=${format.language} label=${format.label}",
-                        )
-                    }
-                    captureParser.parse(
-                        data,
-                        offset,
-                        length,
-                        captureOptions,
-                        Consumer { parsed -> capture(key, parsed, format) },
-                    )
-                    // Keep the target track as a capture-only source. Forwarding its cues
-                    // would render a second subtitle line over the selected source track.
-                    if (isTargetOnly) return
                 }
                 parser.parse(data, offset, length, outputOptions, output)
             }
 
-            override fun reset() {
-                parser.reset()
-                captureParser.reset()
-            }
+            override fun reset() = parser.reset()
         }
     }
 
@@ -530,7 +481,16 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
 
-    private fun capture(key: String, parsed: CuesWithTiming, format: Format) {
+    fun captureTranscodedSample(format: Format, parsed: CuesWithTiming) {
+        capture(trackKey(format), parsed, format, timestampIsAbsolute = true)
+    }
+
+    private fun capture(
+        key: String,
+        parsed: CuesWithTiming,
+        format: Format,
+        timestampIsAbsolute: Boolean = false,
+    ) {
         if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
         val isSourceTrack = selectedTrackKey == key
         val isTargetTrack = targetTrackKey == key
@@ -543,14 +503,13 @@ internal object PlayerEmbeddedSubtitleCapture {
             parsedEndUs <= parsedStartUs
         ) return
 
-        // Media3 marks sample-relative subtitle timestamps with OFFSET_SAMPLE_RELATIVE.
-        // The parser wrapper does not receive the parent sample timestamp, so use the
-        // current playback position as the live-capture base instead of publishing every
-        // sample-relative cue near 00:00. For normal offsets, apply the declared offset.
-        val timestampBaseUs = if (format.subsampleOffsetUs == Format.OFFSET_SAMPLE_RELATIVE) {
+        // Transcoded cue samples already carry Media3's resolved absolute timestamps.
+        // Never replace their sample time with the current playback head.
+        val timestampBaseUs = if (timestampIsAbsolute) {
+            0L
+        } else if (format.subsampleOffsetUs == Format.OFFSET_SAMPLE_RELATIVE) {
             if (playbackPositionMsProvider == null) return
-            val playheadMs = playbackPositionSnapshotMs.get().coerceAtLeast(0L)
-            playheadMs * 1_000L
+            playbackPositionSnapshotMs.get().coerceAtLeast(0L) * 1_000L
         } else {
             format.subsampleOffsetUs
         }
@@ -678,6 +637,10 @@ internal object PlayerEmbeddedSubtitleCapture {
     private fun trackKey(format: Format): String =
         activeSourceIdentity + "|" + (
             format.id?.takeIf { it.isNotBlank() }
-                ?: listOf(format.sampleMimeType, format.language, format.label).joinToString("|")
+                ?: listOf(
+                    format.codecs?.takeIf { it.isNotBlank() } ?: format.sampleMimeType,
+                    format.language,
+                    format.label,
+                ).joinToString("|")
         )
 }

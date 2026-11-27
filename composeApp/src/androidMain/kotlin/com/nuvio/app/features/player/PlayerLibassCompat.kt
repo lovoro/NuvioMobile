@@ -138,11 +138,14 @@ private fun ExtractorsFactory.withAssMkvSupportCompat(
     return ExtractorsFactory {
         val extractors = createExtractors()
         extractors.forEachIndexed { index, extractor ->
-            if (extractor.underlyingImplementation is MatroskaExtractor) {
-                extractors[index] = extractor.replaceInnermostExtractor(
+            val withAss = if (extractor.underlyingImplementation is MatroskaExtractor) {
+                extractor.replaceInnermostExtractor(
                     AssMatroskaExtractor(subtitleParserFactory, assHandler),
                 )
+            } else {
+                extractor
             }
+            extractors[index] = PlayerSubtitleTimestampCaptureExtractor(withAss)
         }
         extractors
     }
