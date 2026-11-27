@@ -52,6 +52,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Timeline
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
@@ -490,12 +491,32 @@ private fun ExoPlayerSurface(
                     // player's callback-time playhead, which may already have advanced.
                     // Zero is a valid timestamp for subtitles beginning at the start of media.
                     // Only legacy TextOutput callbacks lack a presentation timestamp.
+                    val activePlayer = playerViewRef?.player
+                    // Media3 CueGroup.presentationTimeUs is PERIOD-relative, not window-relative.
+                    // Convert it to the player's full media-item timeline before storing cues.
+                    val periodOffsetUs = activePlayer?.let { player ->
+                        val timeline = player.currentTimeline
+                        val periodIndex = player.currentPeriodIndex
+                        if (!timeline.isEmpty && periodIndex != C.INDEX_UNSET) {
+                            timeline.getPeriod(periodIndex, Timeline.Period()).positionInWindowUs
+                        } else {
+                            0L
+                        }
+                    } ?: 0L
                     val cuePositionMs = if (
                         presentationTimeUs != C.TIME_UNSET && presentationTimeUs >= 0L
                     ) {
-                        presentationTimeUs / 1_000L
+                        ((presentationTimeUs + periodOffsetUs).coerceAtLeast(0L)) / 1_000L
                     } else {
-                        playerViewRef?.player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                        activePlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                    }
+                    if (texts.isNotEmpty()) {
+                        Log.i(
+                            "NuvioSubtitleTime",
+                            "liveCue periodTimeUs=$presentationTimeUs periodOffsetUs=$periodOffsetUs " +
+                                "normalizedMs=$cuePositionMs playerMs=${activePlayer?.currentPosition ?: -1L} " +
+                                "text=${texts.first().take(100)}",
+                        )
                     }
                     val texts = cues.mapNotNull { it.text?.toString() }
                     synchronized(embeddedSubtitleLiveCueBufferLock) {
