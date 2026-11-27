@@ -79,6 +79,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         val cues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
         val pendingCues: LinkedHashMap<String, LearningSubtitleCue> = linkedMapOf(),
         var parserCapturedCueCount: Int = 0,
+        // Keys written by TextOutput fallback, retired when timed parser capture takes over.
+        val fallbackCueKeys: MutableSet<String> = linkedSetOf(),
     )
 
     fun configureSource(sourceIdentity: String) {
@@ -435,6 +437,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         val visibleTexts = texts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val entry = tracks[key] ?: return
         val changed = synchronized(entry.lock) {
+            // Once timed parser cues arrive, do not mix estimated TextOutput times into this track.
+            if (entry.parserCapturedCueCount > 0) return@synchronized false
             var updated = false
             val visibleSet = visibleTexts.toSet()
             activeLiveSourceCues.toMap().forEach { (text, activeCue) ->
@@ -442,10 +446,12 @@ internal object PlayerEmbeddedSubtitleCapture {
                     val activeKey = "${activeCue.startTimeMs}|${activeCue.endTimeMs}|${activeCue.text}"
                     entry.cues.remove(activeKey)
                     entry.pendingCues.remove(activeKey)
+                    entry.fallbackCueKeys.remove(activeKey)
                     val completed = activeCue.copy(endTimeMs = timeMs.coerceAtLeast(activeCue.startTimeMs + 1L))
                     val completedKey = "${completed.startTimeMs}|${completed.endTimeMs}|${completed.text}"
                     entry.cues[completedKey] = completed
                     entry.pendingCues[completedKey] = completed
+                    entry.fallbackCueKeys.add(completedKey)
                     activeLiveSourceCues.remove(text)
                     updated = true
                 }
@@ -463,10 +469,12 @@ internal object PlayerEmbeddedSubtitleCapture {
                         val previousKey = "${previous.startTimeMs}|${previous.endTimeMs}|${previous.text}"
                         entry.cues.remove(previousKey)
                         entry.pendingCues.remove(previousKey)
+                        entry.fallbackCueKeys.remove(previousKey)
                     }
                     val nextKey = "${next.startTimeMs}|${next.endTimeMs}|${next.text}"
                     entry.cues[nextKey] = next
                     entry.pendingCues[nextKey] = next
+                    entry.fallbackCueKeys.add(nextKey)
                     activeLiveSourceCues[text] = next
                     updated = true
                 }
@@ -553,7 +561,19 @@ internal object PlayerEmbeddedSubtitleCapture {
             )
         }
         val cueAdded = synchronized(entry.lock) {
-            if (isSourceTrack) entry.parserCapturedCueCount += capturedCues.size
+            if (isSourceTrack) {
+                if (entry.parserCapturedCueCount == 0) {
+                    // Parser timing takes over: remove only estimated live-fallback records.
+                    // Prefetched and parser-produced records are not touched.
+                    entry.fallbackCueKeys.forEach { fallbackKey ->
+                        entry.cues.remove(fallbackKey)
+                        entry.pendingCues.remove(fallbackKey)
+                    }
+                    entry.fallbackCueKeys.clear()
+                    activeLiveSourceCues.clear()
+                }
+                entry.parserCapturedCueCount += capturedCues.size
+            }
             var added = false
             capturedCues.forEach { cue ->
                 val cueKey = "${cue.startTimeMs}|${cue.endTimeMs}|${cue.text}"
