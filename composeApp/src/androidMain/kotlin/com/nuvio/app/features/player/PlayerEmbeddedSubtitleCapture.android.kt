@@ -217,7 +217,6 @@ internal object PlayerEmbeddedSubtitleCapture {
             targetEntry.cues.values.sortedBy { it.startTimeMs }
         }
         if (candidates.isEmpty()) return sourceCues
-        val wanted = normalizeTrackLanguage(targetLanguage)
         return sourceCues.map { source ->
             if (!source.translationText.isNullOrBlank()) return@map source
             val lowerBound = source.startTimeMs - 1_500L
@@ -235,30 +234,43 @@ internal object PlayerEmbeddedSubtitleCapture {
                     index++
                 }
             }
-            val overlapping = nearby.filter { target ->
-                minOf(source.endTimeMs, target.endTimeMs) >
-                    maxOf(source.startTimeMs, target.startTimeMs)
-            }
-            val matched = if (overlapping.isNotEmpty()) overlapping else {
-                val nearest = nearby.minByOrNull { target ->
-                    when {
+            // A long source cue can overlap several short target cues. Joining every
+            // overlap causes an entire sentence/scene of translations to be attached
+            // to one source line. Pick only the target cue with the strongest temporal
+            // overlap; if none overlaps, allow only the single nearest cue within 1.5s.
+            val bestOverlap = nearby
+                .filter { target ->
+                    minOf(source.endTimeMs, target.endTimeMs) >
+                        maxOf(source.startTimeMs, target.startTimeMs)
+                }
+                .maxWithOrNull(
+                    compareBy<LearningSubtitleCue> { target ->
+                        minOf(source.endTimeMs, target.endTimeMs) -
+                            maxOf(source.startTimeMs, target.startTimeMs)
+                    }.thenBy { target ->
+                        -kotlin.math.abs(
+                            (source.startTimeMs + source.endTimeMs) -
+                                (target.startTimeMs + target.endTimeMs)
+                        )
+                    }
+                )
+            val matched = bestOverlap ?: nearby
+                .filter { target ->
+                    val gap = when {
                         target.endTimeMs < source.startTimeMs -> source.startTimeMs - target.endTimeMs
                         target.startTimeMs > source.endTimeMs -> target.startTimeMs - source.endTimeMs
                         else -> 0L
                     }
+                    gap <= 1_500L
                 }
-                val gap = nearest?.let { target ->
-                    when {
-                        target.endTimeMs < source.startTimeMs -> source.startTimeMs - target.endTimeMs
-                        target.startTimeMs > source.endTimeMs -> target.startTimeMs - source.endTimeMs
-                        else -> 0L
-                    }
+                .minByOrNull { target ->
+                    kotlin.math.abs(
+                        (source.startTimeMs + source.endTimeMs) -
+                            (target.startTimeMs + target.endTimeMs)
+                    )
                 }
-                if (nearest != null && gap != null && gap <= 1_500L) listOf(nearest) else emptyList()
-            }
-            val joined = matched.map { it.text.trim() }.filter(String::isNotBlank).distinct()
-                .joinToString(if (wanted in setOf("zh", "ja", "ko")) "" else " ")
-            if (joined.isBlank()) source else source.copy(translationText = joined)
+            val translation = matched?.text?.trim().orEmpty()
+            if (translation.isBlank()) source else source.copy(translationText = translation)
         }
     }
 
