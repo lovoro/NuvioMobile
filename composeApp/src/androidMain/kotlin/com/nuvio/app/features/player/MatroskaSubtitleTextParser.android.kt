@@ -20,6 +20,8 @@ internal object MatroskaSubtitleTextParser {
         val codecId: String,
         val codecPrivate: String? = null,
         val assFormat: List<String> = emptyList(),
+        val language: String? = null,
+        val label: String? = null,
     )
 
     data class Cue(val startTimeMs: Long, val endTimeMs: Long, val text: String)

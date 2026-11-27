@@ -217,7 +217,11 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
                     LearningSubtitleCue(
                         cue.startTimeMs,
                         cue.endTimeMs,
-                        OpenCcSubtitleTextConverter.convert(cue.text, targetLanguage),
+                        OpenCcSubtitleTextConverter.toSimplifiedIfTraditional(
+                            text = cue.text,
+                            trackLanguage = targetTrackInfo?.language,
+                            trackLabel = targetTrackInfo?.label,
+                        ),
                     )
                 }
             }.orEmpty()
@@ -302,18 +306,30 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
             var type = 0L
             var codec = ""
             var codecPrivateText = ""
+            var language: String? = null
+            var label: String? = null
             for (child in children(bytes, entry.data, entry.end)) {
                 when (child.id) {
                     ID_TRACK_NUMBER -> number = unsigned(bytes, child).toInt()
                     ID_TRACK_TYPE -> type = unsigned(bytes, child)
                     ID_CODEC_ID -> codec = utf8(bytes, child)
                     ID_CODEC_PRIVATE -> codecPrivateText = utf8(bytes, child)
+                    ID_TRACK_LANGUAGE_IETF -> language = utf8(bytes, child)
+                    ID_TRACK_LANGUAGE -> if (language.isNullOrBlank()) language = utf8(bytes, child)
+                    ID_TRACK_NAME -> label = utf8(bytes, child)
                 }
             }
             if (number in wanted && type == 0x11L && codec in setOf("S_TEXT/UTF8", "S_TEXT/ASS", "S_TEXT/SSA")) {
                 val format = codecPrivateText.lineSequence().firstOrNull { it.trim().startsWith("Format:", true) }
                     ?.substringAfter(':')?.split(',')?.map(String::trim).orEmpty()
-                result[number] = MatroskaSubtitleTextParser.Track(number, codec, codecPrivateText, format)
+                result[number] = MatroskaSubtitleTextParser.Track(
+                    number = number,
+                    codecId = codec,
+                    codecPrivate = codecPrivateText,
+                    assFormat = format,
+                    language = language,
+                    label = label,
+                )
             }
         }
         return result
@@ -525,6 +541,9 @@ internal object MatroskaEmbeddedSubtitlePrefetcher {
     private const val ID_TRACK_TYPE = 0x83L
     private const val ID_CODEC_ID = 0x86L
     private const val ID_CODEC_PRIVATE = 0x63A2L
+    private const val ID_TRACK_NAME = 0x536EL
+    private const val ID_TRACK_LANGUAGE = 0x22B59CL
+    private const val ID_TRACK_LANGUAGE_IETF = 0x22B59DL
     private const val ID_CUES = 0x1C53BB6BL
     private const val ID_CUE_POINT = 0xBBL
     private const val ID_CUE_TIME = 0xB3L

@@ -1,8 +1,6 @@
 package com.nuvio.app.features.player
 
 import com.github.houbb.opencc4j.util.ZhConverterUtil
-import com.github.houbb.opencc4j.util.ZhHkConverterUtil
-import com.github.houbb.opencc4j.util.ZhTwConverterUtil
 
 /**
  * Converts only the embedded target-language subtitle track to the configured Chinese variant.
