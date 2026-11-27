@@ -1516,14 +1516,14 @@ private fun LearningSubtitlePanel(
         }
         Text(
             text = when {
-                isWaitingForLiveSubtitles -> "Language Learning · Waiting for subtitles"
-                PlayerLearningSubtitleState.isLoadingFromCache -> "Language Learning · Loading from cache"
+                isWaitingForLiveSubtitles -> "Waiting for subtitles"
+                PlayerLearningSubtitleState.isLoadingFromCache -> "Loading from cache"
                 cues.isEmpty() && PlayerLearningSubtitleState.status == LearningSubtitleStatus.LOADING ->
-                    "Language Learning · Loading: ${loadingSubtitleName ?: "subtitle"}"
-                cues.isEmpty() -> "Language Learning · Subtitles"
+                    "Loading: ${loadingSubtitleName ?: "subtitle"}"
+                cues.isEmpty() -> "Subtitles"
                 PlayerLearningSubtitleState.status == LearningSubtitleStatus.PARTIAL ->
-                    "Language Learning · $currentLineNumber/${cues.size} lines · live capture"
-                else -> "Language Learning · $currentLineNumber/${cues.size} lines"
+                    "$currentLineNumber/${cues.size} lines · live capture"
+                else -> "$currentLineNumber/${cues.size} lines"
             },
             style = MaterialTheme.typography.titleSmall,
             color = Color(0xFF262A30),
