@@ -265,6 +265,8 @@ object PlayerLearningSubtitleState {
     val hasManualTranslationAction: Boolean get() = manualTranslationAction != null
     private val completedLiveCues = mutableListOf<LearningSubtitleCue>()
     private val activeLiveCues = linkedMapOf<String, Long>()
+    private var lastLiveCapturePositionMs = 0L
+    private var allowLivePositionRegression = false
     private var prefetchedCues: List<LearningSubtitleCue> = emptyList()
     private var completeExtractionLoaded = false
 
@@ -578,6 +580,8 @@ object PlayerLearningSubtitleState {
         prefetchedCues = emptyList()
         completedLiveCues.clear()
         activeLiveCues.clear()
+        lastLiveCapturePositionMs = 0L
+        allowLivePositionRegression = false
         completeExtractionLoaded = false
         mutableStatus = LearningSubtitleStatus.LOADING
     }
@@ -589,6 +593,8 @@ object PlayerLearningSubtitleState {
     fun finishLiveCaptureAt(positionMs: Long) {
         if (!isLiveCapture || activeLiveCues.isEmpty()) return
         val endMs = positionMs.coerceAtLeast(0L)
+        allowLivePositionRegression = true
+        lastLiveCapturePositionMs = endMs
         activeLiveCues.forEach { (text, startMs) ->
             completedLiveCues += LearningSubtitleCue(
                 startTimeMs = startMs,
@@ -600,10 +606,30 @@ object PlayerLearningSubtitleState {
         publishCombined(completedLiveCues)
     }
 
+    /**
+     * Keeps transient zero/backward playhead readings from rewriting a live cue's timeline.
+     * Explicit seeks call finishLiveCaptureAt first, which permits the next real position.
+     */
+    fun normalizeLiveCapturePosition(positionMs: Long): Long {
+        val requested = positionMs.coerceAtLeast(0L)
+        val normalized = if (
+            !allowLivePositionRegression &&
+            lastLiveCapturePositionMs > 2_000L &&
+            requested + 2_000L < lastLiveCapturePositionMs
+        ) {
+            lastLiveCapturePositionMs
+        } else {
+            requested
+        }
+        allowLivePositionRegression = false
+        lastLiveCapturePositionMs = normalized
+        return normalized
+    }
+
     /** Captures only cues actually emitted during playback; seeking can leave gaps. */
     fun captureLiveCueGroup(texts: List<String>, positionMs: Long) {
         if (completeExtractionLoaded) return
-        val timeMs = positionMs.coerceAtLeast(0L)
+        val timeMs = normalizeLiveCapturePosition(positionMs)
         val visibleTexts = texts.map(::normalizeLearningSubtitleText).filter { it.isNotEmpty() }.distinct()
         val visibleSet = visibleTexts.toSet()
         activeLiveCues.toMap().forEach { (text, startMs) ->
@@ -733,6 +759,8 @@ object PlayerLearningSubtitleState {
         refreshTranslationProgress()
         completedLiveCues.clear()
         activeLiveCues.clear()
+        lastLiveCapturePositionMs = 0L
+        allowLivePositionRegression = false
         loadingSubtitleName = null
         mutableStatus = LearningSubtitleStatus.NONE
     }

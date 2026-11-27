@@ -489,9 +489,15 @@ private fun ExoPlayerSurface(
                     // renderer callbacks on some embedded subtitle streams. The ExoPlayer
                     // playhead is the authoritative video timeline for live capture and list
                     // navigation.
-                    val cuePositionMs = playerViewRef?.player?.currentPosition
+                    val rawCuePositionMs = playerViewRef?.player?.currentPosition
                         ?.takeIf { it >= 0L }
                         ?: 0L
+                    // ExoPlayer can briefly report 0 while the renderer is still delivering
+                    // callbacks for the current playback session. Do not let that transient
+                    // value rewind already captured subtitle timestamps.
+                    val cuePositionMs = PlayerLearningSubtitleState.normalizeLiveCapturePosition(
+                        rawCuePositionMs,
+                    )
                     val texts = cues.mapNotNull { it.text?.toString() }
                     synchronized(embeddedSubtitleLiveCueBufferLock) {
                         if (embeddedSubtitleCacheLookupPending.get()) {
