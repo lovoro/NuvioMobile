@@ -209,18 +209,18 @@ internal object PlayerEmbeddedSubtitleCapture {
         targetTrackKey = key
         configuredTargetLanguage = if (key == null) "" else targetLanguage
         val sourceKey = selectedTrackKey
-        val sourceEntry = sourceKey?.let(tracks::get)
+        val sourceTrackEntry = sourceKey?.let(tracks::get)
         Log.i(
             TAG,
             "target track registered: targetTrack=${format?.id ?: "none"} " +
                 "targetMime=${format?.sampleMimeType ?: "none"} targetLanguage=${format?.language ?: "none"} " +
                 "sourceTrack=${sourceKey?.substringAfterLast("|") ?: "none"} " +
                 "sameAsSource=${key != null && key == sourceKey} " +
-                "targetKeyReady=${key != null} sourceEntryReady=${sourceEntry != null}",
+                "targetKeyReady=${key != null} sourceEntryReady=${sourceTrackEntry != null}",
         )
         if (key == selectedTrackKey) return
 
-        val sourceEntry = sourceEntry ?: return
+        val sourceEntry = sourceTrackEntry ?: return
         val sourceSnapshot = synchronized(sourceEntry.lock) {
             sourceEntry.cues.values.toList().also { cues ->
                 cues.forEach { cue ->
@@ -385,6 +385,8 @@ internal object PlayerEmbeddedSubtitleCapture {
                 outputOptions: SubtitleParser.OutputOptions,
                 output: Consumer<CuesWithTiming>,
             ) {
+                val isSourceTrack = selectedTrackKey == key
+                val isTargetTrack = targetTrackKey == key
                 if (parserSampleLogged.add(key)) {
                     Log.i(
                         TAG,
@@ -394,8 +396,6 @@ internal object PlayerEmbeddedSubtitleCapture {
                             "label=${format.label}",
                     )
                 }
-                val isSourceTrack = selectedTrackKey == key
-                val isTargetTrack = targetTrackKey == key
                 if (
                     PlayerSettingsRepository.uiState.value.englishLearningEnabled &&
                     (isSourceTrack || isTargetTrack)
