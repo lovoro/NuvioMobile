@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M2.2 4.2H11.1C12.2 4.2 13.1 5.1 13.1 6.2V14.8C13.1 15.9 12.2 16.8 11.1 16.8H7.4L4.2 19V16.8H2.2C1.1 16.8 0.2 15.9 0.2 14.8V6.2C0.2 5.1 1.1 4.2 2.2 4.2Z" fill="#000000"/>
-  <path d="M9.9 7.5C9.3 6.9 8.6 6.6 7.8 6.6C6.2 6.6 5.1 7.8 5.1 9.5C5.1 11.2 6.2 12.4 7.8 12.4C9.1 12.4 10 11.6 10 10.4H7.9" fill="none" stroke="#FFFFFF" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M13.5 7H21.5C22.6 7 23.5 7.9 23.5 9V16C23.5 17.1 22.6 18 21.5 18H19.4L17 20V18H13.5C12.4 18 11.5 17.1 11.5 16V9C11.5 7.9 12.4 7 13.5 7Z" stroke="#FFFFFF" stroke-width="1.35" stroke-linejoin="round"/>
-  <path d="M14.7 10H20.4M17.55 9.7V15.2M15.2 12.2H19.9M15.6 15.2L19.5 10" stroke="#FFFFFF" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Rear outlined translation bubble -->
+  <path d="M13.1 6.4H21.1C22.3 6.4 23.2 7.3 23.2 8.5V17.8C23.2 19 22.3 19.9 21.1 19.9H18.8L16.3 22V19.9H13.1C11.9 19.9 11 19 11 17.8V15.1" stroke="#FFFFFF" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Front white speech bubble -->
+  <path d="M3.1 2.6H10.9C12.3 2.6 13.2 3.4 13.7 4.8L16.2 12.1L13.7 14.8L11.7 17.5H3.1C1.7 17.5 0.7 16.5 0.7 15.1V5C0.7 3.7 1.7 2.6 3.1 2.6Z" fill="#FFFFFF"/>
+  <!-- Bold G -->
+  <path d="M9.2 5.1C6.4 5.1 4.5 7.1 4.5 10C4.5 12.9 6.4 14.9 9.2 14.9C10.8 14.9 12.2 14.3 13.1 13.2V9.2H8.9V11.1H10.9V12.2C10.4 12.7 9.8 13 9.1 13C7.4 13 6.4 11.8 6.4 10C6.4 8.2 7.5 7 9.2 7C10.2 7 11 7.4 11.6 8.2L13.1 7C12.2 5.8 10.9 5.1 9.2 5.1Z" fill="#000000"/>
+  <!-- Chinese translation character -->
+  <path d="M14.2 9.4H20.4M17.3 9.1V15.8M14.7 11.4H19.9M15.1 15.8C16.1 15.1 18.5 12.7 19.7 9.7" stroke="#FFFFFF" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
