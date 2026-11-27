@@ -12,6 +12,7 @@ import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Collects text cues as Media3 parses embedded subtitle samples during media extraction.
@@ -44,7 +45,7 @@ internal object PlayerEmbeddedSubtitleCapture {
                 maxCueEndMs >= lastLoggedCueEndMs + 30_000L ||
                 snapshot.size >= lastLoggedCueCount + 500
             if (shouldLogCoverage) {
-                val playheadMs = playbackPositionMsProvider?.invoke()?.coerceAtLeast(0L)
+                val playheadMs = playbackPositionMsProvider?.let { playbackPositionSnapshotMs.get() }
                 val aheadMs = playheadMs?.let { maxCueEndMs - it }
                 Log.i(
                     TAG,
@@ -61,6 +62,19 @@ internal object PlayerEmbeddedSubtitleCapture {
     private val parserSampleLogged = ConcurrentHashMap.newKeySet<String>()
     private val cueCaptureLogged = ConcurrentHashMap.newKeySet<String>()
     private val timingDiagnosticCounts = ConcurrentHashMap<String, AtomicInteger>()
+    // ExoPlayer is application-thread confined. Parser callbacks run on the loader thread,
+    // so they must consume a periodically refreshed, thread-safe position snapshot.
+    private val playbackPositionSnapshotMs = AtomicLong(0L)
+    private val refreshPlaybackPositionSnapshot = object : Runnable {
+        override fun run() {
+            val provider = playbackPositionMsProvider ?: return
+            runCatching { provider.invoke().coerceAtLeast(0L) }
+                .onSuccess(playbackPositionSnapshotMs::set)
+            if (playbackPositionMsProvider != null) {
+                mainHandler.postDelayed(this, PLAYBACK_POSITION_REFRESH_INTERVAL_MS)
+            }
+        }
+    }
     private val conversionDecisionLogged = ConcurrentHashMap.newKeySet<String>()
     private val activeLiveSourceCues = LinkedHashMap<String, LearningSubtitleCue>()
     @Volatile private var activeSourceIdentity: String = ""
@@ -69,6 +83,7 @@ internal object PlayerEmbeddedSubtitleCapture {
     @Volatile private var targetTrackKey: String? = null
     @Volatile private var configuredTargetLanguage: String = ""
     @Volatile private var playbackPositionMsProvider: (() -> Long)? = null
+    private const val PLAYBACK_POSITION_REFRESH_INTERVAL_MS = 100L
     private var lastLoggedCueCount = 0
     private var lastLoggedCueEndMs = Long.MIN_VALUE
 
@@ -90,6 +105,9 @@ internal object PlayerEmbeddedSubtitleCapture {
         selectedTrackKey = null
         targetTrackKey = null
         configuredTargetLanguage = ""
+        playbackPositionMsProvider = null
+        playbackPositionSnapshotMs.set(0L)
+        mainHandler.removeCallbacks(refreshPlaybackPositionSnapshot)
         mainHandler.removeCallbacks(publishSelectedSnapshot)
         snapshotPending = false
         tracks.clear()
@@ -107,6 +125,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         targetTrackKey = null
         configuredTargetLanguage = ""
         playbackPositionMsProvider = null
+        playbackPositionSnapshotMs.set(0L)
+        mainHandler.removeCallbacks(refreshPlaybackPositionSnapshot)
         lastLoggedCueCount = 0
         lastLoggedCueEndMs = Long.MIN_VALUE
         mainHandler.removeCallbacks(publishSelectedSnapshot)
@@ -158,6 +178,13 @@ internal object PlayerEmbeddedSubtitleCapture {
             )
         }
         playbackPositionMsProvider = if (key == null) null else playbackPositionMs
+        mainHandler.removeCallbacks(refreshPlaybackPositionSnapshot)
+        if (key == null || playbackPositionMs == null) {
+            playbackPositionSnapshotMs.set(0L)
+        } else {
+            // selectTrack is called on the main thread; start and refresh the safe snapshot here.
+            refreshPlaybackPositionSnapshot.run()
+        }
         lastLoggedCueCount = 0
         lastLoggedCueEndMs = Long.MIN_VALUE
         if (key == null) return
@@ -521,7 +548,8 @@ internal object PlayerEmbeddedSubtitleCapture {
         // current playback position as the live-capture base instead of publishing every
         // sample-relative cue near 00:00. For normal offsets, apply the declared offset.
         val timestampBaseUs = if (format.subsampleOffsetUs == Format.OFFSET_SAMPLE_RELATIVE) {
-            val playheadMs = playbackPositionMsProvider?.invoke()?.coerceAtLeast(0L) ?: return
+            if (playbackPositionMsProvider == null) return
+            val playheadMs = playbackPositionSnapshotMs.get().coerceAtLeast(0L)
             playheadMs * 1_000L
         } else {
             format.subsampleOffsetUs
@@ -536,7 +564,7 @@ internal object PlayerEmbeddedSubtitleCapture {
             .getOrPut(key) { AtomicInteger(0) }
             .incrementAndGet()
         if (diagnosticCount <= 8 || diagnosticCount % 500 == 0) {
-            val playheadMs = playbackPositionMsProvider?.invoke() ?: -1L
+            val playheadMs = if (playbackPositionMsProvider != null) playbackPositionSnapshotMs.get() else -1L
             Log.i(
                 TAG,
                 "cue timing role=${if (isTargetTrack) "target" else "source"} " +
