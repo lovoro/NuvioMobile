@@ -11,6 +11,7 @@ import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Collects text cues as Media3 parses embedded subtitle samples during media extraction.
@@ -59,6 +60,7 @@ internal object PlayerEmbeddedSubtitleCapture {
     private val parserEntryLogged = ConcurrentHashMap.newKeySet<String>()
     private val parserSampleLogged = ConcurrentHashMap.newKeySet<String>()
     private val cueCaptureLogged = ConcurrentHashMap.newKeySet<String>()
+    private val timingDiagnosticCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val conversionDecisionLogged = ConcurrentHashMap.newKeySet<String>()
     private val activeLiveSourceCues = LinkedHashMap<String, LearningSubtitleCue>()
     @Volatile private var activeSourceIdentity: String = ""
@@ -92,6 +94,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         parserEntryLogged.clear()
         parserSampleLogged.clear()
         cueCaptureLogged.clear()
+        timingDiagnosticCounts.clear()
         conversionDecisionLogged.clear()
         activeLiveSourceCues.clear()
     }
@@ -404,7 +407,7 @@ internal object PlayerEmbeddedSubtitleCapture {
                         offset,
                         length,
                         captureOptions,
-                        Consumer { parsed -> capture(key, parsed) },
+                        Consumer { parsed -> capture(key, parsed, format) },
                     )
                     // Keep the target track as a capture-only source. Forwarding its cues
                     // would render a second subtitle line over the selected source track.
@@ -482,7 +485,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
     }
 
-    private fun capture(key: String, parsed: CuesWithTiming) {
+    private fun capture(key: String, parsed: CuesWithTiming, format: Format) {
         if (!PlayerSettingsRepository.uiState.value.englishLearningEnabled) return
         val isSourceTrack = selectedTrackKey == key
         val isTargetTrack = targetTrackKey == key
@@ -490,6 +493,23 @@ internal object PlayerEmbeddedSubtitleCapture {
         val startUs = parsed.startTimeUs
         val endUs = parsed.endTimeUs
         if (startUs == C.TIME_UNSET || endUs == C.TIME_UNSET || endUs <= startUs) return
+
+        // Parser timestamps and TextOutput presentation timestamps may use different time
+        // bases. Log a small sample before converting parser times into learning cue times.
+        val diagnosticCount = timingDiagnosticCounts
+            .getOrPut(key) { AtomicInteger(0) }
+            .incrementAndGet()
+        if (diagnosticCount <= 8 || diagnosticCount % 500 == 0) {
+            val playheadMs = playbackPositionMsProvider?.invoke() ?: -1L
+            Log.i(
+                TAG,
+                "cue timing role=${if (isTargetTrack) "target" else "source"} " +
+                    "track=${format.id} sample=$diagnosticCount startUs=$startUs endUs=$endUs " +
+                    "subsampleOffsetUs=${format.subsampleOffsetUs} " +
+                    "playheadMs=$playheadMs startMs=${startUs / 1_000L} " +
+                    "endMs=${endUs / 1_000L}",
+            )
+        }
 
         val texts = parsed.cues.mapNotNull(Cue::text)
             .map { it.toString().trim() }
