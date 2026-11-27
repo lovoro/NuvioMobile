@@ -485,15 +485,18 @@ private fun ExoPlayerSurface(
                     !embeddedSubtitleCacheRestored.get() &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
-                    // Prefer the active player's playhead. The renderer callback is created
-                    // before the player instance, so access it through the attached PlayerView.
-                    // If the view is not attached yet, retain the renderer's presentation time
-                    // rather than replacing it with an artificial zero.
-                    val playerPositionMs = playerViewRef?.player?.currentPosition
-                    val cuePositionMs = playerPositionMs
-                        ?.takeIf { it > 0L }
-                        ?: (presentationTimeUs.takeIf { it != C.TIME_UNSET && it > 0L }
-                            ?.div(1_000L) ?: 0L)
+                    // CueGroup.presentationTimeUs is the renderer's media-time position for
+                    // this subtitle update. Use it as the live cue timestamp instead of the
+                    // player's callback-time playhead, which may already have advanced.
+                    // Zero is a valid timestamp for subtitles beginning at the start of media.
+                    // Only legacy TextOutput callbacks lack a presentation timestamp.
+                    val cuePositionMs = if (
+                        presentationTimeUs != C.TIME_UNSET && presentationTimeUs >= 0L
+                    ) {
+                        presentationTimeUs / 1_000L
+                    } else {
+                        playerViewRef?.player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                    }
                     val texts = cues.mapNotNull { it.text?.toString() }
                     synchronized(embeddedSubtitleLiveCueBufferLock) {
                         if (embeddedSubtitleCacheLookupPending.get()) {
