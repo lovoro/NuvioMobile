@@ -485,11 +485,15 @@ private fun ExoPlayerSurface(
                     !embeddedSubtitleCacheRestored.get() &&
                     sidecarControllerRef?.isSidecarActive() != true
                 ) {
-                    // TextOutput presentationTimeUs can be zero-based or remain at 0 for
-                    // renderer callbacks on some embedded subtitle streams. The ExoPlayer
-                    // playhead is the authoritative video timeline for live capture and list
-                    // navigation.
-                    val cuePositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    // Prefer the active player's playhead. The renderer callback is created
+                    // before the player instance, so access it through the attached PlayerView.
+                    // If the view is not attached yet, retain the renderer's presentation time
+                    // rather than replacing it with an artificial zero.
+                    val playerPositionMs = playerViewRef?.player?.currentPosition
+                    val cuePositionMs = playerPositionMs
+                        ?.takeIf { it > 0L }
+                        ?: (presentationTimeUs.takeIf { it != C.TIME_UNSET && it > 0L }
+                            ?.div(1_000L) ?: 0L)
                     val texts = cues.mapNotNull { it.text?.toString() }
                     synchronized(embeddedSubtitleLiveCueBufferLock) {
                         if (embeddedSubtitleCacheLookupPending.get()) {
