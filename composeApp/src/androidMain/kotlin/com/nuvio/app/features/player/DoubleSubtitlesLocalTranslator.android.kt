@@ -77,12 +77,69 @@ internal object DoubleSubtitlesLocalTranslator {
     suspend fun configuredTargetLanguage(context: Context): String? =
         configuredLanguagePair(context)?.second
 
-    suspend fun isTargetLanguageAllowed(context: Context, subtitleLanguage: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val subtitleCode = normalizeLanguageCode(subtitleLanguage) ?: return@withContext false
-            val pair = configuredLanguagePair(context) ?: return@withContext false
-            normalizeLanguageCode(pair.second) == subtitleCode
+    /**
+     * Returns a preference rank for a Chinese subtitle track. Lower is better:
+     * configured script/region, unspecified Chinese, then the opposite script.
+     * Language metadata and human-readable labels are both considered because
+     * many containers expose only "zh" in Format.language.
+     */
+    fun targetChineseTrackRank(
+        configuredTarget: String,
+        trackLanguage: String?,
+        trackLabel: String?,
+    ): Int? {
+        val configured = chineseScript(configuredTarget)
+        val language = trackLanguage.orEmpty()
+        val label = trackLabel.orEmpty()
+        if (normalizeLanguageCode(language) != "zh" &&
+            normalizeLanguageCode(label) != "zh" &&
+            !containsChineseScriptHint(language) &&
+            !containsChineseScriptHint(label)
+        ) return null
+
+        val detected = chineseScript("$language $label")
+        val region = chineseRegion("$language $label")
+        val configuredRegion = chineseRegion(configuredTarget)
+        return when {
+            detected == configured && configured != ChineseScript.UNKNOWN &&
+                configuredRegion != null && region == configuredRegion -> 0
+            detected == configured && configured != ChineseScript.UNKNOWN -> 1
+            detected == ChineseScript.UNKNOWN -> 2
+            else -> 3
         }
+    }
+
+    private enum class ChineseScript { SIMPLIFIED, TRADITIONAL, UNKNOWN }
+
+    private fun chineseScript(value: String): ChineseScript {
+        val normalized = value.trim().replace('_', '-').lowercase()
+        val label = normalized
+        return when {
+            Regex("""(^|[^a-z])(hant|tw|hk|mo|traditional|繁體|繁体|台灣|台湾|香港|澳門|澳门)([^a-z]|$)""")
+                .containsMatchIn(label) -> ChineseScript.TRADITIONAL
+            Regex("""(^|[^a-z])(hans|cn|sg|simplified|简体|简化|中国|新加坡)([^a-z]|$)""")
+                .containsMatchIn(label) -> ChineseScript.SIMPLIFIED
+            else -> ChineseScript.UNKNOWN
+        }
+    }
+
+    private fun chineseRegion(value: String): String? {
+        val normalized = value.trim().replace('_', '-').lowercase()
+        return when {
+            Regex("""(^|[^a-z])(zh-)?tw([^a-z]|$)|台灣|台湾""").containsMatchIn(normalized) -> "TW"
+            Regex("""(^|[^a-z])(zh-)?hk([^a-z]|$)|香港""").containsMatchIn(normalized) -> "HK"
+            Regex("""(^|[^a-z])(zh-)?mo([^a-z]|$)|澳門|澳门""").containsMatchIn(normalized) -> "MO"
+            Regex("""(^|[^a-z])(zh-)?cn([^a-z]|$)|中国""").containsMatchIn(normalized) -> "CN"
+            Regex("""(^|[^a-z])(zh-)?sg([^a-z]|$)|新加坡""").containsMatchIn(normalized) -> "SG"
+            else -> null
+        }
+    }
+
+    private fun containsChineseScriptHint(value: String): Boolean =
+        chineseScript(value) != ChineseScript.UNKNOWN ||
+            Regex("""(^|[^a-z])zh([^a-z]|$)|中文|chinese""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(value)
+
 
     suspend fun isSourceLanguageAllowed(context: Context, sourceLanguage: String): Boolean =
         withContext(Dispatchers.IO) {

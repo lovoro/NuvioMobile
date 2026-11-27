@@ -887,14 +887,32 @@ private fun ExoPlayerSurface(
                     (0 until group.length).asSequence().map(group::getTrackFormat)
                 }
                 .toList()
-            val targetFormat = availableTextTracks.firstOrNull { candidate ->
+            val rankedTargets = availableTextTracks.mapNotNull { candidate ->
                 val candidateTrackNumber = candidate.id?.toIntOrNull()
-                candidateTrackNumber != null &&
-                    candidateTrackNumber != selectedTrackNumber &&
-                    DoubleSubtitlesLocalTranslator.isTargetLanguageAllowed(
-                        context, candidate.language.orEmpty()
-                    )
+                if (candidateTrackNumber == null ||
+                    candidateTrackNumber == selectedTrackNumber ||
+                    candidate == format
+                ) return@mapNotNull null
+                val rank = DoubleSubtitlesLocalTranslator.targetChineseTrackRank(
+                    configuredTarget = languagePair.second,
+                    trackLanguage = candidate.language,
+                    trackLabel = candidate.label?.toString(),
+                ) ?: return@mapNotNull null
+                Triple(rank, candidate, candidateTrackNumber)
+            }.sortedWith(
+                compareBy<Triple<Int, Format, Int>> { it.first }
+                    .thenBy { it.second.label?.toString().orEmpty().lowercase() }
+                    .thenBy { it.third },
+            )
+            rankedTargets.forEach { (rank, candidate, trackNumber) ->
+                Log.i(
+                    TAG,
+                    "Embedded target candidate: rank=$rank track=$trackNumber " +
+                        "language=${candidate.language} label=${candidate.label} " +
+                        "configuredTarget=${languagePair.second}",
+                )
             }
+            val targetFormat = rankedTargets.firstOrNull()?.second
             val targetTrackNumber = targetFormat?.id?.toIntOrNull()
             if (targetTrackNumber == null) {
                 Log.i(TAG, "No embedded target track for configured language=${languagePair.second}; falling back to source-only subtitle")
@@ -951,7 +969,10 @@ private fun ExoPlayerSurface(
             }
             Log.i(
                 TAG,
-                "Embedded bilingual track selection: configuredSource=${languagePair.first} configuredTarget=${languagePair.second} sourceTrack=$selectedTrackNumber targetTrack=$targetTrackNumber availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
+                "Embedded bilingual track selection: configuredSource=${languagePair.first} " +
+                    "configuredTarget=${languagePair.second} sourceTrack=$selectedTrackNumber " +
+                    "targetTrack=$targetTrackNumber targetRank=${rankedTargets.firstOrNull()?.first} " +
+                    "availableTextTracks=${availableTextTracks.joinToString { "${it.id}:${it.language}:${it.label}" }}",
             )
             val extraction = coroutineScope {
                 val translationScope = this
