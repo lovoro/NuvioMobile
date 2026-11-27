@@ -510,7 +510,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         // The parser wrapper does not receive the parent sample timestamp, so use the
         // current playback position as the live-capture base instead of publishing every
         // sample-relative cue near 00:00. For normal offsets, apply the declared offset.
-        val timestampBaseUs = if (format.subsampleOffsetUs == C.OFFSET_SAMPLE_RELATIVE) {
+        val timestampBaseUs = if (format.subsampleOffsetUs == Format.OFFSET_SAMPLE_RELATIVE) {
             val playheadMs = playbackPositionMsProvider?.invoke()?.coerceAtLeast(0L) ?: return
             playheadMs * 1_000L
         } else {
