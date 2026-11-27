@@ -208,10 +208,19 @@ internal object PlayerEmbeddedSubtitleCapture {
         }
         targetTrackKey = key
         configuredTargetLanguage = if (key == null) "" else targetLanguage
+        val sourceKey = selectedTrackKey
+        val sourceEntry = sourceKey?.let(tracks::get)
+        Log.i(
+            TAG,
+            "target track registered: targetTrack=${format?.id ?: "none"} " +
+                "targetMime=${format?.sampleMimeType ?: "none"} targetLanguage=${format?.language ?: "none"} " +
+                "sourceTrack=${sourceKey?.substringAfterLast("|") ?: "none"} " +
+                "sameAsSource=${key != null && key == sourceKey} " +
+                "targetKeyReady=${key != null} sourceEntryReady=${sourceEntry != null}",
+        )
         if (key == selectedTrackKey) return
 
-        val sourceKey = selectedTrackKey ?: return
-        val sourceEntry = tracks[sourceKey] ?: return
+        val sourceEntry = sourceEntry ?: return
         val sourceSnapshot = synchronized(sourceEntry.lock) {
             sourceEntry.cues.values.toList().also { cues ->
                 cues.forEach { cue ->
@@ -380,6 +389,7 @@ internal object PlayerEmbeddedSubtitleCapture {
                     Log.i(
                         TAG,
                         "subtitle parser sample received: track=${format.id} " +
+                            "role=${if (isSourceTrack) "source" else if (isTargetTrack) "target" else "other"} " +
                             "mime=${format.sampleMimeType} language=${format.language} " +
                             "label=${format.label}",
                     )
