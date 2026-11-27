@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Replay10
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -535,7 +536,7 @@ private fun PlayerHeader(
                             ),
                             onClick = onLearningModeClick,
                             iconSize = metrics.headerIconSize,
-                            tint = Color.Unspecified,
+                            tint = LocalContentColor.current,
                         )
                     }
                     if (onSubmitIntroClick != null) {
