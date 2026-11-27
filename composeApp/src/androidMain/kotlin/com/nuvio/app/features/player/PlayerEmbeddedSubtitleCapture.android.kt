@@ -233,7 +233,7 @@ internal object PlayerEmbeddedSubtitleCapture {
         val targetKey = targetTrackKey ?: return sourceCues
         val targetEntry = tracks[targetKey] ?: return sourceCues
         val candidates = synchronized(targetEntry.lock) {
-            targetEntry.cues.values.sortedBy { it.startTimeMs }
+            targetEntry.cues.values.sortedBy { it.startTimeMs / 2L + it.endTimeMs / 2L }
         }
         if (candidates.isEmpty()) return sourceCues
         val usedTargets = HashSet<String>()
