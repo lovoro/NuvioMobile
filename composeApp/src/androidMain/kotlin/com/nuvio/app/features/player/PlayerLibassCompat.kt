@@ -38,8 +38,11 @@ internal fun ExoPlayer.Builder.buildWithAssSupportCompat(
 ): ExoPlayer {
     val assHandler = AssHandler()
     val assSubtitleParserFactory = CompatAssSubtitleParserFactory(assHandler)
+    val learningSubtitleParserFactory = PlayerEmbeddedSubtitleCapture.createParserFactory(
+        playbackParserFactory = assSubtitleParserFactory,
+    )
     val assExtractorsFactory = extractorsFactory.withAssMkvSupportCompat(
-        subtitleParserFactory = assSubtitleParserFactory,
+        subtitleParserFactory = learningSubtitleParserFactory,
         assHandler = assHandler
     )
 
@@ -49,11 +52,7 @@ internal fun ExoPlayer.Builder.buildWithAssSupportCompat(
     )
     // Matroska parses text tracks during extraction, including tracks not selected for display.
     // Wrap the libass parser factory so those samples can also feed bilingual learning capture.
-    mediaSourceFactory.setSubtitleParserFactory(
-        PlayerEmbeddedSubtitleCapture.createParserFactory(
-            playbackParserFactory = assSubtitleParserFactory,
-        ),
-    )
+    mediaSourceFactory.setSubtitleParserFactory(learningSubtitleParserFactory)
 
     // Wrap the renderers factory with AssRenderersFactory to add a
     // NoSampleRenderer-based position fallback for tunneled playback.
