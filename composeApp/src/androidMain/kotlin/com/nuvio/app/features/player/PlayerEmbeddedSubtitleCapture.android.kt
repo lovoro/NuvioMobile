@@ -236,60 +236,49 @@ internal object PlayerEmbeddedSubtitleCapture {
             targetEntry.cues.values.sortedBy { it.startTimeMs }
         }
         if (candidates.isEmpty()) return sourceCues
+        val usedTargets = HashSet<String>()
         return sourceCues.map { source ->
             if (!source.translationText.isNullOrBlank()) return@map source
-            val lowerBound = source.startTimeMs - 1_500L
-            val upperBound = source.endTimeMs + 1_500L
+
+            // Match by cue midpoint, not maximum overlap. A long inferred live cue can
+            // overlap several unrelated target cues; overlap-first matching attaches
+            // dialogue from the wrong scene. Each target cue is consumed at most once
+            // within this publication batch.
+            val sourceCenter = source.startTimeMs / 2L + source.endTimeMs / 2L
+            val lowerBound = sourceCenter - 1_500L
+            val upperBound = sourceCenter + 1_500L
             var low = 0
             var high = candidates.size
             while (low < high) {
                 val middle = (low + high) ushr 1
-                if (candidates[middle].startTimeMs < lowerBound) low = middle + 1 else high = middle
+                val targetCenter = candidates[middle].startTimeMs / 2L +
+                    candidates[middle].endTimeMs / 2L
+                if (targetCenter < lowerBound) low = middle + 1 else high = middle
             }
-            val nearby = buildList {
-                var index = low
-                while (index < candidates.size && candidates[index].startTimeMs <= upperBound) {
-                    add(candidates[index])
-                    index++
+            var best: LearningSubtitleCue? = null
+            var bestDistance = Long.MAX_VALUE
+            var index = low
+            while (index < candidates.size) {
+                val target = candidates[index]
+                val targetCenter = target.startTimeMs / 2L + target.endTimeMs / 2L
+                if (targetCenter > upperBound) break
+                val targetKey = "${target.startTimeMs}|${target.endTimeMs}|${target.text}"
+                if (targetKey !in usedTargets) {
+                    val distance = kotlin.math.abs(sourceCenter - targetCenter)
+                    if (distance < bestDistance) {
+                        best = target
+                        bestDistance = distance
+                    }
                 }
+                index++
             }
-            // A long source cue can overlap several short target cues. Joining every
-            // overlap causes an entire sentence/scene of translations to be attached
-            // to one source line. Pick only the target cue with the strongest temporal
-            // overlap; if none overlaps, allow only the single nearest cue within 1.5s.
-            val bestOverlap = nearby
-                .filter { target ->
-                    minOf(source.endTimeMs, target.endTimeMs) >
-                        maxOf(source.startTimeMs, target.startTimeMs)
-                }
-                .maxWithOrNull(
-                    compareBy<LearningSubtitleCue> { target ->
-                        minOf(source.endTimeMs, target.endTimeMs) -
-                            maxOf(source.startTimeMs, target.startTimeMs)
-                    }.thenBy { target ->
-                        -kotlin.math.abs(
-                            (source.startTimeMs + source.endTimeMs) -
-                                (target.startTimeMs + target.endTimeMs)
-                        )
-                    }
-                )
-            val matched = bestOverlap ?: nearby
-                .filter { target ->
-                    val gap = when {
-                        target.endTimeMs < source.startTimeMs -> source.startTimeMs - target.endTimeMs
-                        target.startTimeMs > source.endTimeMs -> target.startTimeMs - source.endTimeMs
-                        else -> 0L
-                    }
-                    gap <= 1_500L
-                }
-                .minByOrNull { target ->
-                    kotlin.math.abs(
-                        (source.startTimeMs + source.endTimeMs) -
-                            (target.startTimeMs + target.endTimeMs)
-                    )
-                }
-            val translation = matched?.text?.trim().orEmpty()
-            if (translation.isBlank()) source else source.copy(translationText = translation)
+            val matched = best?.takeIf { bestDistance <= 1_500L }
+            if (matched == null) {
+                source
+            } else {
+                usedTargets += "${matched.startTimeMs}|${matched.endTimeMs}|${matched.text}"
+                source.copy(translationText = matched.text.trim())
+            }
         }
     }
 
