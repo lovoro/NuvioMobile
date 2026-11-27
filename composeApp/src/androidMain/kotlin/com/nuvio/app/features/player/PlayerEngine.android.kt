@@ -510,6 +510,7 @@ private fun ExoPlayerSurface(
                     } else {
                         activePlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
                     }
+                    val texts = cues.mapNotNull { it.text?.toString() }
                     if (texts.isNotEmpty()) {
                         Log.i(
                             "NuvioSubtitleTime",
@@ -518,7 +519,6 @@ private fun ExoPlayerSurface(
                                 "text=${texts.first().take(100)}",
                         )
                     }
-                    val texts = cues.mapNotNull { it.text?.toString() }
                     synchronized(embeddedSubtitleLiveCueBufferLock) {
                         if (embeddedSubtitleCacheLookupPending.get()) {
                             if (texts.isNotEmpty()) embeddedSubtitleLiveCueBuffer += cuePositionMs to texts
